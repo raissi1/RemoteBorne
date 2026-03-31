@@ -47,6 +47,8 @@ from open_help import open_help
 import energy_manager
 import debug_logs
 
+APP_VERSION = "2026.03.31.1"
+
 try:
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas as pdf_canvas
@@ -266,9 +268,8 @@ class RemoteBorneApp:
         self._update_controls_state()
 
 
+        self.log(f"[INFO] RemoteBorne version: {APP_VERSION} ({os.path.basename(__file__)})")
         self.log("[INFO] Application started. Waiting for SSH events...")
-        # Connexion initiale
-        self.force_reconnect()
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
 

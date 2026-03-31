@@ -97,6 +97,7 @@ Zone en bas :
 - Horodatée
 - Séquentielle
 - Auto-scroll
+- Affiche la version au démarrage (`[INFO] RemoteBorne version: ...`) pour vérifier rapidement que la mise à jour est bien appliquée.
 
 ## 11. Debug logs
 
