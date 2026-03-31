@@ -1530,7 +1530,6 @@ class RemoteBorneApp:
                 text="Close",
                 command=lambda: (setattr(self, "_find_dialog", None), dialog.destroy()),
             ).pack(side="right")
-            ttk.Button(btns, text="Close", command=dialog.destroy).pack(side="right")
             q_entry.bind("<Return>", run_find)
 
         def save_and_upload():
@@ -1874,17 +1873,6 @@ class RemoteBorneApp:
                     self.port,
                     auto_reconnect=False,
                 )
-                self.ssh.restart()
-
-                if self.connected:
-                    try:
-                        self.ssh.close()
-                    except Exception:
-                        pass
-                    self.connected = False
-                    self._set_led(False)
-                    self.status_var.set("Reconnecting…")
-                    self._update_controls_state()
                 self.ssh.restart()
 
                 self.log("[NETWORK] config.ini reloaded.")

@@ -11,6 +11,11 @@ L’application simplifie :
 
 ## 2. Démarrage
 
+0. Initialiser la config locale (une seule fois) :
+```
+copy config\\config.example.ini config\\config.ini
+```
+
 1. Ouvrir PowerShell
 2. Aller dans le dossier src :
 ```
@@ -49,6 +54,7 @@ Menu clic droit :
 
 1. Double-clic fichier
 2. Modifier
+3. Rechercher dans le texte avec **Ctrl+F** (Find)
 3. Save
 4. Upload
 
@@ -63,7 +69,7 @@ Choisir emplacement
 ## 7. Imprimer (PDF)
 
 Clic droit → Print  
-Conversion automatique en PDF  
+Conversion automatique en PDF (avec retour à la ligne des longues lignes)  
 Choisir emplacement
 
 ## 8. Energy Manager
@@ -109,7 +115,14 @@ Fonctionnalités :
 
 - Vérifier IP
 - Vérifier mot de passe
+- Vérifier le port SSH (Menu Network config)
 - Vérifier réseau
+
+### Erreur de sauvegarde de configuration réseau
+
+- Vérifier que l’IP/hostname est valide
+- Vérifier que le port est entre 1 et 65535
+- Vérifier que le dossier local configuré est accessible
 
 ### PDF vide
 
@@ -130,4 +143,3 @@ Fonctionnalités :
 
 Le mot de passe n'est pas chiffré.  
 Ne pas distribuer config.ini publiquement.
-
