@@ -38,14 +38,14 @@ def open_network_config(parent, config_path, on_saved=None):
     # Fenêtre
     win = tk.Toplevel(parent)
     win.title("Network Configuration")
-    win.geometry("600x350")
+    win.geometry("640x430")
     win.resizable(False, False)
     win.transient(parent)
     win.grab_set()
 
     win.update_idletasks()
-    x = (win.winfo_screenwidth() - 600) // 2
-    y = (win.winfo_screenheight() - 350) // 2
+    x = (win.winfo_screenwidth() - 640) // 2
+    y = (win.winfo_screenheight() - 430) // 2
     win.geometry(f"+{x}+{y}")
 
     main_frame = ttk.Frame(win, padding=20)
@@ -191,13 +191,13 @@ def open_network_config(parent, config_path, on_saved=None):
             messagebox.showerror("Error", f"Error saving configuration:\n{e}")
 
     ttk.Button(main_frame, text="Save", command=save_and_close).grid(
-        row=8, column=1, pady=20, sticky="e", padx=5
+        row=8, column=1, pady=(24, 8), sticky="e", padx=5
     )
     ttk.Button(main_frame, text="Cancel", command=win.destroy).grid(
-        row=8, column=2, pady=20, sticky="w", padx=5
+        row=8, column=2, pady=(24, 8), sticky="w", padx=5
     )
 
     main_frame.columnconfigure(1, weight=1)
-    win.minsize(550, 350)
+    win.minsize(620, 420)
 
     win.wait_window()
