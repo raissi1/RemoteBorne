@@ -858,7 +858,7 @@ class RemoteBorneApp:
     def force_reconnect(self):
         self.log("[SSH] Reconnecting...")
         try:
-            self.ssh.force_reconnect()
+            self.ssh.restart()
         except Exception as e:
             self.log(f"[SSH ERROR] {e}")
 
@@ -895,6 +895,7 @@ class RemoteBorneApp:
         self._alive_thread_started = True
 
         def worker():
+            last_reconnect_try = 0.0
             while not self._alive_stop:
                 time.sleep(10)
                 # Si l’app est fermée, on sort
@@ -902,8 +903,12 @@ class RemoteBorneApp:
                     break
                 # Si pas connecté -> on tente une reconnexion périodique
                 if not self.ssh.connected:
-                    self.log("[ALIVE] Disconnected, attempting reconnect.")
-                    self.ssh.force_reconnect()
+                    now = time.time()
+                    # évite de spammer plusieurs tentatives/logs toutes les 10s
+                    if now - last_reconnect_try >= 30:
+                        self.log("[ALIVE] Disconnected, attempting reconnect.")
+                        self.ssh.restart()
+                        last_reconnect_try = now
                     continue
 
                 def cb(res):
@@ -1469,12 +1474,19 @@ class RemoteBorneApp:
             status_bar.configure(text="")
 
         def open_find_dialog():
+            if hasattr(self, "_find_dialog") and self._find_dialog and self._find_dialog.winfo_exists():
+                self._find_dialog.lift()
+                self._find_dialog.focus_force()
+                return
+
             dialog = tk.Toplevel(win)
+            self._find_dialog = dialog
             dialog.title("Find (Ctrl+F)")
             dialog.transient(win)
             dialog.grab_set()
             dialog.resizable(False, False)
             dialog.geometry("+300+300")
+            dialog.protocol("WM_DELETE_WINDOW", lambda: (setattr(self, "_find_dialog", None), dialog.destroy()))
 
             ttk.Label(dialog, text="Search text:").grid(row=0, column=0, padx=8, pady=8, sticky="w")
             q_var = tk.StringVar()
@@ -1513,6 +1525,11 @@ class RemoteBorneApp:
             btns = ttk.Frame(dialog)
             btns.grid(row=1, column=0, columnspan=2, sticky="e", padx=8, pady=(0, 8))
             ttk.Button(btns, text="Find", command=run_find).pack(side="right", padx=4)
+            ttk.Button(
+                btns,
+                text="Close",
+                command=lambda: (setattr(self, "_find_dialog", None), dialog.destroy()),
+            ).pack(side="right")
             ttk.Button(btns, text="Close", command=dialog.destroy).pack(side="right")
             q_entry.bind("<Return>", run_find)
 
@@ -1840,11 +1857,24 @@ class RemoteBorneApp:
                 if self.user_label is not None:
                     self.user_label.configure(text=f"User: {self.user or '-'}")
 
-                # Mise à jour de la cible SSH si supportée
-                try:
-                    self.ssh.update_target(self.host, self.user, self.password, self.port)
-                except Exception:
-                    pass
+                if self.connected:
+                    try:
+                        self.ssh.close()
+                    except Exception:
+                        pass
+                    self.connected = False
+                    self._set_led(False)
+                    self.status_var.set("Reconnecting…")
+                    self._update_controls_state()
+                # Mise à jour de la cible SSH puis reconnexion unique
+                self.ssh.update_target(
+                    self.host,
+                    self.user,
+                    self.password,
+                    self.port,
+                    auto_reconnect=False,
+                )
+                self.ssh.restart()
 
                 if self.connected:
                     try:
