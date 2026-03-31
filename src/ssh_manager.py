@@ -35,6 +35,8 @@ class SSHManager:
         # paramètres de reconnexion
         self.max_retries = 3
         self.retry_base_delay = 2.0
+        self._reconnect_lock = threading.Lock()
+        self._reconnect_in_progress = False
 
     # ------------------------------------------------------------------ #
     #  Callbacks
@@ -156,43 +158,67 @@ class SSHManager:
     def _try_reconnect(self):
         if self._stop:
             return
-
-        self._emit_ui("reconnecting", None)
-        self._log("[SSH] Reconnecting...")
-
-        for attempt in range(1, self.max_retries + 1):
-            if self._stop:
+        with self._reconnect_lock:
+            if self._reconnect_in_progress:
+                self._log("[SSH] Reconnect already in progress, skipping duplicate request.")
                 return
+            self._reconnect_in_progress = True
 
-            self._log(f"[SSH] Reconnect attempt {attempt}/{self.max_retries}...")
-            ok = self._try_connect_once()
-            if ok:
-                self._emit_ui("reconnected", None)
-                self._log("[SSH] Reconnect SUCCESS.")
-                return
+        try:
+            self._emit_ui("reconnecting", None)
+            self._log("[SSH] Reconnecting...")
 
-            delay = min(self.retry_base_delay * attempt, 10)
-            self._log(
-                f"[SSH] Reconnect attempt {attempt} failed, retry in {delay} s"
-            )
-            time.sleep(delay)
+            for attempt in range(1, self.max_retries + 1):
+                if self._stop:
+                    return
 
-        self.connected = False
-        self._emit_ui("disconnected", None)
-        self._log("[SSH] Unable to reconnect after max attempts.")
+                self._log(f"[SSH] Reconnect attempt {attempt}/{self.max_retries}...")
+                ok = self._try_connect_once()
+                if ok:
+                    self._emit_ui("reconnected", None)
+                    self._log("[SSH] Reconnect SUCCESS.")
+                    return
+
+                delay = min(self.retry_base_delay * attempt, 10)
+                self._log(
+                    f"[SSH] Reconnect attempt {attempt} failed, retry in {delay} s"
+                )
+                time.sleep(delay)
+
+            self.connected = False
+            self._emit_ui("disconnected", None)
+            self._log("[SSH] Unable to reconnect after max attempts.")
+        finally:
+            with self._reconnect_lock:
+                self._reconnect_in_progress = False
 
     def force_reconnect(self):
         """API publique : relancer une reconnexion dans un thread."""
         t = threading.Thread(target=self._try_reconnect, daemon=True)
         t.start()
 
+    def restart(self):
+        """
+        Réactive le manager après close() puis relance une reconnexion.
+        Utile après changement de config réseau en cours d'exécution.
+        """
+        self._stop = False
+        self.force_reconnect()
+
     # ------------------------------------------------------------------ #
     #  Mise à jour de la cible (changement IP dans Network Config)
     # ------------------------------------------------------------------ #
-    def update_target(self, host: str, user: str, password: str, port: int = 22):
+    def update_target(
+        self,
+        host: str,
+        user: str,
+        password: str,
+        port: int = 22,
+        auto_reconnect: bool = True,
+    ):
         """
         Met à jour IP / user / password / port à chaud, recrée le backend
-        et force une reconnexion.
+        et force une reconnexion (optionnelle).
         """
         self.host = host
         self.user = user
@@ -201,7 +227,8 @@ class SSHManager:
         self.backend = PlinkBackend(host, user, password, port)
         self.connected = False
         self._log(f"[SSH] Target updated to {host}:{port} ({user})")
-        self.force_reconnect()
+        if auto_reconnect:
+            self.force_reconnect()
 
     # ------------------------------------------------------------------ #
     #  Exécution de commande
@@ -221,6 +248,15 @@ class SSHManager:
         def worker():
             if not self.connected and auto_retry:
                 self._try_reconnect()
+            if not self.connected:
+                err_msg = "SSH not connected"
+                self._log(f"[SSH CMD ERROR] {err_msg}")
+                if callback:
+                    try:
+                        callback({"success": False, "out": "", "err": err_msg})
+                    except Exception:
+                        pass
+                return
 
             rc, out, err = self.backend.exec(cmd, timeout=self.timeout)
             success = (rc == 0)
@@ -241,6 +277,12 @@ class SSHManager:
     #  SCP
     # ------------------------------------------------------------------ #
     def scp_get(self, remote_path: str, local_path: str) -> dict:
+        if not self.connected:
+            self._try_reconnect()
+        if not self.connected:
+            err = "SSH not connected"
+            self._log(f"[SCP GET ERROR] {err}")
+            return {"success": False, "out": "", "err": err}
         success, out, err = self.backend.scp_get(
             remote_path, local_path, timeout=self.timeout
         )
@@ -249,6 +291,12 @@ class SSHManager:
         return {"success": success, "out": out, "err": err}
 
     def scp_put(self, local_path: str, remote_path: str) -> dict:
+        if not self.connected:
+            self._try_reconnect()
+        if not self.connected:
+            err = "SSH not connected"
+            self._log(f"[SCP PUT ERROR] {err}")
+            return {"success": False, "out": "", "err": err}
         success, out, err = self.backend.scp_put(
             local_path, remote_path, timeout=self.timeout
         )
@@ -261,4 +309,6 @@ class SSHManager:
     # ------------------------------------------------------------------ #
     def close(self):
         self._stop = True
+        self.connected = False
+        self._emit_ui("disconnected", None)
         self._log("[SSH] Manager closed.")
