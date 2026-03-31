@@ -1,0 +1,528 @@
+2025-12-11 13:46:00.705 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:00.706 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:01.210 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:01.211 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:01.439 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:01.714 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:01.714 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:02.224 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:02.224 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:02.492 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:02.734 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:02.734 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:02.838 [I] LimitsApplication: Delete limits task added
+2025-12-11 13:46:02.838 [I] LimitsApplication: Starting processing removing from HALDerateController with id: 1403 Ask processor RandomizedDelay
+2025-12-11 13:46:02.838 [I] LimitsApplication: Got confirmation from RandomizedDelay for limit request 1403
+2025-12-11 13:46:02.838 [I] LimitsApplication: Limits remove processing finished: source HALDerateController request id: 1403
+2025-12-11 13:46:02.839 [I] LimitsApplication: Delete limits task added
+2025-12-11 13:46:02.839 [I] LimitsApplication: Starting processing removing from HALDerateControllerPowerBoard with id: 1404 Ask processor RandomizedDelay
+2025-12-11 13:46:02.839 [I] LimitsApplication: Got confirmation from RandomizedDelay for limit request 1404
+2025-12-11 13:46:02.839 [I] LimitsApplication: Limits remove processing finished: source HALDerateControllerPowerBoard request id: 1404
+2025-12-11 13:46:02.840 [I] LimitsApplication: Delete limits task added
+2025-12-11 13:46:02.840 [I] LimitsApplication: Starting processing removing from HALDerateControllerMainBoard with id: 1405 Ask processor RandomizedDelay
+2025-12-11 13:46:02.842 [I] LimitsApplication: Got confirmation from RandomizedDelay for limit request 1405
+2025-12-11 13:46:02.842 [I] LimitsApplication: Limits remove processing finished: source HALDerateControllerMainBoard request id: 1405
+2025-12-11 13:46:03.244 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:03.244 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:03.544 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:03.750 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:03.750 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:04.254 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:04.254 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:04.575 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:04.768 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:04.769 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:05.278 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:05.279 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:05.628 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:05.784 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:05.785 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:06.294 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:06.294 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:06.687 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:06.807 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:06.807 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:07.323 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:07.323 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:07.715 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:07.834 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:07.834 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:08.337 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:08.337 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:08.760 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:08.845 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:08.845 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:09.347 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:09.349 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:09.819 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:09.861 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:09.861 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:10.366 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:10.366 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:10.861 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:10.878 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:10.879 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:11.381 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:11.382 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:11.894 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:11.894 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:11.921 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:12.411 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:12.411 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:12.970 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:12.971 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:12.972 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:13.463 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:13.464 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:14.007 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:14.009 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:14.009 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:14.521 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:14.521 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:15.034 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:15.034 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:15.069 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:15.554 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:15.555 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:16.075 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:16.075 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:16.096 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:16.577 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:16.577 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:17.084 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:17.084 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:17.147 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:17.636 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:17.637 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:18.163 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:18.163 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:18.188 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:18.681 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:18.681 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:19.221 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:19.221 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:19.243 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:19.727 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:19.731 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:20.294 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:20.295 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:20.295 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:20.789 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:20.789 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:21.341 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:21.342 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:21.343 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:21.837 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:21.837 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:22.386 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:22.387 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:22.387 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:22.882 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:22.882 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:23.423 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:23.424 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:23.424 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:23.919 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:23.919 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:24.424 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:24.424 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:24.487 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:24.930 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:24.930 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:25.433 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:25.433 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:25.512 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:25.944 [I] OutOfScheduleSetPointLogic: For connector 1 Target energy set to: 29880000
+2025-12-11 13:46:25.944 [I] OutOfScheduleSetPointLogic: Connector 1 in set point schedule: true in FollowEvTarget v2x mode: false in ev priority: true bpt: true has target energy: true
+2025-12-11 13:46:25.944 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:25.944 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:26.454 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:26.454 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:26.562 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:26.972 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:26.973 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:27.480 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:27.480 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:27.611 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:27.993 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:27.993 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:28.494 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:28.494 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:28.654 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:29.003 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:29.003 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:29.517 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:29.518 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:29.718 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:30.027 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:30.028 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:30.534 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:30.534 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:30.757 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:31.039 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:31.039 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:31.549 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:31.549 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:31.821 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:32.054 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:32.054 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:32.564 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:32.564 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:32.868 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:32.870 [I] LimitsApplication: Delete limits task added
+2025-12-11 13:46:32.870 [I] LimitsApplication: Starting processing removing from HALDerateController with id: 1406 Ask processor RandomizedDelay
+2025-12-11 13:46:32.870 [I] LimitsApplication: Got confirmation from RandomizedDelay for limit request 1406
+2025-12-11 13:46:32.870 [I] LimitsApplication: Limits remove processing finished: source HALDerateController request id: 1406
+2025-12-11 13:46:32.871 [I] LimitsApplication: Delete limits task added
+2025-12-11 13:46:32.871 [I] LimitsApplication: Starting processing removing from HALDerateControllerPowerBoard with id: 1407 Ask processor RandomizedDelay
+2025-12-11 13:46:32.871 [I] LimitsApplication: Got confirmation from RandomizedDelay for limit request 1407
+2025-12-11 13:46:32.871 [I] LimitsApplication: Limits remove processing finished: source HALDerateControllerPowerBoard request id: 1407
+2025-12-11 13:46:32.871 [I] LimitsApplication: Delete limits task added
+2025-12-11 13:46:32.871 [I] LimitsApplication: Starting processing removing from HALDerateControllerMainBoard with id: 1408 Ask processor RandomizedDelay
+2025-12-11 13:46:32.873 [I] LimitsApplication: Got confirmation from RandomizedDelay for limit request 1408
+2025-12-11 13:46:32.873 [I] LimitsApplication: Limits remove processing finished: source HALDerateControllerMainBoard request id: 1408
+2025-12-11 13:46:33.074 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:33.074 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:33.579 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:33.579 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:33.915 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:34.084 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:34.084 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:34.594 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:34.595 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:34.961 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:35.100 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:35.100 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:35.610 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:35.610 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:35.993 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:36.119 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:36.119 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:36.624 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:36.624 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:37.036 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:37.130 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:37.130 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:37.644 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:37.644 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:38.078 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:38.152 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:38.152 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:38.659 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:38.659 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:39.141 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:39.165 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:39.165 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:39.668 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:39.668 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:40.192 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:40.193 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:40.193 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:40.693 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:40.693 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:41.213 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:41.214 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:41.236 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:41.720 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:41.720 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:42.226 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:42.227 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:42.289 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:42.777 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:42.777 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:43.337 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:43.338 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:43.346 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:43.848 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:43.848 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:44.363 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:44.363 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:44.392 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:44.877 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:44.878 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:45.440 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:45.444 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:45.446 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:45.941 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:45.942 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:46.488 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:46.489 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:46.490 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:46.988 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:46.988 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:47.540 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:47.541 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:47.541 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:48.034 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:48.035 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:48.583 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:48.584 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:48.584 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:49.092 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:49.092 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:49.613 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:49.613 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:49.641 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:50.134 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:50.134 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:50.688 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:50.689 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:50.689 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:51.184 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:51.184 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:51.736 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:51.737 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:51.737 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:52.234 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:52.234 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:52.785 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:52.790 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:52.790 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:53.288 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:53.288 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:53.817 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:53.817 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:53.841 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:54.335 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:54.335 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:54.898 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:54.899 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:54.899 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:55.404 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:55.404 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:55.941 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:55.947 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:55.947 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:56.444 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:56.444 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:56.971 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:56.972 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:56.972 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:57.469 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:57.470 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:58.015 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:58.016 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:58.016 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:58.511 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:58.511 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:59.074 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:46:59.078 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:59.078 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:46:59.576 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:46:59.576 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:00.098 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:00.099 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:00.122 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:00.620 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:00.621 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:01.171 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:01.172 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:01.173 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:01.663 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:01.664 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:02.221 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:02.223 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:02.225 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:02.719 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:02.719 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:02.840 [I] LimitsApplication: Delete limits task added
+2025-12-11 13:47:02.840 [I] LimitsApplication: Starting processing removing from HALDerateController with id: 1409 Ask processor RandomizedDelay
+2025-12-11 13:47:02.841 [I] LimitsApplication: Got confirmation from RandomizedDelay for limit request 1409
+2025-12-11 13:47:02.841 [I] LimitsApplication: Limits remove processing finished: source HALDerateController request id: 1409
+2025-12-11 13:47:02.841 [I] LimitsApplication: Delete limits task added
+2025-12-11 13:47:02.841 [I] LimitsApplication: Starting processing removing from HALDerateControllerPowerBoard with id: 1410 Ask processor RandomizedDelay
+2025-12-11 13:47:02.841 [I] LimitsApplication: Got confirmation from RandomizedDelay for limit request 1410
+2025-12-11 13:47:02.841 [I] LimitsApplication: Limits remove processing finished: source HALDerateControllerPowerBoard request id: 1410
+2025-12-11 13:47:02.842 [I] LimitsApplication: Delete limits task added
+2025-12-11 13:47:02.849 [I] LimitsApplication: Starting processing removing from HALDerateControllerMainBoard with id: 1411 Ask processor RandomizedDelay
+2025-12-11 13:47:02.849 [I] LimitsApplication: Got confirmation from RandomizedDelay for limit request 1411
+2025-12-11 13:47:02.850 [I] LimitsApplication: Limits remove processing finished: source HALDerateControllerMainBoard request id: 1411
+2025-12-11 13:47:02.850 [I] ChargerStatusProcessor: Charger phase configuration: 3Ph
+2025-12-11 13:47:02.850 [I] SinglePhaseConsumptionLimitation: Set phases supported: Three
+2025-12-11 13:47:02.851 [I] ChargerStatusProcessor: Charger phase configuration: 3Ph
+2025-12-11 13:47:02.851 [I] SinglePhaseConsumptionLimitation: Set phases supported: Three
+2025-12-11 13:47:03.273 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:03.274 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:03.274 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:03.768 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:03.769 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:04.307 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:04.308 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:04.331 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:04.813 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:04.814 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:05.338 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:05.338 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:05.358 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:05.841 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:05.841 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:06.349 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:06.350 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:06.412 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:06.901 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:06.901 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:07.468 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:07.468 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:07.469 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:07.963 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:07.963 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:08.494 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:08.495 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:08.497 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:08.994 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:08.994 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:09.504 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:09.505 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:09.563 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:10.012 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:10.013 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:10.513 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:10.514 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:10.613 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:11.024 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:11.024 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:11.535 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:11.535 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:11.644 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:12.041 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:12.041 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:12.543 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:12.543 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:12.686 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:13.053 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:13.054 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:13.564 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:13.565 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:13.735 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:14.075 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:14.075 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:14.586 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:14.586 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:14.777 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:15.097 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:15.097 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:15.606 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:15.607 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:15.838 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:16.114 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:16.114 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:16.624 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:16.624 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:16.890 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:17.134 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:17.134 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:17.641 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:17.641 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:17.936 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:18.147 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:18.147 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:18.657 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:18.657 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:18.995 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:19.166 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:19.166 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:19.674 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:19.674 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:20.038 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:20.185 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:20.186 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:20.697 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:20.698 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:21.090 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:21.207 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:21.208 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:21.717 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:21.717 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:22.138 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:22.227 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:22.227 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:22.734 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:22.734 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:23.175 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:23.242 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:23.242 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:23.748 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:23.749 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:24.237 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:24.255 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:24.255 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:24.761 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:24.761 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:25.284 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:25.285 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:25.285 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:25.783 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:25.784 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:26.345 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:26.346 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:26.346 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:26.850 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:26.851 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:27.373 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:27.374 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:27.374 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:27.873 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:27.873 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:28.428 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:28.428 [I] OutOfScheduleSetPointLogic: For connector 1 Target energy set to: 30240000
+2025-12-11 13:47:28.429 [I] OutOfScheduleSetPointLogic: Connector 1 in set point schedule: true in FollowEvTarget v2x mode: false in ev priority: true bpt: true has target energy: true
+2025-12-11 13:47:28.429 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:28.429 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:28.924 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:28.924 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:29.479 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:29.480 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:29.480 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:29.980 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:29.980 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:30.496 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:30.497 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:30.520 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:31.002 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:31.002 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:31.541 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:31.541 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:31.569 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:32.061 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:32.061 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:32.618 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:32.619 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:32.619 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:32.839 [I] LimitsApplication: Delete limits task added
+2025-12-11 13:47:32.839 [I] LimitsApplication: Starting processing removing from HALDerateController with id: 1412 Ask processor RandomizedDelay
+2025-12-11 13:47:32.839 [I] LimitsApplication: Got confirmation from RandomizedDelay for limit request 1412
+2025-12-11 13:47:32.839 [I] LimitsApplication: Limits remove processing finished: source HALDerateController request id: 1412
+2025-12-11 13:47:32.840 [I] LimitsApplication: Delete limits task added
+2025-12-11 13:47:32.840 [I] LimitsApplication: Starting processing removing from HALDerateControllerPowerBoard with id: 1413 Ask processor RandomizedDelay
+2025-12-11 13:47:32.840 [I] LimitsApplication: Got confirmation from RandomizedDelay for limit request 1413
+2025-12-11 13:47:32.840 [I] LimitsApplication: Limits remove processing finished: source HALDerateControllerPowerBoard request id: 1413
+2025-12-11 13:47:32.840 [I] LimitsApplication: Delete limits task added
+2025-12-11 13:47:32.840 [I] LimitsApplication: Starting processing removing from HALDerateControllerMainBoard with id: 1414 Ask processor RandomizedDelay
+2025-12-11 13:47:32.841 [I] LimitsApplication: Got confirmation from RandomizedDelay for limit request 1414
+2025-12-11 13:47:32.841 [I] LimitsApplication: Limits remove processing finished: source HALDerateControllerMainBoard request id: 1414
+2025-12-11 13:47:32.850 [I] ChargerStatusProcessor: Charger phase configuration: 3Ph
+2025-12-11 13:47:32.851 [I] SinglePhaseConsumptionLimitation: Set phases supported: Three
+2025-12-11 13:47:32.851 [I] ChargerStatusProcessor: Charger phase configuration: 3Ph
+2025-12-11 13:47:32.851 [I] SinglePhaseConsumptionLimitation: Set phases supported: Three
+2025-12-11 13:47:33.118 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:33.119 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:33.644 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:33.645 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:33.679 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:34.163 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:34.163 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:34.692 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:34.693 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:34.718 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:35.194 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:35.194 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:35.704 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:35.704 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:35.773 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:36.214 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:36.215 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:36.720 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:36.720 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )
+2025-12-11 13:47:36.810 [I] GridCodes: Setpoint is recalculated and published (reason: Meter Data ): { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }}
+2025-12-11 13:47:37.226 [I] OutOfScheduleSetPointLogic: Connector 1 is in setPoint schedule.
+2025-12-11 13:47:37.227 [I] GridCodes: Request to accept setpoint is ignored (no diff comparing to current: { Source: ocpp EvseID: 1, V2XMode: CentralSetpoint, { P: {power_W: -5400} }, { Q: {power_W: -2500} }} )

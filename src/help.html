@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RemoteBorne Manager – Help Documentation</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+/* ------------------------------------------------------
+   GLOBAL STYLES
+------------------------------------------------------ */
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    transition: background 0.3s, color 0.3s;
+}
+:root {
+    --bg: #f3f3f3;
+    --text: #222;
+    --header: #ffffff;
+    --primary: #0042a3;
+    --border: #ccc;
+}
+body.dark {
+    --bg: #191919;
+    --text: #e0e0e0;
+    --header: #222;
+    --primary: #7cb9ff;
+    --border: #333;
+}
+header {
+    background: var(--header);
+    padding: 20px;
+    text-align: center;
+    border-bottom: 2px solid var(--primary);
+}
+h1 {
+    margin: 0;
+    font-size: 2.2em;
+    color: var(--primary);
+}
+
+/* ------------------------------------------------------
+   CONTAINER
+------------------------------------------------------ */
+.container {
+    max-width: 1100px;
+    margin: auto;
+    padding: 20px;
+}
+
+/* ------------------------------------------------------
+   TABLE OF CONTENTS
+------------------------------------------------------ */
+#toc {
+    background: var(--header);
+    border: 1px solid var(--border);
+    padding: 15px;
+    margin-bottom: 25px;
+}
+#toc h2 {
+    margin-top: 0;
+    font-size: 1.4em;
+}
+#toc a {
+    display: block;
+    color: var(--primary);
+    text-decoration: none;
+    padding: 4px 0;
+}
+#toc a:hover {
+    text-decoration: underline;
+}
+
+/* ------------------------------------------------------
+   ACCORDION
+------------------------------------------------------ */
+.section {
+    border: 1px solid var(--border);
+    margin-bottom: 12px;
+    border-radius: 5px;
+    overflow: hidden;
+    background: var(--header);
+}
+.section summary {
+    padding: 15px;
+    font-size: 1.1em;
+    cursor: pointer;
+    background: var(--primary);
+    color: #fff;
+    font-weight: bold;
+}
+.section summary:hover {
+    background: #002f78;
+}
+.section div {
+    padding: 15px;
+    color: var(--text);
+    background: var(--header);
+}
+
+/* ------------------------------------------------------
+   DARK MODE TOGGLE
+------------------------------------------------------ */
+#toggleTheme {
+    position: fixed;
+    top: 15px;
+    right: 15px;
+    background: var(--primary);
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+#toggleTheme:hover {
+    background: #002f78;
+}
+
+/* ------------------------------------------------------
+   FOOTER
+------------------------------------------------------ */
+footer {
+    text-align: center;
+    padding: 30px;
+    font-size: 14px;
+    opacity: 0.6;
+}
+</style>
+
+<script>
+function toggleTheme() {
+    document.body.classList.toggle("dark");
+    localStorage.setItem("theme", document.body.classList.contains("dark") ? "dark" : "light");
+}
+window.onload = function() {
+    if (localStorage.getItem("theme") === "dark") {
+        document.body.classList.add("dark");
+    }
+};
+</script>
+
+</head>
+
+<body>
+
+<button id="toggleTheme" onclick="toggleTheme()">🌙 Theme</button>
+
+<header>
+    <h1>RemoteBorne Manager – Documentation</h1>
+    <p>User & Technical Guide</p>
+</header>
+
+<div class="container">
+
+<!-- ------------------------------------------------------
+     TABLE OF CONTENTS
+-------------------------------------------------------- -->
+<div id="toc">
+    <h2>Table of Contents</h2>
+    <a href="#f1">1. Overview</a>
+    <a href="#f2">2. Installation</a>
+    <a href="#f3">3. File Management</a>
+    <a href="#f4">4. Energy Manager</a>
+    <a href="#f5">5. SSH System</a>
+    <a href="#f6">6. Network Configuration</a>
+    <a href="#f7">7. Debug Tools</a>
+    <a href="#f8">8. Performance Tips</a>
+    <a href="#f9">9. Known Limitations</a>
+    <a href="#f10">10. Commands Reference</a>
+</div>
+
+<!-- ------------------------------------------------------
+     CONTENT SECTIONS (accordion)
+-------------------------------------------------------- -->
+
+<details class="section" id="f1" open>
+    <summary>1. Overview</summary>
+    <div>
+        RemoteBorne Manager is a desktop application to manage IOTECHA charging stations via SSH.
+        It provides:
+        <ul>
+            <li>Remote file access</li>
+            <li>Configuration editing</li>
+            <li>Energy Manager control</li>
+            <li>Service restart</li>
+            <li>Info & diagnostics</li>
+        </ul>
+    </div>
+</details>
+
+<details class="section" id="f2">
+    <summary>2. Installation</summary>
+    <div>
+        Requirements:
+        <ul>
+            <li>Windows 10+</li>
+            <li>Python 3.8+</li>
+            <li>plink.exe & pscp.exe in tools/</li>
+        </ul>
+        Installation:
+<pre>
+pip install ttkbootstrap
+pip install reportlab
+pip install pillow
+</pre>
+    </div>
+</details>
+
+<details class="section" id="f3">
+    <summary>3. File Management</summary>
+    <div>
+        Actions:
+        <ul>
+            <li>Download</li>
+            <li>Print as PDF</li>
+            <li>Edit & upload</li>
+            <li>Copy GridCodes</li>
+        </ul>
+    </div>
+</details>
+
+<details class="section" id="f4">
+    <summary>4. Energy Manager</summary>
+    <div>
+        Supports:
+        <ul>
+            <li>P / Q mode</li>
+            <li>CosPhi mode</li>
+            <li>Service restart</li>
+        </ul>
+        Commands are executed via:
+        <pre>/usr/local/bin/EnergyManagerTestingTool</pre>
+    </div>
+</details>
+
+<details class="section" id="f5">
+    <summary>5. SSH System</summary>
+    <div>
+        Features:
+        <ul>
+        <li>Automatic reconnection</li>
+        <li>Dynamic target update</li>
+        <li>Threaded execution</li>
+        <li>SCP file transfer</li>
+        </ul>
+        Reconnect strategy:
+        <pre>1s, 3s, 6s, 10s…</pre>
+    </div>
+</details>
+
+<details class="section" id="f6">
+    <summary>6. Network Configuration</summary>
+    <div>
+        RemoteBorne Manager stores settings in:
+        <pre>config/config.ini</pre>
+        Changing host forces auto reconnect.
+    </div>
+</details>
+
+<details class="section" id="f7">
+    <summary>7. Debug Tools</summary>
+    <div>
+        <ul>
+            <li>Live logs window</li>
+            <li>Save logs</li>
+            <li>Clear logs</li>
+        </ul>
+    </div>
+</details>
+
+<details class="section" id="f8">
+    <summary>8. Performance Tips</summary>
+    <div>
+        <ul>
+            <li>Prefer LAN over Wi-Fi</li>
+            <li>Local SSD improves SCP speed</li>
+            <li>Disable antivirus for folder</li>
+        </ul>
+    </div>
+</details>
+
+<details class="section" id="f9">
+    <summary>9. Known Limitations</summary>
+    <div>
+        <ul>
+            <li>No SSH key authentication</li>
+            <li>No multi-device management</li>
+            <li>No realtime charts</li>
+        </ul>
+    </div>
+</details>
+
+<details class="section" id="f10">
+    <summary>10. Commands Reference</summary>
+    <div>
+        Energy commands:
+<pre>
+--power <P>
+--reactive-power <Q>
+--cosphi
+</pre>
+        Compute CosPhi:
+<pre>
+Q = |P| * tan(acos(cosphi))
+</pre>
+    </div>
+</details>
+
+</div>
+
+<footer>
+    RemoteBorne Manager © 2023-2025 - AVL
+</footer>
+
+</body>
+</html>

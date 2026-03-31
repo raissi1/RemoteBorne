@@ -1,0 +1,264 @@
+# ssh_manager.py — gestion SSH pour RemoteBorneManager
+import os
+import threading
+import subprocess
+import time
+from typing import Callable, Optional
+
+from plink_backend import PlinkBackend
+
+CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+
+
+class SSHManager:
+    def __init__(
+        self,
+        host: str,
+        user: str,
+        password: str,
+        port: int = 22,
+        timeout: int = 5,
+    ):
+        self.host = host
+        self.user = user
+        self.password = password
+        self.port = port
+        self.timeout = timeout
+
+        self.backend = PlinkBackend(host, user, password, port)
+
+        self.connected = False
+        self._ui_callback: Optional[Callable[[str, object], None]] = None
+        self._log_callback: Optional[Callable[[str], None]] = None
+        self._stop = False
+
+        # paramètres de reconnexion
+        self.max_retries = 3
+        self.retry_base_delay = 2.0
+
+    # ------------------------------------------------------------------ #
+    #  Callbacks
+    # ------------------------------------------------------------------ #
+    def set_ui_callback(self, cb: Callable[[str, object], None]):
+        self._ui_callback = cb
+
+    def set_log_callback(self, cb: Callable[[str], None]):
+        self._log_callback = cb
+
+    def _emit_ui(self, event_type: str, data=None):
+        if self._ui_callback:
+            try:
+                self._ui_callback(event_type, data)
+            except Exception:
+                pass
+
+    def _log(self, msg: str):
+        if self._log_callback:
+            try:
+                self._log_callback(msg)
+                return
+            except Exception:
+                pass
+        # fallback console si pas de callback
+        print(msg)
+
+    # ------------------------------------------------------------------ #
+    #  Auto accept host key
+    # ------------------------------------------------------------------ #
+    def _auto_accept_hostkey(self):
+        """
+        Accepte automatiquement la host key de la borne en simulant un 'y'
+        sur la première connexion plink, AVEC mot de passe, SANS -batch.
+
+        -> évite "The host key is not cached..." + "Cannot confirm host key in batch mode"
+        """
+        try:
+            cmd = [
+                self.backend.plink_path,
+                "-ssh",
+                "-P", str(self.port),
+                "-l", self.user,
+                "-pw", self.password,
+                self.host,
+                "exit",
+            ]
+            self._log(f"[SSH] Auto-accept host key for {self.host}...")
+
+            kwargs = {}
+            if os.name == "nt":
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                kwargs["startupinfo"] = startupinfo
+                kwargs["creationflags"] = CREATE_NO_WINDOW
+
+            subprocess.run(
+                cmd,
+                input="y\n",  # on répond 'y' au prompt de host key
+                text=True,
+                capture_output=True,
+                timeout=self.timeout * 2,
+                **kwargs,
+            )
+            self._log("[SSH] Host key added/cached.")
+        except Exception as e:
+            # On ne bloque pas sur ça, on log seulement
+            self._log(f"[SSH] Auto-accept host key failed (ignored): {e}")
+
+    # ------------------------------------------------------------------ #
+    #  Démarrage explicite
+    # ------------------------------------------------------------------ #
+    def start(self):
+        """Démarre la connexion initiale dans un thread."""
+        self._log("[SSH] Manager started.")
+        t = threading.Thread(target=self._initial_connect, daemon=True)
+        t.start()
+
+    # ------------------------------------------------------------------ #
+    #  Connexion initiale
+    # ------------------------------------------------------------------ #
+    def _initial_connect(self):
+        if self._stop:
+            return
+
+        self._emit_ui("reconnecting", None)
+        self._log(f"[SSH] Connecting to {self.host}:{self.port}...")
+
+        # 1) s'assurer que la host key est dans le cache PuTTY
+        self._auto_accept_hostkey()
+
+        # 2) Connexion en batch avec mot de passe
+        ok = self._try_connect_once()
+        if ok:
+            self._emit_ui("connected", None)
+            self._log("[SSH] Initial connect SUCCESS.")
+            return
+
+        self._emit_ui("disconnected", None)
+        self._log(f"[SSH] Initial connect FAILED: Timeout after {self.timeout} seconds")
+
+        # On laisse la boucle de reconnexion gérer la suite
+        self.force_reconnect()
+
+    def _try_connect_once(self) -> bool:
+        rc, out, err = self.backend.exec("echo connected", timeout=self.timeout)
+        if rc == 0:
+            self.connected = True
+            return True
+        else:
+            self.connected = False
+            msg = (err or out or "unknown error").strip()
+            self._log(f"[SSH] Connect error: {msg}")
+            return False
+
+    # ------------------------------------------------------------------ #
+    #  Boucle de reconnexion
+    # ------------------------------------------------------------------ #
+    def _try_reconnect(self):
+        if self._stop:
+            return
+
+        self._emit_ui("reconnecting", None)
+        self._log("[SSH] Reconnecting...")
+
+        for attempt in range(1, self.max_retries + 1):
+            if self._stop:
+                return
+
+            self._log(f"[SSH] Reconnect attempt {attempt}/{self.max_retries}...")
+            ok = self._try_connect_once()
+            if ok:
+                self._emit_ui("reconnected", None)
+                self._log("[SSH] Reconnect SUCCESS.")
+                return
+
+            delay = min(self.retry_base_delay * attempt, 10)
+            self._log(
+                f"[SSH] Reconnect attempt {attempt} failed, retry in {delay} s"
+            )
+            time.sleep(delay)
+
+        self.connected = False
+        self._emit_ui("disconnected", None)
+        self._log("[SSH] Unable to reconnect after max attempts.")
+
+    def force_reconnect(self):
+        """API publique : relancer une reconnexion dans un thread."""
+        t = threading.Thread(target=self._try_reconnect, daemon=True)
+        t.start()
+
+    # ------------------------------------------------------------------ #
+    #  Mise à jour de la cible (changement IP dans Network Config)
+    # ------------------------------------------------------------------ #
+    def update_target(self, host: str, user: str, password: str, port: int = 22):
+        """
+        Met à jour IP / user / password / port à chaud, recrée le backend
+        et force une reconnexion.
+        """
+        self.host = host
+        self.user = user
+        self.password = password
+        self.port = port
+        self.backend = PlinkBackend(host, user, password, port)
+        self.connected = False
+        self._log(f"[SSH] Target updated to {host}:{port} ({user})")
+        self.force_reconnect()
+
+    # ------------------------------------------------------------------ #
+    #  Exécution de commande
+    # ------------------------------------------------------------------ #
+    def execute(
+        self,
+        cmd: str,
+        callback: Optional[Callable[[dict], None]] = None,
+        auto_retry: bool = True,
+    ):
+        """
+        Exécute une commande SSH dans un thread séparé.
+
+        callback reçoit : {"success": bool, "out": str, "err": str}
+        """
+
+        def worker():
+            if not self.connected and auto_retry:
+                self._try_reconnect()
+
+            rc, out, err = self.backend.exec(cmd, timeout=self.timeout)
+            success = (rc == 0)
+            res = {"success": success, "out": out, "err": err}
+
+            if not success:
+                self._log(f"[SSH CMD ERROR] {err or out or 'unknown error'}")
+
+            if callback:
+                try:
+                    callback(res)
+                except Exception:
+                    pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    # ------------------------------------------------------------------ #
+    #  SCP
+    # ------------------------------------------------------------------ #
+    def scp_get(self, remote_path: str, local_path: str) -> dict:
+        success, out, err = self.backend.scp_get(
+            remote_path, local_path, timeout=self.timeout
+        )
+        if not success:
+            self._log(f"[SCP GET ERROR] {err or out or 'unknown error'}")
+        return {"success": success, "out": out, "err": err}
+
+    def scp_put(self, local_path: str, remote_path: str) -> dict:
+        success, out, err = self.backend.scp_put(
+            local_path, remote_path, timeout=self.timeout
+        )
+        if not success:
+            self._log(f"[SCP PUT ERROR] {err or out or 'unknown error'}")
+        return {"success": success, "out": out, "err": err}
+
+    # ------------------------------------------------------------------ #
+    #  Fermeture
+    # ------------------------------------------------------------------ #
+    def close(self):
+        self._stop = True
+        self._log("[SSH] Manager closed.")
