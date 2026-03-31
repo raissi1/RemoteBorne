@@ -35,6 +35,8 @@ class SSHManager:
         # paramètres de reconnexion
         self.max_retries = 3
         self.retry_base_delay = 2.0
+        self._reconnect_lock = threading.Lock()
+        self._reconnect_in_progress = False
 
     # ------------------------------------------------------------------ #
     #  Callbacks
@@ -156,35 +158,52 @@ class SSHManager:
     def _try_reconnect(self):
         if self._stop:
             return
-
-        self._emit_ui("reconnecting", None)
-        self._log("[SSH] Reconnecting...")
-
-        for attempt in range(1, self.max_retries + 1):
-            if self._stop:
+        with self._reconnect_lock:
+            if self._reconnect_in_progress:
+                self._log("[SSH] Reconnect already in progress, skipping duplicate request.")
                 return
+            self._reconnect_in_progress = True
 
-            self._log(f"[SSH] Reconnect attempt {attempt}/{self.max_retries}...")
-            ok = self._try_connect_once()
-            if ok:
-                self._emit_ui("reconnected", None)
-                self._log("[SSH] Reconnect SUCCESS.")
-                return
+        try:
+            self._emit_ui("reconnecting", None)
+            self._log("[SSH] Reconnecting...")
 
-            delay = min(self.retry_base_delay * attempt, 10)
-            self._log(
-                f"[SSH] Reconnect attempt {attempt} failed, retry in {delay} s"
-            )
-            time.sleep(delay)
+            for attempt in range(1, self.max_retries + 1):
+                if self._stop:
+                    return
 
-        self.connected = False
-        self._emit_ui("disconnected", None)
-        self._log("[SSH] Unable to reconnect after max attempts.")
+                self._log(f"[SSH] Reconnect attempt {attempt}/{self.max_retries}...")
+                ok = self._try_connect_once()
+                if ok:
+                    self._emit_ui("reconnected", None)
+                    self._log("[SSH] Reconnect SUCCESS.")
+                    return
+
+                delay = min(self.retry_base_delay * attempt, 10)
+                self._log(
+                    f"[SSH] Reconnect attempt {attempt} failed, retry in {delay} s"
+                )
+                time.sleep(delay)
+
+            self.connected = False
+            self._emit_ui("disconnected", None)
+            self._log("[SSH] Unable to reconnect after max attempts.")
+        finally:
+            with self._reconnect_lock:
+                self._reconnect_in_progress = False
 
     def force_reconnect(self):
         """API publique : relancer une reconnexion dans un thread."""
         t = threading.Thread(target=self._try_reconnect, daemon=True)
         t.start()
+
+    def restart(self):
+        """
+        Réactive le manager après close() puis relance une reconnexion.
+        Utile après changement de config réseau en cours d'exécution.
+        """
+        self._stop = False
+        self.force_reconnect()
 
     # ------------------------------------------------------------------ #
     #  Mise à jour de la cible (changement IP dans Network Config)
