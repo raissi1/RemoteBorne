@@ -29,6 +29,7 @@ import threading
 import configparser
 import posixpath
 import re
+import textwrap
 
 import tkinter as tk
 from tkinter import messagebox, filedialog
@@ -45,6 +46,8 @@ from network_config import open_network_config
 from open_help import open_help
 import energy_manager
 import debug_logs
+
+APP_VERSION = "2026.03.31.1"
 
 try:
     from reportlab.lib.pagesizes import A4
@@ -175,6 +178,7 @@ class RemoteBorneApp:
         # ---------- ETAT ----------
         self.connected = False
         self._alive_stop = False
+        self._manual_disconnect_mode = False
         self.current_theme = "flatly"
 
         # ---------- ROOT / STYLE ----------
@@ -265,9 +269,8 @@ class RemoteBorneApp:
         self._update_controls_state()
 
 
+        self.log(f"[INFO] RemoteBorne version: {APP_VERSION} ({os.path.basename(__file__)})")
         self.log("[INFO] Application started. Waiting for SSH events...")
-        # Connexion initiale
-        self.force_reconnect()
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
 
@@ -855,13 +858,15 @@ class RemoteBorneApp:
     # SSH EVENTS & CONNECT/DISCONNECT
     # ==================================================================
     def force_reconnect(self):
+        self._manual_disconnect_mode = False
         self.log("[SSH] Reconnecting...")
         try:
-            self.ssh.force_reconnect()
+            self.ssh.restart()
         except Exception as e:
             self.log(f"[SSH ERROR] {e}")
 
     def _manual_disconnect(self):
+        self._manual_disconnect_mode = True
         try:
             self.ssh.close()
         except Exception:
@@ -869,7 +874,17 @@ class RemoteBorneApp:
         self.connected = False
         self.status_var.set("Disconnected")
         self._set_led(False)
+        self._clear_file_list_ui()
         self._update_controls_state()
+
+    def _clear_file_list_ui(self):
+        if self.file_list is None:
+            return
+        try:
+            self.file_list.delete(0, "end")
+            self.file_list.selection_clear(0, "end")
+        except Exception:
+            pass
 
     def _join_remote(self, *parts):
         cleaned = []
@@ -894,13 +909,22 @@ class RemoteBorneApp:
         self._alive_thread_started = True
 
         def worker():
+            last_reconnect_try = 0.0
             while not self._alive_stop:
                 time.sleep(10)
                 # Si l’app est fermée, on sort
                 if not hasattr(self, "ssh"):
                     break
-                # Si pas connecté → on ne fait rien
+                # Si pas connecté -> on tente une reconnexion périodique
                 if not self.ssh.connected:
+                    if self._manual_disconnect_mode:
+                        continue
+                    now = time.time()
+                    # évite de spammer plusieurs tentatives/logs toutes les 10s
+                    if now - last_reconnect_try >= 30:
+                        self.log("[ALIVE] Disconnected, attempting reconnect.")
+                        self.ssh.restart()
+                        last_reconnect_try = now
                     continue
 
                 def cb(res):
@@ -927,6 +951,7 @@ class RemoteBorneApp:
 
         def _handle(ev_type, ev_data):
             if ev_type == "connected":
+                self._manual_disconnect_mode = False
                 self.connected = True
                 self.status_var.set("Connected")
                 self.log("[SSH] Connected")
@@ -943,6 +968,7 @@ class RemoteBorneApp:
                 self.status_var.set("Disconnected")
                 self.log("[SSH] Disconnected")
                 self._set_led(False)
+                self._clear_file_list_ui()
                 self._update_controls_state()
 
             elif ev_type == "reconnecting":
@@ -953,6 +979,7 @@ class RemoteBorneApp:
                 self._update_controls_state()
 
             elif ev_type == "reconnected":
+                self._manual_disconnect_mode = False
                 self.connected = True
                 self.status_var.set("Connected")
                 self.log("[SSH] Reconnected")
@@ -1389,11 +1416,18 @@ class RemoteBorneApp:
             y = height - 40
 
             for line in content.splitlines():
-                c.drawString(x_margin, y, line[:120])
-                y -= 14
-                if y < 40:
-                    c.showPage()
-                    y = height - 40
+                wrapped_lines = textwrap.wrap(
+                    line,
+                    width=115,
+                    replace_whitespace=False,
+                    drop_whitespace=False,
+                ) or [""]
+                for wrapped in wrapped_lines:
+                    c.drawString(x_margin, y, wrapped)
+                    y -= 14
+                    if y < 40:
+                        c.showPage()
+                        y = height - 40
 
             c.save()
             self.log(f"[PRINT] PDF saved to {pdf_path}")
@@ -1451,10 +1485,76 @@ class RemoteBorneApp:
         except Exception as e:
             self.log(f"[EDIT ERROR] {e}")
 
+        status_bar = ttk.Label(win, text="")
+        status_bar.pack(fill="x", side="bottom", padx=6, pady=(0, 4))
+
+        def clear_find_highlight():
+            txt.tag_remove("find_match", "1.0", "end")
+            status_bar.configure(text="")
+
+        def open_find_dialog():
+            if hasattr(self, "_find_dialog") and self._find_dialog and self._find_dialog.winfo_exists():
+                self._find_dialog.lift()
+                self._find_dialog.focus_force()
+                return
+
+            dialog = tk.Toplevel(win)
+            self._find_dialog = dialog
+            dialog.title("Find (Ctrl+F)")
+            dialog.transient(win)
+            dialog.grab_set()
+            dialog.resizable(False, False)
+            dialog.geometry("+300+300")
+            dialog.protocol("WM_DELETE_WINDOW", lambda: (setattr(self, "_find_dialog", None), dialog.destroy()))
+
+            ttk.Label(dialog, text="Search text:").grid(row=0, column=0, padx=8, pady=8, sticky="w")
+            q_var = tk.StringVar()
+            q_entry = ttk.Entry(dialog, textvariable=q_var, width=35)
+            q_entry.grid(row=0, column=1, padx=8, pady=8)
+            q_entry.focus_set()
+
+            txt.tag_configure("find_match", background="#ffe082", foreground="#000000")
+
+            def run_find(*_):
+                needle = q_var.get()
+                txt.tag_remove("find_match", "1.0", "end")
+                if not needle:
+                    status_bar.configure(text="Find: empty query")
+                    return
+
+                count = 0
+                start = "1.0"
+                while True:
+                    idx = txt.search(needle, start, stopindex="end", nocase=True)
+                    if not idx:
+                        break
+                    end = f"{idx}+{len(needle)}c"
+                    txt.tag_add("find_match", idx, end)
+                    start = end
+                    count += 1
+
+                if count:
+                    first = txt.tag_ranges("find_match")[0]
+                    txt.see(first)
+                    txt.mark_set("insert", first)
+                    status_bar.configure(text=f"Find: {count} match(es)")
+                else:
+                    status_bar.configure(text="Find: no match")
+
+            btns = ttk.Frame(dialog)
+            btns.grid(row=1, column=0, columnspan=2, sticky="e", padx=8, pady=(0, 8))
+            ttk.Button(btns, text="Find", command=run_find).pack(side="right", padx=4)
+            ttk.Button(
+                btns,
+                text="Close",
+                command=lambda: (setattr(self, "_find_dialog", None), dialog.destroy()),
+            ).pack(side="right")
+            q_entry.bind("<Return>", run_find)
+
         def save_and_upload():
             content = txt.get("1.0", "end-1c")
             try:
-                with open(tmp_local, "w", encoding="utf-8") as f:
+                with open(tmp_local, "w", encoding="utf-8", newline="\n") as f:
                     f.write(content)
             except Exception as e:
                 self._popup_error("Edit", f"Local save error:\n{e}")
@@ -1487,12 +1587,17 @@ class RemoteBorneApp:
 
         btn_bar = ttk.Frame(win)
         btn_bar.pack(fill="x")
+        ttk.Button(btn_bar, text="Find", command=open_find_dialog).pack(
+            side="left", padx=5, pady=5
+        )
         ttk.Button(btn_bar, text="Save", command=save_and_upload).pack(
             side="right", padx=5, pady=5
         )
         ttk.Button(
             btn_bar, text="Close", command=win.destroy, style="Danger.TButton"
         ).pack(side="right", padx=5, pady=5)
+        txt.bind("<Control-f>", lambda e: (open_find_dialog(), "break"))
+        txt.bind("<Escape>", lambda e: (clear_find_highlight(), "break"))
 
     # ==================================================================
     # ENERGY MANAGER – P/Q (ULTIMATE)
@@ -1770,11 +1875,24 @@ class RemoteBorneApp:
                 if self.user_label is not None:
                     self.user_label.configure(text=f"User: {self.user or '-'}")
 
-                # Mise à jour de la cible SSH si supportée
-                try:
-                    self.ssh.update_target(self.host, self.user, self.password, self.port)
-                except Exception:
-                    pass
+                if self.connected:
+                    try:
+                        self.ssh.close()
+                    except Exception:
+                        pass
+                    self.connected = False
+                    self._set_led(False)
+                    self.status_var.set("Reconnecting…")
+                    self._update_controls_state()
+                # Mise à jour de la cible SSH puis reconnexion unique
+                self.ssh.update_target(
+                    self.host,
+                    self.user,
+                    self.password,
+                    self.port,
+                    auto_reconnect=False,
+                )
+                self.ssh.restart()
 
                 self.log("[NETWORK] config.ini reloaded.")
                 self._popup_info(
