@@ -1901,7 +1901,8 @@ class RemoteBorneApp:
                     self.port,
                     auto_reconnect=False,
                 )
-                self.ssh.restart()
+                self._manual_disconnect_mode = False
+                self.force_reconnect()
 
                 self.log("[NETWORK] config.ini reloaded.")
                 self._popup_info(
