@@ -256,6 +256,14 @@ class SSHManager:
         self._stop = False
         self.force_reconnect()
 
+    def restart(self):
+        """
+        Réactive le manager après close() puis relance une reconnexion.
+        Utile après changement de config réseau en cours d'exécution.
+        """
+        self._stop = False
+        self.force_reconnect()
+
     # ------------------------------------------------------------------ #
     #  Mise à jour de la cible (changement IP dans Network Config)
     # ------------------------------------------------------------------ #
