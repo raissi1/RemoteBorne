@@ -178,6 +178,7 @@ class RemoteBorneApp:
         # ---------- ETAT ----------
         self.connected = False
         self._alive_stop = False
+        self._manual_disconnect_mode = False
         self.current_theme = "flatly"
 
         # ---------- ROOT / STYLE ----------
@@ -857,6 +858,7 @@ class RemoteBorneApp:
     # SSH EVENTS & CONNECT/DISCONNECT
     # ==================================================================
     def force_reconnect(self):
+        self._manual_disconnect_mode = False
         self.log("[SSH] Reconnecting...")
         try:
             self.ssh.restart()
@@ -864,6 +866,7 @@ class RemoteBorneApp:
             self.log(f"[SSH ERROR] {e}")
 
     def _manual_disconnect(self):
+        self._manual_disconnect_mode = True
         try:
             self.ssh.close()
         except Exception:
@@ -871,7 +874,17 @@ class RemoteBorneApp:
         self.connected = False
         self.status_var.set("Disconnected")
         self._set_led(False)
+        self._clear_file_list_ui()
         self._update_controls_state()
+
+    def _clear_file_list_ui(self):
+        if self.file_list is None:
+            return
+        try:
+            self.file_list.delete(0, "end")
+            self.file_list.selection_clear(0, "end")
+        except Exception:
+            pass
 
     def _join_remote(self, *parts):
         cleaned = []
@@ -904,6 +917,8 @@ class RemoteBorneApp:
                     break
                 # Si pas connecté -> on tente une reconnexion périodique
                 if not self.ssh.connected:
+                    if self._manual_disconnect_mode:
+                        continue
                     now = time.time()
                     # évite de spammer plusieurs tentatives/logs toutes les 10s
                     if now - last_reconnect_try >= 30:
@@ -936,6 +951,7 @@ class RemoteBorneApp:
 
         def _handle(ev_type, ev_data):
             if ev_type == "connected":
+                self._manual_disconnect_mode = False
                 self.connected = True
                 self.status_var.set("Connected")
                 self.log("[SSH] Connected")
@@ -952,6 +968,7 @@ class RemoteBorneApp:
                 self.status_var.set("Disconnected")
                 self.log("[SSH] Disconnected")
                 self._set_led(False)
+                self._clear_file_list_ui()
                 self._update_controls_state()
 
             elif ev_type == "reconnecting":
@@ -962,6 +979,7 @@ class RemoteBorneApp:
                 self._update_controls_state()
 
             elif ev_type == "reconnected":
+                self._manual_disconnect_mode = False
                 self.connected = True
                 self.status_var.set("Connected")
                 self.log("[SSH] Reconnected")
