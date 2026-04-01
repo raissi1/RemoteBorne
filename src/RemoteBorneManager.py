@@ -52,6 +52,7 @@ APP_VERSION = "2026.03.31.1"
 try:
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas as pdf_canvas
+    from reportlab.pdfbase import pdfmetrics
 
     HAVE_REPORTLAB = True
 except Exception:
@@ -1414,19 +1415,57 @@ class RemoteBorneApp:
             width, height = A4
             x_margin = 40
             y = height - 40
+            font_name = "Courier"
+            font_size = 9
+            max_text_width = width - (x_margin * 2)
+            c.setFont(font_name, font_size)
+
+            def _wrap_line_for_pdf(raw_line: str):
+                expanded = raw_line.expandtabs(4)
+                if expanded == "":
+                    return [""]
+
+                wrapped = []
+                current = ""
+                for word in expanded.split(" "):
+                    candidate = word if not current else f"{current} {word}"
+                    if (
+                        pdfmetrics.stringWidth(candidate, font_name, font_size)
+                        <= max_text_width
+                    ):
+                        current = candidate
+                        continue
+
+                    if current:
+                        wrapped.append(current)
+                        current = ""
+
+                    # mot très long sans espace: coupe au caractère
+                    chunk = ""
+                    for ch in word:
+                        cnd = chunk + ch
+                        if (
+                            pdfmetrics.stringWidth(cnd, font_name, font_size)
+                            <= max_text_width
+                        ):
+                            chunk = cnd
+                        else:
+                            if chunk:
+                                wrapped.append(chunk)
+                            chunk = ch
+                    current = chunk
+
+                wrapped.append(current)
+                return wrapped
 
             for line in content.splitlines():
-                wrapped_lines = textwrap.wrap(
-                    line,
-                    width=115,
-                    replace_whitespace=False,
-                    drop_whitespace=False,
-                ) or [""]
+                wrapped_lines = _wrap_line_for_pdf(line)
                 for wrapped in wrapped_lines:
                     c.drawString(x_margin, y, wrapped)
-                    y -= 14
+                    y -= 12
                     if y < 40:
                         c.showPage()
+                        c.setFont(font_name, font_size)
                         y = height - 40
 
             c.save()
