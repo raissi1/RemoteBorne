@@ -1564,6 +1564,8 @@ class RemoteBorneApp:
 
         def save_and_upload():
             content = txt.get("1.0", "end-1c")
+            # Normalise explicitement en LF pour éviter les ^M sous vi/MobaXterm
+            content = content.replace("\r\n", "\n").replace("\r", "\n")
             try:
                 with open(tmp_local, "w", encoding="utf-8", newline="\n") as f:
                     f.write(content)
