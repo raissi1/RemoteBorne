@@ -29,6 +29,7 @@ import threading
 import configparser
 import posixpath
 import re
+import textwrap
 
 import tkinter as tk
 from tkinter import messagebox, filedialog
