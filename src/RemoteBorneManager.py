@@ -1776,8 +1776,10 @@ class RemoteBorneApp:
             )
             return
 
-        # Calcul Q comme avant
+        # Calcul Q conservé pour information opérateur
         q_val = int(round(abs(active_val) * math.tan(math.acos(cosphi_val))))
+        cosphi_pct = int(round(cosphi_val * 100))
+        active_int = int(round(active_val))
 
         self.log("CosPhi calculation:")
         self.log(f"  Active = {active_val} W")
@@ -1787,14 +1789,16 @@ class RemoteBorneApp:
         )
         self.log(
             f"Sending CosPhi command: Active={active_val} W, "
-            f"CosPhi={cosphi_val}, Reactive={q_val} var"
+            f"CosPhi={cosphi_val} ({cosphi_pct}%), Reactive={q_val} var"
         )
 
         remote_cmd = (
             "cd /var/aux/EnergyManager && "
             "export LD_LIBRARY_PATH=/usr/local/lib && "
+            f"/usr/local/bin/EnergyManagerTestingTool --grid-option "
+            f"\"SetpointCosPhi_Pct={cosphi_pct}\" && "
             f"/usr/local/bin/EnergyManagerTestingTool -S -s ocpp -a "
-            f"--power {int(round(active_val))} --reactive-power {q_val} "
+            f"--power {active_int} "
             "-m CentralSetpoint"
         )
 
