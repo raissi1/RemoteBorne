@@ -2043,7 +2043,17 @@ class RemoteBorneApp:
 def start_app():
     cfg = load_config()
     app = RemoteBorneApp(cfg)
-    app.root.mainloop()
+    try:
+        app.root.mainloop()
+    except KeyboardInterrupt:
+        print("[INFO] KeyboardInterrupt received, closing application...")
+        try:
+            app.on_exit()
+        except Exception:
+            try:
+                app.root.destroy()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
