@@ -1470,20 +1470,31 @@ class RemoteBorneApp:
         # ----- Fenêtre d’édition -----
         win = tk.Toplevel(self.root)
         win.title(f"Edit: {remote_path}")
-        win.geometry("900x600")
+        win.geometry("960x680")
+        win.minsize(820, 560)
 
-        txt = tk.Text(win, wrap="none")
-        txt.pack(fill="both", expand=True)
+        editor_frame = ttk.Frame(win)
+        editor_frame.pack(fill="both", expand=True)
+        editor_frame.grid_rowconfigure(0, weight=1)
+        editor_frame.grid_columnconfigure(0, weight=1)
 
-        vs = ttk.Scrollbar(win, orient="vertical", command=txt.yview)
-        vs.pack(side="right", fill="y")
-        txt.configure(yscrollcommand=vs.set)
+        txt = tk.Text(editor_frame, wrap="none")
+        txt.grid(row=0, column=0, sticky="nsew")
+
+        vs = ttk.Scrollbar(editor_frame, orient="vertical", command=txt.yview)
+        vs.grid(row=0, column=1, sticky="ns")
+        hs = ttk.Scrollbar(editor_frame, orient="horizontal", command=txt.xview)
+        hs.grid(row=1, column=0, sticky="ew")
+        txt.configure(yscrollcommand=vs.set, xscrollcommand=hs.set)
 
         try:
             with open(tmp_local, "r", encoding="utf-8", errors="ignore") as f:
                 txt.insert("1.0", f.read())
         except Exception as e:
             self.log(f"[EDIT ERROR] {e}")
+
+        btn_bar = ttk.Frame(win)
+        btn_bar.pack(fill="x", side="bottom")
 
         status_bar = ttk.Label(win, text="")
         status_bar.pack(fill="x", side="bottom", padx=6, pady=(0, 4))
@@ -1585,8 +1596,6 @@ class RemoteBorneApp:
             except Exception:
                 pass
 
-        btn_bar = ttk.Frame(win)
-        btn_bar.pack(fill="x")
         ttk.Button(btn_bar, text="Find", command=open_find_dialog).pack(
             side="left", padx=5, pady=5
         )
