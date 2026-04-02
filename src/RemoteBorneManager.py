@@ -1817,14 +1817,18 @@ class RemoteBorneApp:
             f"CosPhi={cosphi_val} ({cosphi_pct}%), Reactive={q_val} var"
         )
 
+        grid_opt_cmd = (
+            f"/usr/local/bin/EnergyManagerTestingTool --grid-option "
+            f"\"SetpointCosPhi_Pct={cosphi_pct}\""
+        )
+        setpoint_cmd = (
+            f"/usr/local/bin/EnergyManagerTestingTool -S -s ocpp -a "
+            f"--power {active_int} -m CentralSetpoint"
+        )
         remote_cmd = (
             "cd /var/aux/EnergyManager && "
             "export LD_LIBRARY_PATH=/usr/local/lib && "
-            f"/usr/local/bin/EnergyManagerTestingTool --grid-option "
-            f"\"SetpointCosPhi_Pct={cosphi_pct}\" && "
-            f"/usr/local/bin/EnergyManagerTestingTool -S -s ocpp -a "
-            f"--power {active_int} "
-            "-m CentralSetpoint"
+            f"({grid_opt_cmd} && {setpoint_cmd}) >/dev/null 2>&1 &"
         )
 
         def cb(res):
