@@ -341,8 +341,10 @@ class EnergyManagerWindow:
         cmd = (
             "cd /var/aux/EnergyManager && "
             "export LD_LIBRARY_PATH=/usr/local/lib && "
+            f"(/usr/local/bin/EnergyManagerTestingTool --grid-option "
+            f"\"SetpointCosPhi_Pct={int(round(cosphi_val * 100))}\" && "
             f"/usr/local/bin/EnergyManagerTestingTool -S -s ocpp -a "
-            f"--power {p_val} --reactive-power {q_val} -m CentralSetpoint"
+            f"--power {p_val} -m CentralSetpoint) >/dev/null 2>&1 &"
         )
         self.execute_energy_cmd("CosPhi", cmd)
 
