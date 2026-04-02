@@ -1416,10 +1416,13 @@ class RemoteBorneApp:
                 pass
             return
 
+        remote_name = posixpath.basename(remote_path)
+        default_pdf_name = f"{os.path.splitext(remote_name)[0]}.pdf"
+
         pdf_path = filedialog.asksaveasfilename(
             title="Save PDF as",
             defaultextension=".pdf",
-            initialfile="GridCodes.pdf",
+            initialfile=default_pdf_name,
             initialdir=EXPORTS_DIR,
         )
         if not pdf_path:
