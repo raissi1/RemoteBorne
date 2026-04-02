@@ -911,6 +911,7 @@ class RemoteBorneApp:
 
         def worker():
             last_reconnect_try = 0.0
+            heartbeat_failures = 0
             while not self._alive_stop:
                 time.sleep(10)
                 # Si l’app est fermée, on sort
@@ -918,6 +919,7 @@ class RemoteBorneApp:
                     break
                 # Si pas connecté -> on tente une reconnexion périodique
                 if not self.ssh.connected:
+                    heartbeat_failures = 0
                     if self._manual_disconnect_mode:
                         continue
                     now = time.time()
@@ -929,9 +931,24 @@ class RemoteBorneApp:
                     continue
 
                 def cb(res):
+                    nonlocal heartbeat_failures, last_reconnect_try
                     if not res["success"]:
-                        self.log("[ALIVE] Heartbeat failed, forcing reconnect.")
-                        self.ssh.force_reconnect()
+                        heartbeat_failures += 1
+                        self.log(
+                            f"[ALIVE] Heartbeat failed ({heartbeat_failures}/3)."
+                        )
+                        if heartbeat_failures < 3:
+                            return
+                        now = time.time()
+                        if now - last_reconnect_try >= 10:
+                            self.log(
+                                "[ALIVE] 3 heartbeat failures in a row, forcing reconnect."
+                            )
+                            self.ssh.force_reconnect()
+                            last_reconnect_try = now
+                        heartbeat_failures = 0
+                    else:
+                        heartbeat_failures = 0
 
                 # IMPORTANT : pas d’auto_retry ici, sinon double gestion
                 self.ssh.execute("echo alive", callback=cb, auto_retry=False)
