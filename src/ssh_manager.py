@@ -232,15 +232,21 @@ class SSHManager:
             relaunch = False
             with self._reconnect_lock:
                 self._reconnect_in_progress = False
-                if self._reconnect_requested and not self._stop:
+                if self._reconnect_requested and not self._stop and not self.connected:
                     self._reconnect_requested = False
                     relaunch = True
+                elif self.connected:
+                    # connexion déjà rétablie: purge toute demande en file
+                    self._reconnect_requested = False
             if relaunch:
                 self._log("[SSH] Launching queued reconnect request.")
                 threading.Thread(target=self._try_reconnect, daemon=True).start()
 
     def force_reconnect(self):
         """API publique : relancer une reconnexion dans un thread."""
+        if self.connected:
+            self._log("[SSH] Already connected, skip force_reconnect.")
+            return
         with self._reconnect_lock:
             if self._reconnect_in_progress:
                 self._reconnect_requested = True
@@ -291,6 +297,7 @@ class SSHManager:
         cmd: str,
         callback: Optional[Callable[[dict], None]] = None,
         auto_retry: bool = True,
+        log_errors: bool = True,
     ):
         """
         Exécute une commande SSH dans un thread séparé.
@@ -303,7 +310,8 @@ class SSHManager:
                 self._try_reconnect()
             if not self.connected:
                 err_msg = "SSH not connected"
-                self._log(f"[SSH CMD ERROR] {err_msg}")
+                if log_errors:
+                    self._log(f"[SSH CMD ERROR] {err_msg}")
                 if callback:
                     try:
                         callback({"success": False, "out": "", "err": err_msg})
@@ -315,7 +323,7 @@ class SSHManager:
             success = (rc == 0)
             res = {"success": success, "out": out, "err": err}
 
-            if not success:
+            if not success and log_errors:
                 self._log(f"[SSH CMD ERROR] {err or out or 'unknown error'}")
 
             if callback:

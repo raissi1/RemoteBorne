@@ -951,7 +951,12 @@ class RemoteBorneApp:
                         heartbeat_failures = 0
 
                 # IMPORTANT : pas d’auto_retry ici, sinon double gestion
-                self.ssh.execute("echo alive", callback=cb, auto_retry=False)
+                self.ssh.execute(
+                    "echo alive",
+                    callback=cb,
+                    auto_retry=False,
+                    log_errors=False,
+                )
 
         t = threading.Thread(target=worker, daemon=True)
         t.start()
