@@ -944,7 +944,7 @@ class RemoteBorneApp:
                             self.log(
                                 "[ALIVE] 3 heartbeat failures in a row, forcing reconnect."
                             )
-                            self.ssh.force_reconnect()
+                            self.ssh.force_reconnect(force_if_connected=True)
                             last_reconnect_try = now
                         heartbeat_failures = 0
                     else:

@@ -242,9 +242,9 @@ class SSHManager:
                 self._log("[SSH] Launching queued reconnect request.")
                 threading.Thread(target=self._try_reconnect, daemon=True).start()
 
-    def force_reconnect(self):
+    def force_reconnect(self, force_if_connected: bool = False):
         """API publique : relancer une reconnexion dans un thread."""
-        if self.connected:
+        if self.connected and not force_if_connected:
             self._log("[SSH] Already connected, skip force_reconnect.")
             return
         with self._reconnect_lock:
