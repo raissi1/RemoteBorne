@@ -19,7 +19,6 @@ class PlinkBackend:
             # racine du projet = dossier parent de src
             project_root = os.path.dirname(this_dir)
 
-        # dossier tools à la racine
         tools_dir = os.path.join(project_root, "tools")
 
         # chemins par défaut vers plink.exe et pscp.exe
