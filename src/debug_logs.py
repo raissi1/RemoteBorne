@@ -1,4 +1,5 @@
 import os
+import sys
 import subprocess
 import threading
 import re
@@ -16,10 +17,17 @@ def _detect_plink() -> str:
     Essaie d'utiliser plink.exe local (tools/ ou même dossier),
     sinon 'plink' depuis le PATH Windows.
     """
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-
-    # si on est dans src/, on remonte au projet
-    project_root = os.path.dirname(base_dir) if os.path.basename(base_dir).lower() == "src" else base_dir
+    if getattr(sys, "frozen", False):
+        project_root = os.path.dirname(sys.executable)
+        base_dir = project_root
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        # si on est dans src/, on remonte au projet
+        project_root = (
+            os.path.dirname(base_dir)
+            if os.path.basename(base_dir).lower() == "src"
+            else base_dir
+        )
     tools_dir = os.path.join(project_root, "tools")
 
     candidates = [
@@ -295,7 +303,7 @@ class DebugLogsWindow:
             proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
                 **popen_kwargs,
             )

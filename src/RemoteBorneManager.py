@@ -49,6 +49,8 @@ from src import debug_logs
 
 APP_VERSION = "2026.03.31.2"
 
+APP_VERSION = "2026.03.31.1"
+
 try:
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas as pdf_canvas

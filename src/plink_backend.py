@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import sys
 
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
@@ -9,15 +10,13 @@ CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 class PlinkBackend:
     def __init__(self, host, username, password, port=22,
                  plink_path=None, pscp_path=None):
-        # dossier où se trouve ce fichier (src)
-        import sys
-
         if getattr(sys, "frozen", False):
-            # mode exe → dossier du .exe
+            # mode exe PyInstaller: outils à côté du .exe
             project_root = os.path.dirname(sys.executable)
         else:
-            # mode dev → racine projet
+            # dossier où se trouve ce fichier (src)
             this_dir = os.path.dirname(os.path.abspath(__file__))
+            # racine du projet = dossier parent de src
             project_root = os.path.dirname(this_dir)
 
         tools_dir = os.path.join(project_root, "tools")
