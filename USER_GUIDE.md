@@ -1,146 +1,71 @@
 # Remote Borne Manager — Guide Utilisateur
 
-## 1. Introduction
+## 1. Démarrage
 
-Remote Borne Manager permet de gérer des bornes IOTECHA à distance via SSH.
-L’application simplifie :
-- la gestion des fichiers GridCodes
-- le contrôle de puissance
-- le debug en temps réel
-- le redémarrage des services
-
-## 2. Démarrage
-
-0. Initialiser la config locale (une seule fois) :
+1. Initialiser la config locale (une seule fois) :
+```powershell
+copy config\config.example.ini config\config.ini
 ```
-copy config\\config.example.ini config\\config.ini
+2. Lancer l'application :
+```bash
+python src/RemoteBorneManager.py
 ```
 
-1. Ouvrir PowerShell
-2. Aller dans le dossier src :
-```
-cd remote_borne_manager/src
-```
-3. Lancer l'app :
-```
-python RemoteBorneManager_v3.py
-```
+## 2. Connexion
 
-## 3. Connexion
+- **Connect** : démarre/reprend la connexion SSH.
+- **Disconnect** : déconnexion manuelle stricte (pas de reconnexion auto immédiate).
+- La version de l'app est affichée au démarrage dans les logs.
 
-Cliquer sur **Connect**.
+## 3. Navigation fichiers
 
-Si succès :
-- LED verte
-- Liste des fichiers affichée
+- Double-clic dossier : entrer
+- `[.] (Parent)` : remonter
+- Clic droit : Open/Edit, Download, Print, Copy to GridCodes
 
-Si erreur :
-- Messages dans logs
-- Tentative de reconnexion
+## 4. Édition de fichier
 
-## 4. Navigation fichiers
+1. Ouvrir un fichier avec **Edit**.
+2. Modifier le contenu.
+3. Recherche: **Ctrl+F** (ou bouton Find).
+4. Save (upload automatique).
 
-- Double-clic dossier → entrer
-- Double-clic `[.] (Parent)` → remonter
-- Double-clic fichier → ouvrir
+Notes:
+- Les fins de lignes sont normalisées en **LF** (évite les `^M` sous vi/MobaXterm).
+- `Escape` retire le surlignage Find.
 
-Menu clic droit :
-- Open/Edit
-- Download
-- Print
-- Copy to GridCodes
+## 5. Impression PDF
 
-## 5. Modifier un fichier
+- Action **Print** depuis un fichier sélectionné.
+- Le nom proposé est celui du fichier source (`<nom>.pdf`).
+- Le texte est automatiquement wrapped pour éviter les lignes tronquées.
 
-1. Double-clic fichier
-2. Modifier
-3. Rechercher dans le texte avec **Ctrl+F** (Find)
-3. Save
-4. Upload
+## 6. Energy Manager
 
-Si GridCodes.properties :
-- Proposition de redémarrer les services
+### P/Q
+- Envoi standard `--power` + `--reactive-power`.
 
-## 6. Télécharger un fichier
+### CosPhi
+- Procédure en 2 commandes chaînées:
+  1) `--grid-option "SetpointCosPhi_Pct=..."`
+  2) setpoint actif `--power ... -m CentralSetpoint`
 
-Clic droit → Download  
-Choisir emplacement
+## 7. Debug logs
 
-## 7. Imprimer (PDF)
+- Ouvrir `Debug -> Debug logs`.
+- Bouton **Start** démarre le suivi `tail -f` distant.
+- Plus de popup bloquante au Start ; infos affichées directement dans l'onglet.
+- Sous Windows, `plink` est lancé sans fenêtre cmd visible.
 
-Clic droit → Print  
-Conversion automatique en PDF (avec retour à la ligne des longues lignes)  
-Choisir emplacement
+## 8. Network config
 
-## 8. Energy Manager
+- Champs validés: Host/IP, Username, Password, Port, Remote path/file, Local path.
+- Port accepté: **1..65535**.
+- Le dossier local est créé si nécessaire.
+- Sauvegarde recharge la config et déclenche la reconnexion.
 
-### Mode P/Q
+## 9. Dépannage rapide
 
-- Active power (W)
-- Reactive power (VAR)
-- Send
-
-### Mode CosPhi
-
-- Active power (W)
-- CosPhi
-- Send
-
-## 9. Services
-
-- Restart services
-- Reboot device
-
-## 10. Logs
-
-Zone en bas :
-- Horodatée
-- Séquentielle
-- Auto-scroll
-- Affiche la version au démarrage (`[INFO] RemoteBorne version: ...`) pour vérifier rapidement que la mise à jour est bien appliquée.
-
-## 11. Debug logs
-
-Menu : Debug → Debug logs
-
-Fonctionnalités :
-- multi-onglet
-- stream temps réel
-- save
-- clear
-- pause
-
-## 12. Problèmes courants
-
-### Connexion impossible
-
-- Vérifier IP
-- Vérifier mot de passe
-- Vérifier le port SSH (Menu Network config)
-- Vérifier réseau
-
-### Erreur de sauvegarde de configuration réseau
-
-- Vérifier que l’IP/hostname est valide
-- Vérifier que le port est entre 1 et 65535
-- Vérifier que le dossier local configuré est accessible
-
-### PDF vide
-
-- Fichier source vide
-
-### Upload échoue
-
-- Permissions
-- Fichier verrouillé
-
-## 13. Bonnes pratiques
-
-- Sauvegarder avant modification
-- Ne pas reboot en boucle
-- Redémarrer services après changement de GridCodes
-
-## 14. Sécurité
-
-Le mot de passe n'est pas chiffré.  
-Ne pas distribuer config.ini publiquement.
+- Si connexion instable : vérifier IP/port/réseau physique.
+- Si heartbeat échoue ponctuellement : l'app n'impose la reconnexion qu'après échecs consécutifs.
+- Si print vide/tronqué : re-tester après mise à jour et vérifier droits d'écriture dossier export.
