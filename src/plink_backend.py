@@ -59,6 +59,8 @@ class PlinkBackend:
     # SSH COMMAND
     # ----------------------------------------------------------
     def exec(self, remote_cmd, timeout=None):
+        if not remote_cmd or not str(remote_cmd).strip():
+            return 1, "", "Empty remote command"
         cmd = [
             self.plink_path,
             "-ssh",
@@ -89,6 +91,14 @@ class PlinkBackend:
             return 1, "", str(e)
 
     def scp_get(self, remote_path, local_path, timeout=None):
+        if not remote_path:
+            return False, "", "Empty remote path"
+        if not local_path:
+            return False, "", "Empty local path"
+
+        local_dir = os.path.dirname(local_path) or "."
+        os.makedirs(local_dir, exist_ok=True)
+
         cmd = [
             self.pscp_path,
             "-batch",
@@ -117,6 +127,13 @@ class PlinkBackend:
             return False, "", str(e)
 
     def scp_put(self, local_path, remote_path, timeout=None):
+        if not local_path:
+            return False, "", "Empty local path"
+        if not os.path.isfile(local_path):
+            return False, "", f"Local file not found: {local_path}"
+        if not remote_path:
+            return False, "", "Empty remote path"
+
         cmd = [
             self.pscp_path,
             "-batch",
