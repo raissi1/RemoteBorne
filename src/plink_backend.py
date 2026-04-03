@@ -10,12 +10,16 @@ class PlinkBackend:
     def __init__(self, host, username, password, port=22,
                  plink_path=None, pscp_path=None):
         # dossier où se trouve ce fichier (src)
-        this_dir = os.path.dirname(os.path.abspath(__file__))
+        import sys
 
-        # racine du projet = dossier parent de src
-        project_root = os.path.dirname(this_dir)
+        if getattr(sys, "frozen", False):
+            # mode exe → dossier du .exe
+            project_root = os.path.dirname(sys.executable)
+        else:
+            # mode dev → racine projet
+            this_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.dirname(this_dir)
 
-        # dossier tools à la racine
         tools_dir = os.path.join(project_root, "tools")
 
         # chemins par défaut vers plink.exe et pscp.exe

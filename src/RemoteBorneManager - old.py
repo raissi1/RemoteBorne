@@ -41,13 +41,13 @@ from ttkbootstrap.constants import *
 # ----------------------------------------------------------------------
 # Imports projet
 # ----------------------------------------------------------------------
-from src.ssh_manager import SSHManager
-from src.network_config import open_network_config
-from src.open_help import open_help
-from src import energy_manager
-from src import debug_logs
+from ssh_manager import SSHManager
+from network_config import open_network_config
+from open_help import open_help
+import energy_manager
+import debug_logs
 
-APP_VERSION = "2026.03.31.2"
+APP_VERSION = "2026.03.31.1"
 
 try:
     from reportlab.lib.pagesizes import A4
@@ -944,7 +944,7 @@ class RemoteBorneApp:
                             self.log(
                                 "[ALIVE] 3 heartbeat failures in a row, forcing reconnect."
                             )
-                            self.ssh.force_reconnect(force_if_connected=True)
+                            self.ssh.force_reconnect()
                             last_reconnect_try = now
                         heartbeat_failures = 0
                     else:
@@ -1817,18 +1817,14 @@ class RemoteBorneApp:
             f"CosPhi={cosphi_val} ({cosphi_pct}%), Reactive={q_val} var"
         )
 
-        grid_opt_cmd = (
-            f"/usr/local/bin/EnergyManagerTestingTool --grid-option "
-            f"\"SetpointCosPhi_Pct={cosphi_pct}\""
-        )
-        setpoint_cmd = (
-            f"/usr/local/bin/EnergyManagerTestingTool -S -s ocpp -a "
-            f"--power {active_int} -m CentralSetpoint"
-        )
         remote_cmd = (
             "cd /var/aux/EnergyManager && "
             "export LD_LIBRARY_PATH=/usr/local/lib && "
-            f"({grid_opt_cmd} && {setpoint_cmd}) >/dev/null 2>&1 &"
+            f"/usr/local/bin/EnergyManagerTestingTool --grid-option "
+            f"\"SetpointCosPhi_Pct={cosphi_pct}\" && "
+            f"/usr/local/bin/EnergyManagerTestingTool -S -s ocpp -a "
+            f"--power {active_int} "
+            "-m CentralSetpoint"
         )
 
         def cb(res):
