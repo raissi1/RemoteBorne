@@ -38,17 +38,40 @@ from ttkbootstrap.constants import *
 
 
 # ----------------------------------------------------------------------
-# Imports projet
+# Imports projet (compat mode script + mode package "src")
 # ----------------------------------------------------------------------
-from ssh_manager import SSHManager
-from network_config import open_network_config
-from open_help import open_help
-import energy_manager
-import debug_logs
+try:
+    from .ssh_manager import SSHManager
+    from .network_config import open_network_config
+    from .open_help import open_help
+    from . import energy_manager
+    from . import debug_logs
+except ImportError:
+    from ssh_manager import SSHManager
+    from network_config import open_network_config
+    from open_help import open_help
+    import energy_manager
+    import debug_logs
+
+APP_VERSION = "2026.03.31.1"
+
+ENERGY_TOOL_RESOLVE = (
+    'EM_TOOL="$(command -v EnergyManagerTestingTool 2>/dev/null || true)"; '
+    'if [ -z "$EM_TOOL" ]; then '
+    'for p in /usr/local/bin/EnergyManagerTestingTool /usr/bin/EnergyManagerTestingTool; do '
+    '[ -x "$p" ] && EM_TOOL="$p" && break; '
+    "done; "
+    'fi; '
+    'if [ -z "$EM_TOOL" ]; then '
+    "echo 'EnergyManagerTestingTool not found on target (checked PATH, /usr/local/bin, /usr/bin)' >&2; "
+    "exit 127; "
+    "fi; "
+)
 
 try:
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas as pdf_canvas
+    from reportlab.pdfbase import pdfmetrics
 
     HAVE_REPORTLAB = True
 except Exception:
@@ -109,7 +132,7 @@ def load_config() -> configparser.ConfigParser:
         cfg["SSH"] = {
             "host": "192.168.1.100",
             "username": "root",
-            "password": "QD3@1Njv7h1HYB*4",  # laissé en clair comme tu voulais
+            "password": "CHANGE_ME",
             "port": "22",
         }
         cfg["PATHS"] = {
@@ -175,6 +198,7 @@ class RemoteBorneApp:
         # ---------- ETAT ----------
         self.connected = False
         self._alive_stop = False
+        self._manual_disconnect_mode = False
         self.current_theme = "flatly"
 
         # ---------- ROOT / STYLE ----------
@@ -228,6 +252,8 @@ class RemoteBorneApp:
         self.log_text = None 
         self.file_list = None
         self.path_entry = None
+        self._editor_window = None
+        self._editor_remote_path = None
 
         self.led_canvas = None
         self.ip_label = None
@@ -265,9 +291,8 @@ class RemoteBorneApp:
         self._update_controls_state()
 
 
+        self.log(f"[INFO] RemoteBorne version: {APP_VERSION} ({os.path.basename(__file__)})")
         self.log("[INFO] Application started. Waiting for SSH events...")
-        # Connexion initiale
-        self.force_reconnect()
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
 
@@ -855,13 +880,15 @@ class RemoteBorneApp:
     # SSH EVENTS & CONNECT/DISCONNECT
     # ==================================================================
     def force_reconnect(self):
+        self._manual_disconnect_mode = False
         self.log("[SSH] Reconnecting...")
         try:
-            self.ssh.force_reconnect()
+            self.ssh.restart()
         except Exception as e:
             self.log(f"[SSH ERROR] {e}")
 
     def _manual_disconnect(self):
+        self._manual_disconnect_mode = True
         try:
             self.ssh.close()
         except Exception:
@@ -869,7 +896,17 @@ class RemoteBorneApp:
         self.connected = False
         self.status_var.set("Disconnected")
         self._set_led(False)
+        self._clear_file_list_ui()
         self._update_controls_state()
+
+    def _clear_file_list_ui(self):
+        if self.file_list is None:
+            return
+        try:
+            self.file_list.delete(0, "end")
+            self.file_list.selection_clear(0, "end")
+        except Exception:
+            pass
 
     def _join_remote(self, *parts):
         cleaned = []
@@ -894,22 +931,53 @@ class RemoteBorneApp:
         self._alive_thread_started = True
 
         def worker():
+            last_reconnect_try = 0.0
+            heartbeat_failures = 0
             while not self._alive_stop:
                 time.sleep(10)
                 # Si l’app est fermée, on sort
                 if not hasattr(self, "ssh"):
                     break
-                # Si pas connecté → on ne fait rien
+                # Si pas connecté -> on tente une reconnexion périodique
                 if not self.ssh.connected:
+                    heartbeat_failures = 0
+                    if self._manual_disconnect_mode:
+                        continue
+                    now = time.time()
+                    # évite de spammer plusieurs tentatives/logs toutes les 10s
+                    if now - last_reconnect_try >= 30:
+                        self.log("[ALIVE] Disconnected, attempting reconnect.")
+                        self.ssh.restart()
+                        last_reconnect_try = now
                     continue
 
                 def cb(res):
+                    nonlocal heartbeat_failures, last_reconnect_try
                     if not res["success"]:
-                        self.log("[ALIVE] Heartbeat failed, forcing reconnect.")
-                        self.ssh.force_reconnect()
+                        heartbeat_failures += 1
+                        self.log(
+                            f"[ALIVE] Heartbeat failed ({heartbeat_failures}/3)."
+                        )
+                        if heartbeat_failures < 3:
+                            return
+                        now = time.time()
+                        if now - last_reconnect_try >= 10:
+                            self.log(
+                                "[ALIVE] 3 heartbeat failures in a row, forcing reconnect."
+                            )
+                            self.ssh.force_reconnect(force_if_connected=True)
+                            last_reconnect_try = now
+                        heartbeat_failures = 0
+                    else:
+                        heartbeat_failures = 0
 
                 # IMPORTANT : pas d’auto_retry ici, sinon double gestion
-                self.ssh.execute("echo alive", callback=cb, auto_retry=False)
+                self.ssh.execute(
+                    "echo alive",
+                    callback=cb,
+                    auto_retry=False,
+                    log_errors=False,
+                )
 
         t = threading.Thread(target=worker, daemon=True)
         t.start()
@@ -927,6 +995,7 @@ class RemoteBorneApp:
 
         def _handle(ev_type, ev_data):
             if ev_type == "connected":
+                self._manual_disconnect_mode = False
                 self.connected = True
                 self.status_var.set("Connected")
                 self.log("[SSH] Connected")
@@ -943,6 +1012,7 @@ class RemoteBorneApp:
                 self.status_var.set("Disconnected")
                 self.log("[SSH] Disconnected")
                 self._set_led(False)
+                self._clear_file_list_ui()
                 self._update_controls_state()
 
             elif ev_type == "reconnecting":
@@ -953,6 +1023,7 @@ class RemoteBorneApp:
                 self._update_controls_state()
 
             elif ev_type == "reconnected":
+                self._manual_disconnect_mode = False
                 self.connected = True
                 self.status_var.set("Connected")
                 self.log("[SSH] Reconnected")
@@ -1366,10 +1437,13 @@ class RemoteBorneApp:
                 pass
             return
 
+        remote_name = posixpath.basename(remote_path)
+        default_pdf_name = f"{os.path.splitext(remote_name)[0]}.pdf"
+
         pdf_path = filedialog.asksaveasfilename(
             title="Save PDF as",
             defaultextension=".pdf",
-            initialfile="GridCodes.pdf",
+            initialfile=default_pdf_name,
             initialdir=EXPORTS_DIR,
         )
         if not pdf_path:
@@ -1387,13 +1461,58 @@ class RemoteBorneApp:
             width, height = A4
             x_margin = 40
             y = height - 40
+            font_name = "Courier"
+            font_size = 9
+            max_text_width = width - (x_margin * 2)
+            c.setFont(font_name, font_size)
+
+            def _wrap_line_for_pdf(raw_line: str):
+                expanded = raw_line.expandtabs(4)
+                if expanded == "":
+                    return [""]
+
+                wrapped = []
+                current = ""
+                for word in expanded.split(" "):
+                    candidate = word if not current else f"{current} {word}"
+                    if (
+                        pdfmetrics.stringWidth(candidate, font_name, font_size)
+                        <= max_text_width
+                    ):
+                        current = candidate
+                        continue
+
+                    if current:
+                        wrapped.append(current)
+                        current = ""
+
+                    # mot très long sans espace: coupe au caractère
+                    chunk = ""
+                    for ch in word:
+                        cnd = chunk + ch
+                        if (
+                            pdfmetrics.stringWidth(cnd, font_name, font_size)
+                            <= max_text_width
+                        ):
+                            chunk = cnd
+                        else:
+                            if chunk:
+                                wrapped.append(chunk)
+                            chunk = ch
+                    current = chunk
+
+                wrapped.append(current)
+                return wrapped
 
             for line in content.splitlines():
-                c.drawString(x_margin, y, line[:120])
-                y -= 14
-                if y < 40:
-                    c.showPage()
-                    y = height - 40
+                wrapped_lines = _wrap_line_for_pdf(line)
+                for wrapped in wrapped_lines:
+                    c.drawString(x_margin, y, wrapped)
+                    y -= 12
+                    if y < 40:
+                        c.showPage()
+                        c.setFont(font_name, font_size)
+                        y = height - 40
 
             c.save()
             self.log(f"[PRINT] PDF saved to {pdf_path}")
@@ -1417,6 +1536,22 @@ class RemoteBorneApp:
         if not self.connected:
             self._popup_warning("Edit", "Not connected.")
             return
+        if self._editor_window is not None:
+            try:
+                if self._editor_window.winfo_exists():
+                    self._editor_window.deiconify()
+                    self._editor_window.lift()
+                    self._editor_window.focus_force()
+                    if self._editor_remote_path:
+                        self.log(f"[INFO] Editor already open ({self._editor_remote_path})")
+                    else:
+                        self.log("[INFO] Editor already open")
+                    return
+            except Exception:
+                # Référence stale (fenêtre détruite côté Tk/OS) -> reset et ouverture propre
+                pass
+            self._editor_window = None
+            self._editor_remote_path = None
 
         self.log(f"[EDIT] Downloading {remote_path}...")
         with tempfile.NamedTemporaryFile(delete=False, suffix=".conf") as tmp:
@@ -1436,14 +1571,24 @@ class RemoteBorneApp:
         # ----- Fenêtre d’édition -----
         win = tk.Toplevel(self.root)
         win.title(f"Edit: {remote_path}")
-        win.geometry("900x600")
+        win.geometry("960x680")
+        win.minsize(820, 560)
+        self._editor_window = win
+        self._editor_remote_path = remote_path
 
-        txt = tk.Text(win, wrap="none")
-        txt.pack(fill="both", expand=True)
+        editor_frame = ttk.Frame(win)
+        editor_frame.pack(fill="both", expand=True)
+        editor_frame.grid_rowconfigure(0, weight=1)
+        editor_frame.grid_columnconfigure(0, weight=1)
 
-        vs = ttk.Scrollbar(win, orient="vertical", command=txt.yview)
-        vs.pack(side="right", fill="y")
-        txt.configure(yscrollcommand=vs.set)
+        txt = tk.Text(editor_frame, wrap="none")
+        txt.grid(row=0, column=0, sticky="nsew")
+
+        vs = ttk.Scrollbar(editor_frame, orient="vertical", command=txt.yview)
+        vs.grid(row=0, column=1, sticky="ns")
+        hs = ttk.Scrollbar(editor_frame, orient="horizontal", command=txt.xview)
+        hs.grid(row=1, column=0, sticky="ew")
+        txt.configure(yscrollcommand=vs.set, xscrollcommand=hs.set)
 
         try:
             with open(tmp_local, "r", encoding="utf-8", errors="ignore") as f:
@@ -1451,10 +1596,129 @@ class RemoteBorneApp:
         except Exception as e:
             self.log(f"[EDIT ERROR] {e}")
 
+        btn_bar = ttk.Frame(win)
+        btn_bar.pack(fill="x", side="bottom")
+
+        status_bar = ttk.Label(win, text="")
+        status_bar.pack(fill="x", side="bottom", padx=6, pady=(0, 4))
+
+        def clear_find_highlight():
+            txt.tag_remove("find_match", "1.0", "end")
+            status_bar.configure(text="")
+
+        def close_editor():
+            if getattr(self, "_find_dialog", None) and self._find_dialog.winfo_exists():
+                try:
+                    self._find_dialog.destroy()
+                except Exception:
+                    pass
+                self._find_dialog = None
+            try:
+                if os.path.exists(tmp_local):
+                    os.remove(tmp_local)
+            except Exception:
+                pass
+            self._editor_window = None
+            self._editor_remote_path = None
+            try:
+                win.destroy()
+            except Exception:
+                pass
+
+        # Alias de compatibilité: certains builds/appels réfèrent encore "on_close"
+        on_close = close_editor
+        win.protocol("WM_DELETE_WINDOW", close_editor)
+
+        def open_find_dialog():
+            if hasattr(self, "_find_dialog") and self._find_dialog and self._find_dialog.winfo_exists():
+                self._find_dialog.lift()
+                self._find_dialog.focus_force()
+                return
+
+            dialog = tk.Toplevel(win)
+            self._find_dialog = dialog
+            dialog.title("Find (Ctrl+F)")
+            dialog.transient(win)
+            dialog.grab_set()
+            dialog.resizable(False, False)
+            dialog.geometry("+300+300")
+            dialog.protocol("WM_DELETE_WINDOW", lambda: (setattr(self, "_find_dialog", None), dialog.destroy()))
+
+            ttk.Label(dialog, text="Search text:").grid(row=0, column=0, padx=8, pady=8, sticky="w")
+            q_var = tk.StringVar()
+            q_entry = ttk.Entry(dialog, textvariable=q_var, width=35)
+            q_entry.grid(row=0, column=1, padx=8, pady=8)
+            q_entry.focus_set()
+
+            txt.tag_configure("find_match", background="#ffe082", foreground="#000000")
+            find_state = {"ranges": [], "pos": -1}
+
+            def _focus_match(i: int):
+                if not find_state["ranges"]:
+                    return
+                i = i % len(find_state["ranges"])
+                find_state["pos"] = i
+                start, end = find_state["ranges"][i]
+                txt.mark_set("insert", start)
+                txt.see(start)
+                txt.tag_remove("sel", "1.0", "end")
+                txt.tag_add("sel", start, end)
+                status_bar.configure(
+                    text=f"Find: {len(find_state['ranges'])} match(es) | {i + 1}/{len(find_state['ranges'])}"
+                )
+
+            def run_find(*_):
+                needle = q_var.get()
+                txt.tag_remove("find_match", "1.0", "end")
+                find_state["ranges"] = []
+                find_state["pos"] = -1
+                if not needle:
+                    status_bar.configure(text="Find: empty query")
+                    return
+
+                start = "1.0"
+                while True:
+                    idx = txt.search(needle, start, stopindex="end", nocase=True)
+                    if not idx:
+                        break
+                    end = f"{idx}+{len(needle)}c"
+                    txt.tag_add("find_match", idx, end)
+                    find_state["ranges"].append((idx, end))
+                    start = end
+
+                if find_state["ranges"]:
+                    _focus_match(0)
+                else:
+                    status_bar.configure(text="Find: no match")
+
+            def next_match(*_):
+                if find_state["ranges"]:
+                    _focus_match(find_state["pos"] + 1)
+
+            def prev_match(*_):
+                if find_state["ranges"]:
+                    _focus_match(find_state["pos"] - 1)
+
+            btns = ttk.Frame(dialog)
+            btns.grid(row=1, column=0, columnspan=2, sticky="e", padx=8, pady=(0, 8))
+            ttk.Button(btns, text="Previous", command=prev_match).pack(side="right", padx=4)
+            ttk.Button(btns, text="Next", command=next_match).pack(side="right", padx=4)
+            ttk.Button(btns, text="Find", command=run_find).pack(side="right", padx=4)
+            ttk.Button(
+                btns,
+                text="Close",
+                command=lambda: (setattr(self, "_find_dialog", None), dialog.destroy()),
+            ).pack(side="right")
+            q_entry.bind("<Return>", run_find)
+            dialog.bind("<F3>", next_match)
+            dialog.bind("<Shift-F3>", prev_match)
+
         def save_and_upload():
             content = txt.get("1.0", "end-1c")
+            # Normalise explicitement en LF pour éviter les ^M sous vi/MobaXterm
+            content = content.replace("\r\n", "\n").replace("\r", "\n")
             try:
-                with open(tmp_local, "w", encoding="utf-8") as f:
+                with open(tmp_local, "w", encoding="utf-8", newline="\n") as f:
                     f.write(content)
             except Exception as e:
                 self._popup_error("Edit", f"Local save error:\n{e}")
@@ -1485,14 +1749,18 @@ class RemoteBorneApp:
             except Exception:
                 pass
 
-        btn_bar = ttk.Frame(win)
-        btn_bar.pack(fill="x")
+        ttk.Button(btn_bar, text="Find", command=open_find_dialog).pack(
+            side="left", padx=5, pady=5
+        )
         ttk.Button(btn_bar, text="Save", command=save_and_upload).pack(
             side="right", padx=5, pady=5
         )
         ttk.Button(
-            btn_bar, text="Close", command=win.destroy, style="Danger.TButton"
+            btn_bar, text="Close", command=on_close, style="Danger.TButton"
         ).pack(side="right", padx=5, pady=5)
+        txt.bind("<Control-f>", lambda e: (open_find_dialog(), "break"))
+        txt.bind("<Escape>", lambda e: (clear_find_highlight(), "break"))
+        txt.bind("<Control-w>", lambda e: (close_editor(), "break"))
 
     # ==================================================================
     # ENERGY MANAGER – P/Q (ULTIMATE)
@@ -1550,7 +1818,8 @@ class RemoteBorneApp:
         remote_cmd = (
             "cd /var/aux/EnergyManager && "
             "export LD_LIBRARY_PATH=/usr/local/lib && "
-            f"/usr/local/bin/EnergyManagerTestingTool -S -s ocpp -a "
+            f"{ENERGY_TOOL_RESOLVE}"
+            f"\"$EM_TOOL\" -S -s ocpp -a "
             f"--power {active_int} --reactive-power {reactive_int} "
             "-m CentralSetpoint"
         )
@@ -1621,8 +1890,10 @@ class RemoteBorneApp:
             )
             return
 
-        # Calcul Q comme avant
+        # Calcul Q conservé pour information opérateur
         q_val = int(round(abs(active_val) * math.tan(math.acos(cosphi_val))))
+        cosphi_pct = int(round(cosphi_val * 100))
+        active_int = int(round(active_val))
 
         self.log("CosPhi calculation:")
         self.log(f"  Active = {active_val} W")
@@ -1632,15 +1903,22 @@ class RemoteBorneApp:
         )
         self.log(
             f"Sending CosPhi command: Active={active_val} W, "
-            f"CosPhi={cosphi_val}, Reactive={q_val} var"
+            f"CosPhi={cosphi_val} ({cosphi_pct}%), Reactive={q_val} var"
         )
 
+        grid_opt_cmd = (
+            f"\"$EM_TOOL\" --grid-option "
+            f"\"SetpointCosPhi_Pct={cosphi_pct}\""
+        )
+        setpoint_cmd = (
+            f"\"$EM_TOOL\" -S -s ocpp -a "
+            f"--power {active_int} -m CentralSetpoint"
+        )
         remote_cmd = (
             "cd /var/aux/EnergyManager && "
             "export LD_LIBRARY_PATH=/usr/local/lib && "
-            f"/usr/local/bin/EnergyManagerTestingTool -S -s ocpp -a "
-            f"--power {int(round(active_val))} --reactive-power {q_val} "
-            "-m CentralSetpoint"
+            f"{ENERGY_TOOL_RESOLVE}"
+            f"({grid_opt_cmd} && {setpoint_cmd}) >/dev/null 2>&1 &"
         )
 
         def cb(res):
@@ -1770,11 +2048,25 @@ class RemoteBorneApp:
                 if self.user_label is not None:
                     self.user_label.configure(text=f"User: {self.user or '-'}")
 
-                # Mise à jour de la cible SSH si supportée
-                try:
-                    self.ssh.update_target(self.host, self.user, self.password, self.port)
-                except Exception:
-                    pass
+                if self.connected:
+                    try:
+                        self.ssh.close()
+                    except Exception:
+                        pass
+                    self.connected = False
+                    self._set_led(False)
+                    self.status_var.set("Reconnecting…")
+                    self._update_controls_state()
+                # Mise à jour de la cible SSH puis reconnexion unique
+                self.ssh.update_target(
+                    self.host,
+                    self.user,
+                    self.password,
+                    self.port,
+                    auto_reconnect=False,
+                )
+                self._manual_disconnect_mode = False
+                self.force_reconnect()
 
                 self.log("[NETWORK] config.ini reloaded.")
                 self._popup_info(
@@ -1802,7 +2094,6 @@ class RemoteBorneApp:
             return
 
         try:
-            import debug_logs
             debug_logs.open_debug_logs_window(
                 self.root,
                 self.ssh.host,
@@ -1870,7 +2161,17 @@ class RemoteBorneApp:
 def start_app():
     cfg = load_config()
     app = RemoteBorneApp(cfg)
-    app.root.mainloop()
+    try:
+        app.root.mainloop()
+    except KeyboardInterrupt:
+        print("[INFO] KeyboardInterrupt received, closing application...")
+        try:
+            app.on_exit()
+        except Exception:
+            try:
+                app.root.destroy()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
