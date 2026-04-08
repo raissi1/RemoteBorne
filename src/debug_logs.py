@@ -1,4 +1,5 @@
 import os
+import sys
 import subprocess
 import threading
 import re
@@ -8,6 +9,7 @@ from tkinter import ttk, filedialog, messagebox
 from tkinter.scrolledtext import ScrolledText
 
 MAX_LINES = 10000  # max lignes conservées en mémoire ET dans la vue
+CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 
 def _detect_plink() -> str:
@@ -15,10 +17,17 @@ def _detect_plink() -> str:
     Essaie d'utiliser plink.exe local (tools/ ou même dossier),
     sinon 'plink' depuis le PATH Windows.
     """
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-
-    # si on est dans src/, on remonte au projet
-    project_root = os.path.dirname(base_dir) if os.path.basename(base_dir).lower() == "src" else base_dir
+    if getattr(sys, "frozen", False):
+        project_root = os.path.dirname(sys.executable)
+        base_dir = project_root
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        # si on est dans src/, on remonte au projet
+        project_root = (
+            os.path.dirname(base_dir)
+            if os.path.basename(base_dir).lower() == "src"
+            else base_dir
+        )
     tools_dir = os.path.join(project_root, "tools")
 
     candidates = [
@@ -284,11 +293,19 @@ class DebugLogsWindow:
         cmd = self._build_plink_tail_cmd(remote_log)
 
         try:
+            popen_kwargs = {}
+            if os.name == "nt":
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                popen_kwargs["startupinfo"] = startupinfo
+                popen_kwargs["creationflags"] = CREATE_NO_WINDOW
+
             proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
+                **popen_kwargs,
             )
         except FileNotFoundError:
             messagebox.showerror(
@@ -307,9 +324,8 @@ class DebugLogsWindow:
         self.processes[log_name] = proc
         self.running[log_name] = True
 
-        messagebox.showinfo(
-            "Info", f"Started following {log_name}.\nLocal file:\n{file_path}"
-        )
+        self.insert_line(log_name, f"[INFO] Started following {log_name}")
+        self.insert_line(log_name, f"[INFO] Local file: {file_path}")
 
         def reader():
             while self.running.get(log_name, False):

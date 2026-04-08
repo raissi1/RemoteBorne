@@ -1,320 +1,88 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>RemoteBorne Manager – Help Documentation</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
+<title>RemoteBorne Manager - Aide</title>
 <style>
-/* ------------------------------------------------------
-   GLOBAL STYLES
------------------------------------------------------- */
-body {
-    font-family: Arial, sans-serif;
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    line-height: 1.6;
-    transition: background 0.3s, color 0.3s;
-}
-:root {
-    --bg: #f3f3f3;
-    --text: #222;
-    --header: #ffffff;
-    --primary: #0042a3;
-    --border: #ccc;
-}
-body.dark {
-    --bg: #191919;
-    --text: #e0e0e0;
-    --header: #222;
-    --primary: #7cb9ff;
-    --border: #333;
-}
-header {
-    background: var(--header);
-    padding: 20px;
-    text-align: center;
-    border-bottom: 2px solid var(--primary);
-}
-h1 {
-    margin: 0;
-    font-size: 2.2em;
-    color: var(--primary);
-}
-
-/* ------------------------------------------------------
-   CONTAINER
------------------------------------------------------- */
-.container {
-    max-width: 1100px;
-    margin: auto;
-    padding: 20px;
-}
-
-/* ------------------------------------------------------
-   TABLE OF CONTENTS
------------------------------------------------------- */
-#toc {
-    background: var(--header);
-    border: 1px solid var(--border);
-    padding: 15px;
-    margin-bottom: 25px;
-}
-#toc h2 {
-    margin-top: 0;
-    font-size: 1.4em;
-}
-#toc a {
-    display: block;
-    color: var(--primary);
-    text-decoration: none;
-    padding: 4px 0;
-}
-#toc a:hover {
-    text-decoration: underline;
-}
-
-/* ------------------------------------------------------
-   ACCORDION
------------------------------------------------------- */
-.section {
-    border: 1px solid var(--border);
-    margin-bottom: 12px;
-    border-radius: 5px;
-    overflow: hidden;
-    background: var(--header);
-}
-.section summary {
-    padding: 15px;
-    font-size: 1.1em;
-    cursor: pointer;
-    background: var(--primary);
-    color: #fff;
-    font-weight: bold;
-}
-.section summary:hover {
-    background: #002f78;
-}
-.section div {
-    padding: 15px;
-    color: var(--text);
-    background: var(--header);
-}
-
-/* ------------------------------------------------------
-   DARK MODE TOGGLE
------------------------------------------------------- */
-#toggleTheme {
-    position: fixed;
-    top: 15px;
-    right: 15px;
-    background: var(--primary);
-    color: white;
-    border: none;
-    padding: 10px 16px;
-    border-radius: 8px;
-    cursor: pointer;
-}
-#toggleTheme:hover {
-    background: #002f78;
-}
-
-/* ------------------------------------------------------
-   FOOTER
------------------------------------------------------- */
-footer {
-    text-align: center;
-    padding: 30px;
-    font-size: 14px;
-    opacity: 0.6;
-}
+body{font-family:Arial,sans-serif;margin:0;background:#f4f6f8;color:#1f2937}
+header{background:#0f4aa0;color:#fff;padding:18px 24px}
+main{max-width:980px;margin:0 auto;padding:20px}
+section{background:#fff;border:1px solid #d1d5db;border-radius:8px;padding:14px 16px;margin-bottom:12px}
+h2{margin:0 0 10px 0;font-size:20px}
+h3{margin:10px 0 6px 0;font-size:16px}
+code,pre{background:#f3f4f6;border-radius:6px;padding:2px 6px}
+pre{padding:10px;overflow:auto}
+ul{margin:6px 0 6px 22px}
+.small{font-size:13px;color:#6b7280}
 </style>
-
-<script>
-function toggleTheme() {
-    document.body.classList.toggle("dark");
-    localStorage.setItem("theme", document.body.classList.contains("dark") ? "dark" : "light");
-}
-window.onload = function() {
-    if (localStorage.getItem("theme") === "dark") {
-        document.body.classList.add("dark");
-    }
-};
-</script>
-
 </head>
-
 <body>
-
-<button id="toggleTheme" onclick="toggleTheme()">🌙 Theme</button>
-
 <header>
-    <h1>RemoteBorne Manager – Documentation</h1>
-    <p>User & Technical Guide</p>
+  <h1>RemoteBorne Manager - Aide</h1>
+  <div class="small">Guide rapide opérateur</div>
 </header>
+<main>
+  <section>
+    <h2>1) Démarrage</h2>
+    <pre>copy config\config.example.ini config\config.ini
+python src/RemoteBorneManager.py</pre>
+    <p class="small">Le runtime utilise <code>config/config.ini</code>.</p>
+  </section>
 
-<div class="container">
+  <section>
+    <h2>2) Connexion SSH</h2>
+    <ul>
+      <li><b>Connect</b> : lance/reprend la connexion.</li>
+      <li><b>Disconnect</b> : déconnexion manuelle (la reconnexion auto est bloquée après action manuelle).</li>
+      <li>La version de l'application est affichée au démarrage dans les logs.</li>
+    </ul>
+  </section>
 
-<!-- ------------------------------------------------------
-     TABLE OF CONTENTS
--------------------------------------------------------- -->
-<div id="toc">
-    <h2>Table of Contents</h2>
-    <a href="#f1">1. Overview</a>
-    <a href="#f2">2. Installation</a>
-    <a href="#f3">3. File Management</a>
-    <a href="#f4">4. Energy Manager</a>
-    <a href="#f5">5. SSH System</a>
-    <a href="#f6">6. Network Configuration</a>
-    <a href="#f7">7. Debug Tools</a>
-    <a href="#f8">8. Performance Tips</a>
-    <a href="#f9">9. Known Limitations</a>
-    <a href="#f10">10. Commands Reference</a>
-</div>
+  <section>
+    <h2>3) GridCodes: Browse / Edit / Print</h2>
+    <h3>Édition</h3>
+    <ul>
+      <li>Bouton <b>Edit</b> ou double-clic fichier.</li>
+      <li><b>Ctrl+F</b> pour rechercher (surlignage + compteur).</li>
+      <li>Save normalise les fins de ligne en LF (évite les <code>^M</code>).</li>
+    </ul>
+    <h3>Impression PDF</h3>
+    <ul>
+      <li>Nom proposé automatiquement : <code>&lt;nom_fichier&gt;.pdf</code>.</li>
+      <li>Wrap des longues lignes selon largeur réelle pour éviter le texte tronqué.</li>
+    </ul>
+  </section>
 
-<!-- ------------------------------------------------------
-     CONTENT SECTIONS (accordion)
--------------------------------------------------------- -->
+  <section>
+    <h2>4) Energy Manager</h2>
+    <h3>Mode P/Q</h3>
+    <ul><li>Commande standard : power + reactive-power.</li></ul>
+    <h3>Mode CosPhi</h3>
+    <ul>
+      <li>Procédure mise à jour :
+        <pre>EnergyManagerTestingTool --grid-option "SetpointCosPhi_Pct=..." && EnergyManagerTestingTool -S -s ocpp -a --power ... -m CentralSetpoint</pre>
+      </li>
+    </ul>
+  </section>
 
-<details class="section" id="f1" open>
-    <summary>1. Overview</summary>
-    <div>
-        RemoteBorne Manager is a desktop application to manage IOTECHA charging stations via SSH.
-        It provides:
-        <ul>
-            <li>Remote file access</li>
-            <li>Configuration editing</li>
-            <li>Energy Manager control</li>
-            <li>Service restart</li>
-            <li>Info & diagnostics</li>
-        </ul>
-    </div>
-</details>
+  <section>
+    <h2>5) Debug Logs</h2>
+    <ul>
+      <li><b>Start</b> démarre le tail distant sans popup bloquante.</li>
+      <li>Sous Windows, <code>plink</code> est lancé sans fenêtre cmd visible.</li>
+      <li>Options: pause live, auto-scroll, filtres grep/ERROR/WARN/INFO.</li>
+    </ul>
+  </section>
 
-<details class="section" id="f2">
-    <summary>2. Installation</summary>
-    <div>
-        Requirements:
-        <ul>
-            <li>Windows 10+</li>
-            <li>Python 3.8+</li>
-            <li>plink.exe & pscp.exe in tools/</li>
-        </ul>
-        Installation:
-<pre>
-pip install ttkbootstrap
-pip install reportlab
-pip install pillow
-</pre>
-    </div>
-</details>
-
-<details class="section" id="f3">
-    <summary>3. File Management</summary>
-    <div>
-        Actions:
-        <ul>
-            <li>Download</li>
-            <li>Print as PDF</li>
-            <li>Edit & upload</li>
-            <li>Copy GridCodes</li>
-        </ul>
-    </div>
-</details>
-
-<details class="section" id="f4">
-    <summary>4. Energy Manager</summary>
-    <div>
-        Supports:
-        <ul>
-            <li>P / Q mode</li>
-            <li>CosPhi mode</li>
-            <li>Service restart</li>
-        </ul>
-        Commands are executed via:
-        <pre>/usr/local/bin/EnergyManagerTestingTool</pre>
-    </div>
-</details>
-
-<details class="section" id="f5">
-    <summary>5. SSH System</summary>
-    <div>
-        Features:
-        <ul>
-        <li>Automatic reconnection</li>
-        <li>Dynamic target update</li>
-        <li>Threaded execution</li>
-        <li>SCP file transfer</li>
-        </ul>
-        Reconnect strategy:
-        <pre>1s, 3s, 6s, 10s…</pre>
-    </div>
-</details>
-
-<details class="section" id="f6">
-    <summary>6. Network Configuration</summary>
-    <div>
-        RemoteBorne Manager stores settings in:
-        <pre>config/config.ini</pre>
-        Changing host forces auto reconnect.
-    </div>
-</details>
-
-<details class="section" id="f7">
-    <summary>7. Debug Tools</summary>
-    <div>
-        <ul>
-            <li>Live logs window</li>
-            <li>Save logs</li>
-            <li>Clear logs</li>
-        </ul>
-    </div>
-</details>
-
-<details class="section" id="f8">
-    <summary>8. Performance Tips</summary>
-    <div>
-        <ul>
-            <li>Prefer LAN over Wi-Fi</li>
-            <li>Local SSD improves SCP speed</li>
-            <li>Disable antivirus for folder</li>
-        </ul>
-    </div>
-</details>
-
-<details class="section" id="f9">
-    <summary>9. Known Limitations</summary>
-    <div>
-        <ul>
-            <li>No SSH key authentication</li>
-            <li>No multi-device management</li>
-            <li>No realtime charts</li>
-        </ul>
-    </div>
-</details>
-
-<details class="section" id="f10">
-    <summary>10. Commands Reference</summary>
-    <div>
-        Energy commands:
-<pre>
---power <P>
---reactive-power <Q>
---cosphi
-</pre>
-        Compute CosPhi:
-<pre>
-Q = |P| * tan(acos(cosphi))
-</pre>
-    </div>
-</details>
-
-</div>
-
-<footer>
-    RemoteBorne Manager © 2023-2025 - AVL
-</footer>
-
+  <section>
+    <h2>6) Network Config</h2>
+    <ul>
+      <li>Validation host/IP, port (1..65535), paths.</li>
+      <li>Création du dossier local si absent.</li>
+      <li>Sauvegarde recharge la cible SSH et relance la reconnexion.</li>
+    </ul>
+  </section>
+</main>
 </body>
 </html>
