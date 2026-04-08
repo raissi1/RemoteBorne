@@ -1539,20 +1539,22 @@ class RemoteBorneApp:
         if not self.connected:
             self._popup_warning("Edit", "Not connected.")
             return
-        if self._editor_window is not None and self._editor_window.winfo_exists():
+        if self._editor_window is not None:
             try:
-                self._editor_window.deiconify()
-                self._editor_window.lift()
-                self._editor_window.focus_force()
-                if self._editor_remote_path:
-                    self.log(f"[INFO] Editor already open ({self._editor_remote_path})")
-                else:
-                    self.log("[INFO] Editor already open")
+                if self._editor_window.winfo_exists():
+                    self._editor_window.deiconify()
+                    self._editor_window.lift()
+                    self._editor_window.focus_force()
+                    if self._editor_remote_path:
+                        self.log(f"[INFO] Editor already open ({self._editor_remote_path})")
+                    else:
+                        self.log("[INFO] Editor already open")
+                    return
             except Exception:
+                # Référence stale (fenêtre détruite côté Tk/OS) -> reset et ouverture propre
                 pass
-            return
-
-        self.editor_open = True
+            self._editor_window = None
+            self._editor_remote_path = None
 
         self.log(f"[EDIT] Downloading {remote_path}...")
 
