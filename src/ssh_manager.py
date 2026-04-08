@@ -4,7 +4,7 @@ import threading
 import subprocess
 from typing import Callable, Optional
 
-from plink_backend import PlinkBackend
+from src.plink_backend import PlinkBackend
 
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
