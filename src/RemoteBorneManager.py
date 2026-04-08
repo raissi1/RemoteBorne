@@ -33,15 +33,35 @@ from ttkbootstrap.constants import *
 
 
 # ----------------------------------------------------------------------
-# Imports projet
+# Imports projet (compat mode script + mode package "src")
 # ----------------------------------------------------------------------
-from src.ssh_manager import SSHManager
-from src.network_config import open_network_config
-from src.open_help import open_help
-from src import energy_manager
-from src import debug_logs
+try:
+    from .ssh_manager import SSHManager
+    from .network_config import open_network_config
+    from .open_help import open_help
+    from . import energy_manager
+    from . import debug_logs
+except ImportError:
+    from ssh_manager import SSHManager
+    from network_config import open_network_config
+    from open_help import open_help
+    import energy_manager
+    import debug_logs
 
-APP_VERSION = "2026.03.31.2"
+APP_VERSION = "2026.03.31.1"
+
+ENERGY_TOOL_RESOLVE = (
+    'EM_TOOL="$(command -v EnergyManagerTestingTool 2>/dev/null || true)"; '
+    'if [ -z "$EM_TOOL" ]; then '
+    'for p in /usr/local/bin/EnergyManagerTestingTool /usr/bin/EnergyManagerTestingTool; do '
+    '[ -x "$p" ] && EM_TOOL="$p" && break; '
+    "done; "
+    'fi; '
+    'if [ -z "$EM_TOOL" ]; then '
+    "echo 'EnergyManagerTestingTool not found on target (checked PATH, /usr/local/bin, /usr/bin)' >&2; "
+    "exit 127; "
+    "fi; "
+)
 
 try:
     from reportlab.lib.pagesizes import A4
@@ -107,7 +127,7 @@ def load_config() -> configparser.ConfigParser:
         cfg["SSH"] = {
             "host": "192.168.1.100",
             "username": "root",
-            "password": "QD3@1Njv7h1HYB*4",  # laissé en clair comme tu voulais
+            "password": "CHANGE_ME",
             "port": "22",
         }
         cfg["PATHS"] = {
@@ -263,8 +283,7 @@ class RemoteBorneApp:
         self._set_led(False)
         self._update_controls_state()
 
-        self.editor_open = False
-        
+
         self.log(f"[INFO] RemoteBorne version: {APP_VERSION} ({os.path.basename(__file__)})")
         self.log("[INFO] Application started. Waiting for SSH events...")
 
@@ -1546,16 +1565,6 @@ class RemoteBorneApp:
         win.geometry("960x680")
         win.minsize(820, 560)
 
-        def on_close():
-            self.editor_open = False
-            try:
-                os.remove(tmp_local)
-            except Exception:
-                pass
-            win.destroy()
-
-        win.protocol("WM_DELETE_WINDOW", on_close)
-
         editor_frame = ttk.Frame(win)
         editor_frame.pack(fill="both", expand=True)
         editor_frame.grid_rowconfigure(0, weight=1)
@@ -1608,15 +1617,31 @@ class RemoteBorneApp:
             q_entry.focus_set()
 
             txt.tag_configure("find_match", background="#ffe082", foreground="#000000")
+            find_state = {"ranges": [], "pos": -1}
+
+            def _focus_match(i: int):
+                if not find_state["ranges"]:
+                    return
+                i = i % len(find_state["ranges"])
+                find_state["pos"] = i
+                start, end = find_state["ranges"][i]
+                txt.mark_set("insert", start)
+                txt.see(start)
+                txt.tag_remove("sel", "1.0", "end")
+                txt.tag_add("sel", start, end)
+                status_bar.configure(
+                    text=f"Find: {len(find_state['ranges'])} match(es) | {i + 1}/{len(find_state['ranges'])}"
+                )
 
             def run_find(*_):
                 needle = q_var.get()
                 txt.tag_remove("find_match", "1.0", "end")
+                find_state["ranges"] = []
+                find_state["pos"] = -1
                 if not needle:
                     status_bar.configure(text="Find: empty query")
                     return
 
-                count = 0
                 start = "1.0"
                 while True:
                     idx = txt.search(needle, start, stopindex="end", nocase=True)
@@ -1624,19 +1649,26 @@ class RemoteBorneApp:
                         break
                     end = f"{idx}+{len(needle)}c"
                     txt.tag_add("find_match", idx, end)
+                    find_state["ranges"].append((idx, end))
                     start = end
-                    count += 1
 
-                if count:
-                    first = txt.tag_ranges("find_match")[0]
-                    txt.see(first)
-                    txt.mark_set("insert", first)
-                    status_bar.configure(text=f"Find: {count} match(es)")
+                if find_state["ranges"]:
+                    _focus_match(0)
                 else:
                     status_bar.configure(text="Find: no match")
 
+            def next_match(*_):
+                if find_state["ranges"]:
+                    _focus_match(find_state["pos"] + 1)
+
+            def prev_match(*_):
+                if find_state["ranges"]:
+                    _focus_match(find_state["pos"] - 1)
+
             btns = ttk.Frame(dialog)
             btns.grid(row=1, column=0, columnspan=2, sticky="e", padx=8, pady=(0, 8))
+            ttk.Button(btns, text="Previous", command=prev_match).pack(side="right", padx=4)
+            ttk.Button(btns, text="Next", command=next_match).pack(side="right", padx=4)
             ttk.Button(btns, text="Find", command=run_find).pack(side="right", padx=4)
             ttk.Button(
                 btns,
@@ -1644,11 +1676,13 @@ class RemoteBorneApp:
                 command=lambda: (setattr(self, "_find_dialog", None), dialog.destroy()),
             ).pack(side="right")
             q_entry.bind("<Return>", run_find)
+            dialog.bind("<F3>", next_match)
+            dialog.bind("<Shift-F3>", prev_match)
 
         def save_and_upload():
             content = txt.get("1.0", "end-1c")
+            # Normalise explicitement en LF pour éviter les ^M sous vi/MobaXterm
             content = content.replace("\r\n", "\n").replace("\r", "\n")
-
             try:
                 with open(tmp_local, "w", encoding="utf-8", newline="\n") as f:
                     f.write(content)
@@ -1680,6 +1714,15 @@ class RemoteBorneApp:
         ttk.Button(btn_bar, text="Save", command=save_and_upload).pack(side="right", padx=5, pady=5)
         ttk.Button(btn_bar, text="Close", command=on_close, style="Danger.TButton").pack(side="right", padx=5, pady=5)
 
+        ttk.Button(btn_bar, text="Find", command=open_find_dialog).pack(
+            side="left", padx=5, pady=5
+        )
+        ttk.Button(btn_bar, text="Save", command=save_and_upload).pack(
+            side="right", padx=5, pady=5
+        )
+        ttk.Button(
+            btn_bar, text="Close", command=win.destroy, style="Danger.TButton"
+        ).pack(side="right", padx=5, pady=5)
         txt.bind("<Control-f>", lambda e: (open_find_dialog(), "break"))
         txt.bind("<Escape>", lambda e: (clear_find_highlight(), "break"))
 
@@ -1739,7 +1782,8 @@ class RemoteBorneApp:
         remote_cmd = (
             "cd /var/aux/EnergyManager && "
             "export LD_LIBRARY_PATH=/usr/local/lib && "
-            f"/usr/local/bin/EnergyManagerTestingTool -S -s ocpp -a "
+            f"{ENERGY_TOOL_RESOLVE}"
+            f"\"$EM_TOOL\" -S -s ocpp -a "
             f"--power {active_int} --reactive-power {reactive_int} "
             "-m CentralSetpoint"
         )
@@ -1827,16 +1871,17 @@ class RemoteBorneApp:
         )
 
         grid_opt_cmd = (
-            f"/usr/local/bin/EnergyManagerTestingTool --grid-option "
+            f"\"$EM_TOOL\" --grid-option "
             f"\"SetpointCosPhi_Pct={cosphi_pct}\""
         )
         setpoint_cmd = (
-            f"/usr/local/bin/EnergyManagerTestingTool -S -s ocpp -a "
+            f"\"$EM_TOOL\" -S -s ocpp -a "
             f"--power {active_int} -m CentralSetpoint"
         )
         remote_cmd = (
             "cd /var/aux/EnergyManager && "
             "export LD_LIBRARY_PATH=/usr/local/lib && "
+            f"{ENERGY_TOOL_RESOLVE}"
             f"({grid_opt_cmd} && {setpoint_cmd}) >/dev/null 2>&1 &"
         )
 
@@ -2013,7 +2058,6 @@ class RemoteBorneApp:
             return
 
         try:
-            import debug_logs
             debug_logs.open_debug_logs_window(
                 self.root,
                 self.ssh.host,
