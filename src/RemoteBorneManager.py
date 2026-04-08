@@ -1632,6 +1632,8 @@ class RemoteBorneApp:
             except Exception:
                 pass
 
+        # Alias de compatibilité: certains builds/appels réfèrent encore "on_close"
+        on_close = close_editor
         win.protocol("WM_DELETE_WINDOW", close_editor)
 
         def open_find_dialog():
@@ -1760,7 +1762,7 @@ class RemoteBorneApp:
             side="right", padx=5, pady=5
         )
         ttk.Button(
-            btn_bar, text="Close", command=close_editor, style="Danger.TButton"
+            btn_bar, text="Close", command=on_close, style="Danger.TButton"
         ).pack(side="right", padx=5, pady=5)
         txt.bind("<Control-f>", lambda e: (open_find_dialog(), "break"))
         txt.bind("<Escape>", lambda e: (clear_find_highlight(), "break"))

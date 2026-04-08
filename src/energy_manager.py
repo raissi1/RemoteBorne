@@ -125,6 +125,15 @@ class EnergyManagerWindow:
         self._build_section_history(bottom_left)
         self._build_section_monitor(bottom_right)
 
+        footer = ttk.Frame(self.win)
+        footer.pack(fill="x", padx=20, pady=(0, 10))
+        ttk.Button(
+            footer,
+            text="Close",
+            bootstyle="danger",
+            command=self.win.destroy,
+        ).pack(side="right")
+
     # ------------------------------------------------------------
     # SECTION P/Q & COSPHI
     # ------------------------------------------------------------
