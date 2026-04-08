@@ -247,6 +247,8 @@ class RemoteBorneApp:
         self.log_text = None 
         self.file_list = None
         self.path_entry = None
+        self._editor_window = None
+        self._editor_remote_path = None
 
         self.led_canvas = None
         self.ip_label = None
@@ -1537,6 +1539,18 @@ class RemoteBorneApp:
         if not self.connected:
             self._popup_warning("Edit", "Not connected.")
             return
+        if self._editor_window is not None and self._editor_window.winfo_exists():
+            try:
+                self._editor_window.deiconify()
+                self._editor_window.lift()
+                self._editor_window.focus_force()
+                if self._editor_remote_path:
+                    self.log(f"[INFO] Editor already open ({self._editor_remote_path})")
+                else:
+                    self.log("[INFO] Editor already open")
+            except Exception:
+                pass
+            return
 
         self.editor_open = True
 
@@ -1564,6 +1578,8 @@ class RemoteBorneApp:
         win.title(f"Edit: {remote_path}")
         win.geometry("960x680")
         win.minsize(820, 560)
+        self._editor_window = win
+        self._editor_remote_path = remote_path
 
         editor_frame = ttk.Frame(win)
         editor_frame.pack(fill="both", expand=True)
@@ -1594,6 +1610,27 @@ class RemoteBorneApp:
         def clear_find_highlight():
             txt.tag_remove("find_match", "1.0", "end")
             status_bar.configure(text="")
+
+        def close_editor():
+            if getattr(self, "_find_dialog", None) and self._find_dialog.winfo_exists():
+                try:
+                    self._find_dialog.destroy()
+                except Exception:
+                    pass
+                self._find_dialog = None
+            try:
+                if os.path.exists(tmp_local):
+                    os.remove(tmp_local)
+            except Exception:
+                pass
+            self._editor_window = None
+            self._editor_remote_path = None
+            try:
+                win.destroy()
+            except Exception:
+                pass
+
+        win.protocol("WM_DELETE_WINDOW", close_editor)
 
         def open_find_dialog():
             if hasattr(self, "_find_dialog") and self._find_dialog and self._find_dialog.winfo_exists():
@@ -1721,10 +1758,11 @@ class RemoteBorneApp:
             side="right", padx=5, pady=5
         )
         ttk.Button(
-            btn_bar, text="Close", command=win.destroy, style="Danger.TButton"
+            btn_bar, text="Close", command=close_editor, style="Danger.TButton"
         ).pack(side="right", padx=5, pady=5)
         txt.bind("<Control-f>", lambda e: (open_find_dialog(), "break"))
         txt.bind("<Escape>", lambda e: (clear_find_highlight(), "break"))
+        txt.bind("<Control-w>", lambda e: (close_editor(), "break"))
 
     # ==================================================================
     # ENERGY MANAGER – P/Q (ULTIMATE)
