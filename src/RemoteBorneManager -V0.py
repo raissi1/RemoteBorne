@@ -16,6 +16,12 @@ Interface Windows pour contrôle de borne IOTECHA :
 """
 import sys, os
 
+
+BASE = os.path.dirname(os.path.abspath(__file__))
+if BASE not in sys.path:
+    sys.path.insert(0, BASE)
+
+
 import math
 import time
 import tempfile
@@ -263,8 +269,7 @@ class RemoteBorneApp:
         self._set_led(False)
         self._update_controls_state()
 
-        self.editor_open = False
-        
+
         self.log(f"[INFO] RemoteBorne version: {APP_VERSION} ({os.path.basename(__file__)})")
         self.log("[INFO] Application started. Waiting for SSH events...")
 
@@ -414,10 +419,7 @@ class RemoteBorneApp:
         net_menu.add_command(label="Network config", command=self.open_network_config)
         menubar.add_cascade(label="Network", menu=net_menu)
 
-        # TERMINAL
-        terminal_menu = tk.Menu(menubar, tearoff=0)
-        terminal_menu.add_command(label="Open Terminal", command=self.open_terminal)
-        menubar.add_cascade(label="Terminal", menu=terminal_menu)
+
         # HELP
         help_menu = tk.Menu(menubar, tearoff=0)
         help_menu.add_command(label="Help", command=lambda: open_help(self.root))
@@ -1510,19 +1512,11 @@ class RemoteBorneApp:
         self.open_file_editor(remote)
 
     def open_file_editor(self, remote_path: str):
-        # 🔒 bloque multi ouverture
-        if getattr(self, "editor_open", False):
-            self.log("[INFO] Editor already open")
-            return
-
         if not self.connected:
             self._popup_warning("Edit", "Not connected.")
             return
 
-        self.editor_open = True
-
         self.log(f"[EDIT] Downloading {remote_path}...")
-
         with tempfile.NamedTemporaryFile(delete=False, suffix=".conf") as tmp:
             tmp_local = tmp.name
 
@@ -1531,13 +1525,10 @@ class RemoteBorneApp:
             err = (res["err"] or res["out"] or "").strip()
             self.log(f"[EDIT ERROR] Download failed: {err}")
             self._popup_error("Edit", f"Download failed:\n{err}")
-
             try:
                 os.remove(tmp_local)
             except Exception:
                 pass
-
-            self.editor_open = False
             return
 
         # ----- Fenêtre d’édition -----
@@ -1545,16 +1536,6 @@ class RemoteBorneApp:
         win.title(f"Edit: {remote_path}")
         win.geometry("960x680")
         win.minsize(820, 560)
-
-        def on_close():
-            self.editor_open = False
-            try:
-                os.remove(tmp_local)
-            except Exception:
-                pass
-            win.destroy()
-
-        win.protocol("WM_DELETE_WINDOW", on_close)
 
         editor_frame = ttk.Frame(win)
         editor_frame.pack(fill="both", expand=True)
@@ -1647,8 +1628,8 @@ class RemoteBorneApp:
 
         def save_and_upload():
             content = txt.get("1.0", "end-1c")
+            # Normalise explicitement en LF pour éviter les ^M sous vi/MobaXterm
             content = content.replace("\r\n", "\n").replace("\r", "\n")
-
             try:
                 with open(tmp_local, "w", encoding="utf-8", newline="\n") as f:
                     f.write(content)
@@ -1658,7 +1639,6 @@ class RemoteBorneApp:
 
             self.log(f"[EDIT] Uploading {tmp_local} -> {remote_path}")
             res2 = self.ssh.scp_put(tmp_local, remote_path)
-
             if not res2["success"]:
                 err2 = (res2["err"] or res2["out"] or "").strip()
                 self.log(f"[EDIT ERROR] Upload failed: {err2}")
@@ -1667,6 +1647,7 @@ class RemoteBorneApp:
 
             self.log("[EDIT] Upload done.")
 
+            # Si on vient de modifier GridCodes.properties, propose un restart
             if (
                 posixpath.basename(remote_path) == self.remote_file
                 and messagebox.askyesno(
@@ -1676,10 +1657,20 @@ class RemoteBorneApp:
             ):
                 self.restart_initd_services()
 
-        ttk.Button(btn_bar, text="Find", command=open_find_dialog).pack(side="left", padx=5, pady=5)
-        ttk.Button(btn_bar, text="Save", command=save_and_upload).pack(side="right", padx=5, pady=5)
-        ttk.Button(btn_bar, text="Close", command=on_close, style="Danger.TButton").pack(side="right", padx=5, pady=5)
+            try:
+                os.remove(tmp_local)
+            except Exception:
+                pass
 
+        ttk.Button(btn_bar, text="Find", command=open_find_dialog).pack(
+            side="left", padx=5, pady=5
+        )
+        ttk.Button(btn_bar, text="Save", command=save_and_upload).pack(
+            side="right", padx=5, pady=5
+        )
+        ttk.Button(
+            btn_bar, text="Close", command=win.destroy, style="Danger.TButton"
+        ).pack(side="right", padx=5, pady=5)
         txt.bind("<Control-f>", lambda e: (open_find_dialog(), "break"))
         txt.bind("<Escape>", lambda e: (clear_find_highlight(), "break"))
 
@@ -2033,163 +2024,6 @@ class RemoteBorneApp:
             "No WSL, no paramiko.",
         )
 
-# ==================================================================
-# TERMINAL PRO
-# ==================================================================
-    def open_terminal(self):
-        if not self.connected:
-            self._popup_warning("Terminal", "Please connect first.")
-            return
-
-        current_dir = self.current_path
-
-        win = tk.Toplevel(self.root)
-        win.title("SSH Terminal PRO")
-        win.geometry("900x600")
-
-        frame = ttk.Frame(win)
-        frame.pack(fill="both", expand=True)
-
-        # ===== GRID LAYOUT (FIX UI) =====
-        frame.grid_rowconfigure(0, weight=1)
-        frame.grid_columnconfigure(0, weight=1)
-
-        # ===== OUTPUT =====
-        output = tk.Text(
-            frame,
-            bg="#0d1117",
-            fg="#c9d1d9",
-            insertbackground="white",
-            font=("Consolas", 10),
-            wrap="word",
-            state="disabled"
-        )
-        output.grid(row=0, column=0, sticky="nsew")
-
-        # ===== ENTRY =====
-        entry = ttk.Entry(frame)
-        entry.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
-
-        # ===== BUTTONS =====
-        btn_frame = ttk.Frame(frame)
-        btn_frame.grid(row=2, column=0, sticky="ew")
-
-        # ===== HELPERS =====
-        def append(text):
-            output.configure(state="normal")
-            output.insert("end", text)
-            output.see("end")
-            output.configure(state="disabled")
-
-        def clear():
-            output.configure(state="normal")
-            output.delete("1.0", "end")
-            output.configure(state="disabled")
-
-        ttk.Button(btn_frame, text="Clear", command=clear).pack(side="left", padx=5, pady=5)
-        ttk.Button(btn_frame, text="Close", command=win.destroy).pack(side="right", padx=5, pady=5)
-
-        # ===== HISTORY =====
-        history = []
-        history_index = -1
-
-        def show_help():
-            append(
-                "\nAvailable commands:\n"
-                "- ls, cd, pwd\n"
-                "- python3 script.py\n"
-                "- sh script.sh\n"
-                "- clear\n\n"
-            )
-
-        # ===== COMMAND EXECUTION =====
-        def run_command(cmd):
-            nonlocal current_dir
-
-            # ===== CD MANAGEMENT =====
-            if cmd.startswith("cd"):
-                parts = cmd.split(maxsplit=1)
-
-                if len(parts) == 1:
-                    new_dir = self.default_path
-                else:
-                    new_dir = parts[1].strip()
-
-                if not new_dir.startswith("/"):
-                    new_dir = current_dir.rstrip("/") + "/" + new_dir
-
-                test_cmd = f'test -d "{new_dir}"'
-
-                def cb(res):
-                    nonlocal current_dir
-                    if res["success"]:
-                        current_dir = new_dir
-                        append(f"[DIR] {current_dir}\n")
-                    else:
-                        append("[ERROR] Directory not found\n")
-
-                self.ssh.execute(test_cmd, callback=cb)
-                return
-
-            # ===== NORMAL COMMAND =====
-            full_cmd = f'cd "{current_dir}" && {cmd}'
-
-            append(f"\n{current_dir} $ {cmd}\n")
-
-            def cb(res):
-                if res["out"]:
-                    append(res["out"] + "\n")
-                if res["err"]:
-                    append("[ERROR] " + res["err"] + "\n")
-
-            self.ssh.execute(full_cmd, callback=cb)
-
-        # ===== ENTER =====
-        def on_enter(event=None):
-            nonlocal history_index
-
-            cmd = entry.get().strip()
-            if not cmd:
-                return
-
-            if cmd == "clear":
-                clear()
-                entry.delete(0, "end")
-                return
-
-            if cmd == "help":
-                show_help()
-                entry.delete(0, "end")
-                return
-
-            history.append(cmd)
-            history_index = len(history)
-
-            run_command(cmd)
-            entry.delete(0, "end")
-
-        # ===== HISTORY NAV =====
-        def history_up(event):
-            nonlocal history_index
-            if history:
-                history_index = max(0, history_index - 1)
-                entry.delete(0, "end")
-                entry.insert(0, history[history_index])
-
-        def history_down(event):
-            nonlocal history_index
-            if history:
-                history_index = min(len(history), history_index + 1)
-                entry.delete(0, "end")
-                if history_index < len(history):
-                    entry.insert(0, history[history_index])
-
-        # ===== BINDINGS =====
-        entry.bind("<Return>", on_enter)
-        entry.bind("<Up>", history_up)
-        entry.bind("<Down>", history_down)
-
-        append("Connected to remote shell\nType 'help' for commands\n")
     # ==================================================================
     # EXIT
     # ==================================================================

@@ -69,3 +69,30 @@ Notes:
 - Si connexion instable : vérifier IP/port/réseau physique.
 - Si heartbeat échoue ponctuellement : l'app n'impose la reconnexion qu'après échecs consécutifs.
 - Si print vide/tronqué : re-tester après mise à jour et vérifier droits d'écriture dossier export.
+## 10. Terminal SSH intégré
+
+### Accès
+
+Menu → Terminal → Open Terminal
+
+### Commandes disponibles
+
+ls
+pwd
+cd ..
+cd /var/aux/EnergyManager
+python3 script.py
+sh restart.sh
+chmod +x script.sh
+
+### Fonctionnalités
+
+- Historique (↑ / ↓)
+- clear
+- help
+- sortie non modifiable
+- boutons Clear / Close
+
+### Limitations
+
+- Pas de mode interactif (vim, top)
