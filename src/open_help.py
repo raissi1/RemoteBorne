@@ -35,8 +35,11 @@ def open_help(parent=None):
     win = tk.Toplevel(parent)
     win.title("RemoteBorneManager – Help")
     win.geometry("900x700")
-    win.transient(parent)
-    win.grab_set()
+    if parent is not None:
+        win.transient(parent)
+        win.grab_set()
+        win.focus_force()
+        win.lift()
     _center_over_parent(parent, win, 900, 700)
 
     # ----- zone texte scrollable -----
@@ -488,4 +491,3 @@ Fin du document.
 
     btn = ttk.Button(win, text="Close", command=win.destroy)
     btn.pack(pady=5)
-

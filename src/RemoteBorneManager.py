@@ -2063,6 +2063,14 @@ class RemoteBorneApp:
         try:
             # même principe que V7 / RemoteBorneManager.py
             self._energy_win = energy_manager.EnergyManagerWindow(self.root, self.ssh)
+            try:
+                win = self._energy_win
+                win.transient(self.root)
+                win.grab_set()
+                win.focus_force()
+                self._center_toplevel(win, 900, 600, parent=self.root)
+            except Exception:
+                pass
         except Exception as e:
             self.log(f"[ERROR] Unable to open Energy Manager: {e}")
             self._popup_error(
