@@ -11,6 +11,19 @@ import math
 import csv
 import re
 
+ENERGY_TOOL_RESOLVE = (
+    'EM_TOOL="$(command -v EnergyManagerTestingTool 2>/dev/null || true)"; '
+    'if [ -z "$EM_TOOL" ]; then '
+    'for p in /usr/local/bin/EnergyManagerTestingTool /usr/bin/EnergyManagerTestingTool; do '
+    '[ -x "$p" ] && EM_TOOL="$p" && break; '
+    "done; "
+    'fi; '
+    'if [ -z "$EM_TOOL" ]; then '
+    "echo 'EnergyManagerTestingTool not found on target (checked PATH, /usr/local/bin, /usr/bin)' >&2; "
+    "exit 127; "
+    "fi; "
+)
+
 
 class EnergyManagerWindow:
     """Fenêtre Energy Manager PRO (plein écran, une seule vue)."""
@@ -111,6 +124,15 @@ class EnergyManagerWindow:
         self._build_section_pq_cosphi(top)
         self._build_section_history(bottom_left)
         self._build_section_monitor(bottom_right)
+
+        footer = ttk.Frame(self.win)
+        footer.pack(fill="x", padx=20, pady=(0, 10))
+        ttk.Button(
+            footer,
+            text="Close",
+            bootstyle="danger",
+            command=self.win.destroy,
+        ).pack(side="right")
 
     # ------------------------------------------------------------
     # SECTION P/Q & COSPHI
@@ -296,7 +318,8 @@ class EnergyManagerWindow:
         cmd = (
             "cd /var/aux/EnergyManager && "
             "export LD_LIBRARY_PATH=/usr/local/lib && "
-            f"/usr/local/bin/EnergyManagerTestingTool -S -s ocpp -a "
+            f"{ENERGY_TOOL_RESOLVE}"
+            f"\"$EM_TOOL\" -S -s ocpp -a "
             f"--power {p_val} --reactive-power {q_val} -m CentralSetpoint"
         )
         self.execute_energy_cmd("P/Q", cmd)
@@ -341,8 +364,11 @@ class EnergyManagerWindow:
         cmd = (
             "cd /var/aux/EnergyManager && "
             "export LD_LIBRARY_PATH=/usr/local/lib && "
-            f"/usr/local/bin/EnergyManagerTestingTool -S -s ocpp -a "
-            f"--power {p_val} --reactive-power {q_val} -m CentralSetpoint"
+            f"{ENERGY_TOOL_RESOLVE}"
+            f"(\"$EM_TOOL\" --grid-option "
+            f"\"SetpointCosPhi_Pct={int(round(cosphi_val * 100))}\" && "
+            f"\"$EM_TOOL\" -S -s ocpp -a "
+            f"--power {p_val} -m CentralSetpoint) >/dev/null 2>&1 &"
         )
         self.execute_energy_cmd("CosPhi", cmd)
 
