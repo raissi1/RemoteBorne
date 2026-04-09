@@ -5,6 +5,25 @@ import os
 import ipaddress
 
 
+def _center_on_parent(win, parent, width: int, height: int):
+    """Centre la fenêtre sur la parent (fallback centre écran)."""
+    try:
+        parent.update_idletasks()
+        px, py = parent.winfo_rootx(), parent.winfo_rooty()
+        pw, ph = parent.winfo_width(), parent.winfo_height()
+        if pw > 1 and ph > 1:
+            x = px + max(0, (pw - width) // 2)
+            y = py + max(0, (ph - height) // 2)
+            win.geometry(f"{width}x{height}+{x}+{y}")
+            return
+    except Exception:
+        pass
+    win.update_idletasks()
+    x = (win.winfo_screenwidth() - width) // 2
+    y = (win.winfo_screenheight() - height) // 2
+    win.geometry(f"{width}x{height}+{x}+{y}")
+
+
 def open_network_config(parent, config_path, on_saved=None):
     """
     Ouvre la configuration réseau (SSH + PATHS) en modal strict.
@@ -43,10 +62,7 @@ def open_network_config(parent, config_path, on_saved=None):
     win.transient(parent)
     win.grab_set()
 
-    win.update_idletasks()
-    x = (win.winfo_screenwidth() - 640) // 2
-    y = (win.winfo_screenheight() - 430) // 2
-    win.geometry(f"+{x}+{y}")
+    _center_on_parent(win, parent, 640, 430)
 
     main_frame = ttk.Frame(win, padding=20)
     main_frame.pack(expand=True, fill="both")

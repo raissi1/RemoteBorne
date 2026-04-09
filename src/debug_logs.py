@@ -12,6 +12,24 @@ MAX_LINES = 10000  # max lignes conservées en mémoire ET dans la vue
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 
+def _center_on_parent(win, parent, width: int, height: int):
+    try:
+        parent.update_idletasks()
+        px, py = parent.winfo_rootx(), parent.winfo_rooty()
+        pw, ph = parent.winfo_width(), parent.winfo_height()
+        if pw > 1 and ph > 1:
+            x = px + max(0, (pw - width) // 2)
+            y = py + max(0, (ph - height) // 2)
+            win.geometry(f"{width}x{height}+{x}+{y}")
+            return
+    except Exception:
+        pass
+    win.update_idletasks()
+    x = (win.winfo_screenwidth() - width) // 2
+    y = (win.winfo_screenheight() - height) // 2
+    win.geometry(f"{width}x{height}+{x}+{y}")
+
+
 def _detect_plink() -> str:
     """
     Essaie d'utiliser plink.exe local (tools/ ou même dossier),
@@ -96,11 +114,8 @@ class DebugLogsWindow:
         self.window.grab_set()
         self.window.minsize(800, 450)
 
-        # Centrage
-        self.window.update_idletasks()
-        x = (self.window.winfo_screenwidth() - 1100) // 2
-        y = (self.window.winfo_screenheight() - 700) // 2
-        self.window.geometry(f"+{x}+{y}")
+        # Centrage sur la fenêtre parente
+        _center_on_parent(self.window, parent, 1100, 700)
 
         # Notebook
         self.notebook = ttk.Notebook(self.window)

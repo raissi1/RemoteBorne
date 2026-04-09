@@ -310,6 +310,27 @@ class RemoteBorneApp:
         except Exception as e:
             print(f"[THEME ERROR] {e}")
             self._popup_error("Theme", f"Cannot switch theme:\n{e}")
+
+    def _center_toplevel(self, win: tk.Toplevel, width: int, height: int, parent=None):
+        """Centre une fenêtre fille par rapport à la fenêtre parente (fallback écran)."""
+        parent = parent or self.root
+        try:
+            parent.update_idletasks()
+            px, py = parent.winfo_rootx(), parent.winfo_rooty()
+            pw, ph = parent.winfo_width(), parent.winfo_height()
+            if pw > 1 and ph > 1:
+                x = px + max(0, (pw - width) // 2)
+                y = py + max(0, (ph - height) // 2)
+                win.geometry(f"{width}x{height}+{x}+{y}")
+                return
+        except Exception:
+            pass
+
+        # fallback : centre écran
+        win.update_idletasks()
+        x = (win.winfo_screenwidth() - width) // 2
+        y = (win.winfo_screenheight() - height) // 2
+        win.geometry(f"{width}x{height}+{x}+{y}")
             
     # ==========================================================
     # Validation clavier pour les champs numériques (float + signe)
@@ -1578,7 +1599,7 @@ class RemoteBorneApp:
         # ----- Fenêtre d’édition -----
         win = tk.Toplevel(self.root)
         win.title(f"Edit: {remote_path}")
-        win.geometry("960x680")
+        self._center_toplevel(win, 960, 680, parent=self.root)
         win.minsize(820, 560)
         self._editor_window = win
         self._editor_remote_path = remote_path
@@ -1648,7 +1669,7 @@ class RemoteBorneApp:
             dialog.transient(win)
             dialog.grab_set()
             dialog.resizable(False, False)
-            dialog.geometry("+300+300")
+            self._center_toplevel(dialog, 420, 120, parent=win)
             dialog.protocol("WM_DELETE_WINDOW", lambda: (setattr(self, "_find_dialog", None), dialog.destroy()))
 
             ttk.Label(dialog, text="Search text:").grid(row=0, column=0, padx=8, pady=8, sticky="w")
