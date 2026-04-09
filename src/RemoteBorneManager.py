@@ -42,11 +42,18 @@ try:
     from . import energy_manager
     from . import debug_logs
 except ImportError:
-    from ssh_manager import SSHManager
-    from network_config import open_network_config
-    from open_help import open_help
-    import energy_manager
-    import debug_logs
+    try:
+        from ssh_manager import SSHManager
+        from network_config import open_network_config
+        from open_help import open_help
+        import energy_manager
+        import debug_logs
+    except ImportError:
+        from src.ssh_manager import SSHManager
+        from src.network_config import open_network_config
+        from src.open_help import open_help
+        from src import energy_manager
+        from src import debug_logs
 
 APP_VERSION = "2026.03.31.1"
 
@@ -200,6 +207,7 @@ class RemoteBorneApp:
         # Fenêtre ttkbootstrap, thème "flatly" comme V7
         self.root = ttk.Window(themename=self.current_theme)
         self.root.title("Remote Borne Control Interface - RNA")
+        self._set_app_icon()
 
         try:
             # plein écran si possible
@@ -290,6 +298,15 @@ class RemoteBorneApp:
         self.log("[INFO] Application started. Waiting for SSH events...")
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
+
+    def _set_app_icon(self):
+        icon_path = os.path.join(BASE_DIR, "BorneCommander.ico")
+        if not os.path.isfile(icon_path):
+            return
+        try:
+            self.root.iconbitmap(icon_path)
+        except Exception:
+            pass
 
     # ==================================================================
     # THEMES (flatly / darkly)

@@ -26,9 +26,9 @@ if os.path.isfile(pscp_path):
 datas = []
 
 # Aide HTML
-help_html = os.path.join(project_root, "help.html")
+help_html = os.path.join(src_dir, "help.html")
 if os.path.isfile(help_html):
-    datas.append((help_html, "."))
+    datas.append((help_html, "src"))
 
 # Dossier des logos (imgs) à la racine du projet
 imgs_src = os.path.join(project_root, "imgs")
@@ -45,13 +45,26 @@ imgs_src = os.path.join(project_root, "imgs")
 if os.path.isdir(imgs_src):
     datas.append((imgs_src, "imgs"))
 
+app_icon = os.path.join(project_root, "BorneCommander.ico")
+if os.path.isfile(app_icon):
+    datas.append((app_icon, "."))
+
 # ---------- HIDDENIMPORTS ----------
 hiddenimports = [
+    "ssh_manager",
+    "plink_backend",
     "debug_logs",
     "energy_manager",
     "network_config",
     "open_help",
     "log_manager",
+    "src.ssh_manager",
+    "src.plink_backend",
+    "src.debug_logs",
+    "src.energy_manager",
+    "src.network_config",
+    "src.open_help",
+    "src.log_manager",
 ] + collect_submodules("ttkbootstrap")
 
 a = Analysis(
