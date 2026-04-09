@@ -1792,15 +1792,6 @@ class RemoteBorneApp:
         ttk.Button(btn_bar, text="Save", command=save_and_upload).pack(side="right", padx=5, pady=5)
         ttk.Button(btn_bar, text="Close", command=on_close, style="Danger.TButton").pack(side="right", padx=5, pady=5)
 
-        ttk.Button(btn_bar, text="Find", command=open_find_dialog).pack(
-            side="left", padx=5, pady=5
-        )
-        ttk.Button(btn_bar, text="Save", command=save_and_upload).pack(
-            side="right", padx=5, pady=5
-        )
-        ttk.Button(
-            btn_bar, text="Close", command=on_close, style="Danger.TButton"
-        ).pack(side="right", padx=5, pady=5)
         txt.bind("<Control-f>", lambda e: (open_find_dialog(), "break"))
         txt.bind("<Escape>", lambda e: (clear_find_highlight(), "break"))
         txt.bind("<Control-w>", lambda e: (close_editor(), "break"))
