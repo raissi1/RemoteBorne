@@ -1749,14 +1749,13 @@ class RemoteBorneApp:
             ttk.Button(btns, text="Previous", command=prev_match).pack(side="right", padx=4)
             ttk.Button(btns, text="Next", command=next_match).pack(side="right", padx=4)
             ttk.Button(btns, text="Find", command=run_find).pack(side="right", padx=4)
-            ttk.Button(
-                btns,
-                text="Close",
-                command=lambda: (setattr(self, "_find_dialog", None), dialog.destroy()),
-            ).pack(side="right")
             q_entry.bind("<Return>", run_find)
             dialog.bind("<F3>", next_match)
             dialog.bind("<Shift-F3>", prev_match)
+            dialog.bind(
+                "<Escape>",
+                lambda _e: (setattr(self, "_find_dialog", None), dialog.destroy()),
+            )
 
         def save_and_upload():
             content = txt.get("1.0", "end-1c")
