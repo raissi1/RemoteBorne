@@ -34,15 +34,22 @@ class EnergyManagerWindow:
 
         # Historique : liste de tuples (timestamp, mode, cmd, status)
         self.history = []
-
+        
         # Fenêtre principale de l'Energy Manager
         self.win = ttk.Toplevel(master)
         self.win.title("Energy Manager PRO")
-        try:
-            self.win.state("zoomed")  # plein écran si possible
-        except Exception:
-            self.win.geometry("1200x800")
+
+        # ✅ taille minimale
         self.win.minsize(1100, 700)
+
+        # ✅ centrage propre
+        center_window(master, self.win, 1200, 800)
+
+        # ✅ comportement pro (optionnel mais recommandé)
+        self.win.transient(master)
+        self.win.grab_set()
+        self.win.lift()
+        self.win.focus_force()
 
         # Champs P/Q & CosPhi
         self.p_var = tk.StringVar()

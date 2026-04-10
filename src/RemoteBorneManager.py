@@ -31,6 +31,10 @@ from tkinter import messagebox, filedialog
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 
+try:
+    from .utils_ui import center_window
+except ImportError:
+    from utils_ui import center_window
 
 # ----------------------------------------------------------------------
 # Imports projet (compat mode script + mode package "src")
@@ -78,7 +82,6 @@ try:
     HAVE_REPORTLAB = True
 except Exception:
     HAVE_REPORTLAB = False
-
 
 # ----------------------------------------------------------------------
 # Chemins de base (support .py + exe PyInstaller)
@@ -1616,7 +1619,7 @@ class RemoteBorneApp:
         # ----- Fenêtre d’édition -----
         win = tk.Toplevel(self.root)
         win.title(f"Edit: {remote_path}")
-        self._center_toplevel(win, 960, 680, parent=self.root)
+        center_window(self.root, win, 960, 680)
         win.minsize(820, 560)
         self._editor_window = win
         self._editor_remote_path = remote_path
@@ -1686,7 +1689,7 @@ class RemoteBorneApp:
             dialog.transient(win)
             dialog.grab_set()
             dialog.resizable(False, False)
-            self._center_toplevel(dialog, 420, 120, parent=win)
+            center_window(win, dialog, 420, 120)
             dialog.protocol("WM_DELETE_WINDOW", lambda: (setattr(self, "_find_dialog", None), dialog.destroy()))
 
             ttk.Label(dialog, text="Search text:").grid(row=0, column=0, padx=8, pady=8, sticky="w")
@@ -2058,7 +2061,7 @@ class RemoteBorneApp:
                 win.transient(self.root)
                 win.grab_set()
                 win.focus_force()
-                self._center_toplevel(win, 900, 600, parent=self.root)
+                center_window(self.root, win, 900, 600)
             except Exception:
                 pass
         except Exception as e:
@@ -2167,7 +2170,7 @@ class RemoteBorneApp:
 
         win = tk.Toplevel(self.root)
         win.title("SSH Terminal PRO")
-        win.geometry("900x600")
+        center_window(self.root, win, 900, 600)
 
         frame = ttk.Frame(win)
         frame.pack(fill="both", expand=True)

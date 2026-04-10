@@ -3,7 +3,7 @@
 
 a = Analysis(
     ['src\\RemoteBorneManager.py'],
-    pathex=[],
+    pathex=['src'],
     binaries=[],
     datas=[('BorneCommander.ico', '.'), ('tools', 'tools')],
     hiddenimports=['debug_logs', 'energy_manager', 'network_config', 'plink_backend', 'ssh_manager'],

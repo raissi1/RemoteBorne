@@ -4,23 +4,10 @@ import tkinter as tk
 from tkinter import ttk
 import datetime
 
-
-def _center_window(parent, win, w=900, h=700):
-    win.update_idletasks()
-
-    if parent is not None:
-        try:
-            x = parent.winfo_rootx() + (parent.winfo_width() // 2) - (w // 2)
-            y = parent.winfo_rooty() + (parent.winfo_height() // 2) - (h // 2)
-        except Exception:
-            x = (win.winfo_screenwidth() // 2) - (w // 2)
-            y = (win.winfo_screenheight() // 2) - (h // 2)
-    else:
-        x = (win.winfo_screenwidth() // 2) - (w // 2)
-        y = (win.winfo_screenheight() // 2) - (h // 2)
-
-    win.geometry(f"{w}x{h}+{x}+{y}")
-
+try:
+    from .utils_ui import center_window
+except ImportError:
+    from utils_ui import center_window
 
 def open_help(parent=None):
     win = tk.Toplevel(parent)
@@ -31,7 +18,7 @@ def open_help(parent=None):
         win.grab_set()
 
     win.geometry("900x700")
-    _center_window(parent, win)
+    center_window(parent, win, 900, 700)
 
     # ----- UI -----
     frame = ttk.Frame(win)
