@@ -1,5 +1,5 @@
 # ================================================================
-# energy_manager.py — PRO VERSION (FULL STABLE)
+# energy_manager.py — ENERGY MANAGER PRO (Ultimate)
 # ================================================================
 
 import tkinter as tk
@@ -11,13 +11,6 @@ import math
 import csv
 import re
 
-# Import compatible dev + exe
-try:
-    from .utils_ui import center_window
-except ImportError:
-    from utils_ui import center_window
-
-
 ENERGY_TOOL_RESOLVE = (
     'EM_TOOL="$(command -v EnergyManagerTestingTool 2>/dev/null || true)"; '
     'if [ -z "$EM_TOOL" ]; then '
@@ -26,77 +19,101 @@ ENERGY_TOOL_RESOLVE = (
     "done; "
     'fi; '
     'if [ -z "$EM_TOOL" ]; then '
-    "echo 'EnergyManagerTestingTool not found' >&2; exit 127; "
+    "echo 'EnergyManagerTestingTool not found on target (checked PATH, /usr/local/bin, /usr/bin)' >&2; "
+    "exit 127; "
     "fi; "
 )
 
 
 class EnergyManagerWindow:
-    """Energy Manager PRO - version production"""
+    """Fenêtre Energy Manager PRO (plein écran, une seule vue)."""
 
-    def __init__(self, master, ssh):
+    def __init__(self, master, ssh: "SSHManager"):
         self.master = master
         self.ssh = ssh
+
+        # Historique : liste de tuples (timestamp, mode, cmd, status)
         self.history = []
 
-        # ================= WINDOW =================
+        # Fenêtre principale de l'Energy Manager
         self.win = ttk.Toplevel(master)
         self.win.title("Energy Manager PRO")
+        try:
+            self.win.state("zoomed")  # plein écran si possible
+        except Exception:
+            self.win.geometry("1200x800")
         self.win.minsize(1100, 700)
 
-        center_window(master, self.win, 1200, 800)
-
-        self.win.transient(master)
-        self.win.grab_set()
-        self.win.lift()
-        self.win.focus_force()
-        self.win.protocol("WM_DELETE_WINDOW", self.on_close)
-
-        # ================= VARIABLES =================
+        # Champs P/Q & CosPhi
         self.p_var = tk.StringVar()
         self.q_var = tk.StringVar()
-
         self.p_cosphi_var = tk.StringVar()
         self.cosphi_var = tk.StringVar()
         self.q_auto_var = tk.StringVar()
 
+        # Widgets pour historique / monitor
         self.table = None
         self.monitor_text = None
 
         self.build_ui()
 
-        # Auto update Q
-        self.cosphi_var.trace_add("write", lambda *_: self.calculate_q_from_cosphi())
-
-    # ================= POPUPS =================
-    def _popup(self, level, title, msg):
+    # ------------------------------------------------------------
+    # Helpers popups : toujours devant et modales
+    # ------------------------------------------------------------
+    def _popup_info(self, title: str, message: str):
         self.win.lift()
         self.win.attributes("-topmost", True)
         try:
-            getattr(messagebox, level)(title, msg, parent=self.win)
+            messagebox.showinfo(title, message, parent=self.win)
         finally:
             self.win.attributes("-topmost", False)
 
-    def _popup_info(self, t, m): self._popup("showinfo", t, m)
-    def _popup_warning(self, t, m): self._popup("showwarning", t, m)
-    def _popup_error(self, t, m): self._popup("showerror", t, m)
+    def _popup_warning(self, title: str, message: str):
+        self.win.lift()
+        self.win.attributes("-topmost", True)
+        try:
+            messagebox.showwarning(title, message, parent=self.win)
+        finally:
+            self.win.attributes("-topmost", False)
 
-    # ================= VALIDATION =================
-    def _validate_numeric(self, val):
-        return val == "" or re.match(r"^-?\d*(\.\d*)?$", val)
+    def _popup_error(self, title: str, message: str):
+        self.win.lift()
+        self.win.attributes("-topmost", True)
+        try:
+            messagebox.showerror(title, message, parent=self.win)
+        finally:
+            self.win.attributes("-topmost", False)
 
-    # ================= UI =================
+    # ------------------------------------------------------------
+    # Validation saisie numérique (float / int)
+    # ------------------------------------------------------------
+    def _validate_numeric(self, new_value: str) -> bool:
+        """
+        Validation pour les champs P/Q/CosPhi :
+         - autorise vide (pendant la saisie)
+         - autorise -123, 3.14, -0.5, etc.
+         - refuse les lettres et caractères spéciaux
+        """
+        if new_value == "":
+            return True
+        pattern = r"^-?\d*(\.\d*)?$"
+        return re.match(pattern, new_value) is not None
+
+    # ------------------------------------------------------------
+    # UI principale : une seule vue structurée
+    # ------------------------------------------------------------
     def build_ui(self):
         main = ttk.Frame(self.win)
         main.pack(fill="both", expand=True, padx=20, pady=20)
 
+        # Layout général : deux lignes
         main.rowconfigure(0, weight=1)
         main.rowconfigure(1, weight=2)
         main.columnconfigure(0, weight=3)
         main.columnconfigure(1, weight=2)
 
         top = ttk.Frame(main)
-        top.grid(row=0, column=0, columnspan=2, sticky="nsew")
+        top.grid(row=0, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
 
         bottom_left = ttk.Frame(main)
         bottom_left.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
@@ -104,175 +121,356 @@ class EnergyManagerWindow:
         bottom_right = ttk.Frame(main)
         bottom_right.grid(row=1, column=1, sticky="nsew")
 
-        self._build_section_energy(top)
+        self._build_section_pq_cosphi(top)
         self._build_section_history(bottom_left)
         self._build_section_monitor(bottom_right)
 
         footer = ttk.Frame(self.win)
-        footer.pack(fill="x", padx=20, pady=10)
-        ttk.Button(footer, text="Close", bootstyle="danger", command=self.on_close).pack(side="right")
+        footer.pack(fill="x", padx=20, pady=(0, 10))
+        ttk.Button(
+            footer,
+            text="Close",
+            bootstyle="danger",
+            command=self.win.destroy,
+        ).pack(side="right")
 
-    # ================= ENERGY =================
-    def _build_section_energy(self, parent):
-        vcmd = (self.win.register(self._validate_numeric), "%P")
-
-        frm = ttk.Labelframe(parent, text="Energy Control", padding=15)
+    # ------------------------------------------------------------
+    # SECTION P/Q & COSPHI
+    # ------------------------------------------------------------
+    def _build_section_pq_cosphi(self, parent):
+        frm = ttk.Frame(parent)
         frm.pack(fill="both", expand=True)
 
-        # P/Q
-        ttk.Label(frm, text="P (W)").grid(row=0, column=0)
-        ttk.Entry(frm, textvariable=self.p_var, validate="key", validatecommand=vcmd).grid(row=0, column=1)
+        title = ttk.Label(
+            frm,
+            text="Mode P/Q et CosPhi",
+            font=("Segoe UI", 22, "bold"),
+            anchor="center",
+        )
+        title.pack(pady=10)
 
-        ttk.Label(frm, text="Q (VAR)").grid(row=1, column=0)
-        ttk.Entry(frm, textvariable=self.q_var, validate="key", validatecommand=vcmd).grid(row=1, column=1)
+        vcmd = (self.win.register(self._validate_numeric), "%P")
 
-        ttk.Button(frm, text="Send P/Q", bootstyle="success", command=self.send_pq).grid(row=2, column=0, columnspan=2)
+        # --- Mode P/Q
+        pq_frame = ttk.Labelframe(frm, text="Mode P/Q", padding=15)
+        pq_frame.pack(fill="x", pady=10)
 
-        # CosPhi
-        ttk.Label(frm, text="CosPhi").grid(row=3, column=0)
-        ttk.Entry(frm, textvariable=self.cosphi_var, validate="key", validatecommand=vcmd).grid(row=3, column=1)
+        ttk.Label(pq_frame, text="Active Power P (W) :").grid(
+            row=0, column=0, sticky="w", pady=5
+        )
+        ttk.Entry(
+            pq_frame,
+            textvariable=self.p_var,
+            width=20,
+            validate="key",
+            validatecommand=vcmd,
+        ).grid(row=0, column=1, padx=10)
 
-        ttk.Label(frm, text="Q auto").grid(row=4, column=0)
-        ttk.Entry(frm, textvariable=self.q_auto_var, state="readonly").grid(row=4, column=1)
+        ttk.Label(pq_frame, text="Reactive Power Q (VAR) :").grid(
+            row=1, column=0, sticky="w", pady=5
+        )
+        ttk.Entry(
+            pq_frame,
+            textvariable=self.q_var,
+            width=20,
+            validate="key",
+            validatecommand=vcmd,
+        ).grid(row=1, column=1, padx=10)
 
-        ttk.Button(frm, text="Calculate Q", command=self.calculate_q_from_cosphi).grid(row=5, column=0)
-        ttk.Button(frm, text="Send CosPhi", bootstyle="success", command=self.send_cosphi).grid(row=5, column=1)
+        ttk.Button(
+            pq_frame,
+            text="Send P/Q",
+            bootstyle="success",
+            command=self.send_pq,
+        ).grid(row=2, column=0, columnspan=2, pady=10)
 
-    # ================= COMMANDES =================
+        for i in range(2):
+            pq_frame.grid_columnconfigure(i, weight=1)
+
+        # --- Mode CosPhi
+        cos_frame = ttk.Labelframe(frm, text="Mode CosPhi", padding=15)
+        cos_frame.pack(fill="x", pady=10)
+
+        ttk.Label(cos_frame, text="Active Power P (W) :").grid(
+            row=0, column=0, sticky="w", pady=5
+        )
+        ttk.Entry(
+            cos_frame,
+            textvariable=self.p_cosphi_var,
+            width=20,
+            validate="key",
+            validatecommand=vcmd,
+        ).grid(row=0, column=1, padx=10)
+
+        ttk.Label(cos_frame, text="CosPhi (-1 → 1] :").grid(
+            row=1, column=0, sticky="w", pady=5
+        )
+        ttk.Entry(
+            cos_frame,
+            textvariable=self.cosphi_var,
+            width=20,
+            validate="key",
+            validatecommand=vcmd,
+        ).grid(row=1, column=1, padx=10)
+
+        ttk.Label(cos_frame, text="Reactive Power Q (auto) :").grid(
+            row=2, column=0, sticky="w", pady=5
+        )
+        q_auto_entry = ttk.Entry(
+            cos_frame,
+            textvariable=self.q_auto_var,
+            width=20,
+            state="readonly",
+        )
+        q_auto_entry.grid(row=2, column=1, padx=10)
+
+        ttk.Button(
+            cos_frame,
+            text="Calculate Q",
+            bootstyle="info",
+            command=self.calculate_q_from_cosphi,
+        ).grid(row=3, column=0, pady=10, sticky="e")
+
+        ttk.Button(
+            cos_frame,
+            text="Send CosPhi",
+            bootstyle="success",
+            command=self.send_cosphi,
+        ).grid(row=3, column=1, pady=10, sticky="w")
+
+        for i in range(2):
+            cos_frame.grid_columnconfigure(i, weight=1)
+
+    # ------------------------------------------------------------
+    # SECTION HISTORIQUE
+    # ------------------------------------------------------------
+    def _build_section_history(self, parent):
+        frm = ttk.Labelframe(parent, text="Historique des commandes", padding=10)
+        frm.pack(fill="both", expand=True)
+
+        columns = ("timestamp", "mode", "cmd", "status")
+        self.table = ttk.Treeview(
+            frm, columns=columns, show="headings", bootstyle="info"
+        )
+        self.table.heading("timestamp", text="Timestamp")
+        self.table.heading("mode", text="Mode")
+        self.table.heading("cmd", text="Commande")
+        self.table.heading("status", text="Statut")
+
+        self.table.column("timestamp", width=150, anchor="w")
+        self.table.column("mode", width=80, anchor="center")
+        self.table.column("cmd", width=400, anchor="w")
+        self.table.column("status", width=120, anchor="center")
+
+        self.table.pack(fill="both", expand=True, pady=(0, 10))
+
+        btns = ttk.Frame(frm)
+        btns.pack(anchor="w")
+
+        ttk.Button(
+            btns,
+            text="Exporter CSV",
+            bootstyle="secondary",
+            command=self.export_csv,
+        ).pack(side="left", padx=5, pady=5)
+
+    # ------------------------------------------------------------
+    # SECTION MONITOR
+    # ------------------------------------------------------------
+    def _build_section_monitor(self, parent):
+        frm = ttk.Labelframe(parent, text="Monitor Energy Manager", padding=10)
+        frm.pack(fill="both", expand=True)
+
+        self.monitor_text = tk.Text(frm, height=12, font=("Consolas", 10))
+        self.monitor_text.pack(fill="both", expand=True, pady=(0, 10))
+
+        btns = ttk.Frame(frm)
+        btns.pack(anchor="w")
+
+        ttk.Button(
+            btns,
+            text="Refresh status",
+            bootstyle="info",
+            command=self.refresh_status,
+        ).pack(side="left", padx=5, pady=5)
+
+        ttk.Button(
+            btns,
+            text="Restart S91energy-manager",
+            bootstyle="warning",
+            command=self.restart_energy_service,
+        ).pack(side="left", padx=5, pady=5)
+
+    # ------------------------------------------------------------
+    # LOGIQUE P/Q & COSPHI
+    # ------------------------------------------------------------
     def send_pq(self):
+        p_str = self.p_var.get().strip()
+        q_str = self.q_var.get().strip()
+
         try:
-            p = int(float(self.p_var.get()))
-            q = int(float(self.q_var.get()))
-        except:
-            self._popup_warning("Erreur", "Valeurs invalides")
+            p_val = int(float(p_str))
+            q_val = int(float(q_str))
+        except ValueError:
+            self._popup_warning("Valeurs invalides", "P et Q doivent être numériques.")
             return
 
         cmd = (
+            "cd /var/aux/EnergyManager && "
+            "export LD_LIBRARY_PATH=/usr/local/lib && "
             f"{ENERGY_TOOL_RESOLVE}"
-            f"\"$EM_TOOL\" -S -s ocpp -a --power {p} --reactive-power {q}"
+            f"\"$EM_TOOL\" -S -s ocpp -a "
+            f"--power {p_val} --reactive-power {q_val} -m CentralSetpoint"
         )
         self.execute_energy_cmd("P/Q", cmd)
 
     def calculate_q_from_cosphi(self):
+        p_str = self.p_cosphi_var.get().strip()
+        cosphi_str = self.cosphi_var.get().strip()
+
         try:
-            p = float(self.p_cosphi_var.get())
-            cos = float(self.cosphi_var.get())
+            p_val = float(p_str)
+            cosphi_val = float(cosphi_str)
+            if not (-1.0 < cosphi_val <= 1.0):
+                raise ValueError("CosPhi hors plage")
+        except ValueError:
+            self._popup_warning(
+                "Valeurs invalides",
+                "P doit être numérique et CosPhi dans l'intervalle (-1, 1].",
+            )
+            return
 
-            if not (-1 < cos <= 1):
-                raise ValueError
-
-            if abs(cos) < 0.01:
-                self._popup_warning("Danger", "CosPhi trop proche de 0")
-                return
-
-            q = abs(p) * math.tan(math.acos(cos))
-            self.q_auto_var.set(str(int(round(q))))
-        except:
-            pass
+        q_val = abs(p_val) * math.tan(math.acos(cosphi_val))
+        q_val_rounded = int(round(q_val))
+        self.q_auto_var.set(str(q_val_rounded))
 
     def send_cosphi(self):
+        p_str = self.p_cosphi_var.get().strip()
+        cosphi_str = self.cosphi_var.get().strip()
+        q_str = self.q_auto_var.get().strip()
+
         try:
-            p = int(float(self.p_cosphi_var.get()))
-            cos = float(self.cosphi_var.get())
-        except:
-            self._popup_warning("Erreur", "Valeurs invalides")
+            p_val = int(float(p_str))
+            cosphi_val = float(cosphi_str)
+            q_val = int(float(q_str))
+        except ValueError:
+            self._popup_warning(
+                "Valeurs invalides",
+                "P, CosPhi et Q auto doivent être remplis et numériques "
+                "(pensez à cliquer sur 'Calculate Q').",
+            )
             return
 
         cmd = (
+            "cd /var/aux/EnergyManager && "
+            "export LD_LIBRARY_PATH=/usr/local/lib && "
             f"{ENERGY_TOOL_RESOLVE}"
-            f"\"$EM_TOOL\" --grid-option \"SetpointCosPhi_Pct={int(cos*100)}\" && "
-            f"\"$EM_TOOL\" -S -s ocpp -a --power {p}"
+            f"(\"$EM_TOOL\" --grid-option "
+            f"\"SetpointCosPhi_Pct={int(round(cosphi_val * 100))}\" && "
+            f"\"$EM_TOOL\" -S -s ocpp -a "
+            f"--power {p_val} -m CentralSetpoint) >/dev/null 2>&1 &"
         )
-
         self.execute_energy_cmd("CosPhi", cmd)
 
-    # ================= EXECUTION =================
+    # ------------------------------------------------------------
+    # FONCTION COMMUNE D’ENVOI
+    # ------------------------------------------------------------
     def execute_energy_cmd(self, mode, cmd):
         if not self.ssh or not getattr(self.ssh, "connected", False):
-            self._popup_error("SSH", "Non connecté")
+            self._popup_error("Erreur SSH", "Non connecté à la borne.")
             return
 
-        ts = time.strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
 
         def callback(res):
             status = "OK" if res["success"] else f"ERR: {res['err']}"
-            self.history.append((ts, mode, cmd, status))
+            self.history.append((timestamp, mode, cmd, status))
             self.update_history_table()
+            if res["success"]:
+                self._popup_info("Succès", f"Commande envoyée :\n{cmd}")
+            else:
+                err = res["err"] or res["out"] or "Erreur inconnue"
+                self._popup_error("Erreur", f"Erreur lors de l’envoi.\n{err}")
 
         self.ssh.execute(cmd, callback=callback)
 
-    # ================= HISTORY =================
-    def _build_section_history(self, parent):
-        columns = ("timestamp", "mode", "cmd", "status")
-        self.table = ttk.Treeview(parent, columns=columns, show="headings")
-
-        for col in columns:
-            self.table.heading(col, text=col)
-
-        self.table.pack(fill="both", expand=True)
-
-        ttk.Button(parent, text="Export CSV", command=self.export_csv).pack()
-
+    # ------------------------------------------------------------
+    # HISTORIQUE
+    # ------------------------------------------------------------
     def update_history_table(self):
-        for i in self.table.get_children():
-            self.table.delete(i)
-        for h in reversed(self.history):
+        if not self.table:
+            return
+        for item in self.table.get_children():
+            self.table.delete(item)
+        for h in self.history:
             self.table.insert("", "end", values=h)
 
     def export_csv(self):
         if not self.history:
-            self._popup_warning("Vide", "Aucune donnée")
+            self._popup_warning("Vide", "Aucune entrée dans l’historique.")
             return
 
-        path = filedialog.asksaveasfilename(defaultextension=".csv", parent=self.win)
+        path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            parent=self.win,
+        )
         if not path:
             return
 
-        with open(path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow(["timestamp", "mode", "cmd", "status"])
-            writer.writerows(self.history)
+        try:
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(["timestamp", "mode", "command", "status"])
+                writer.writerows(self.history)
+        except Exception as e:
+            self._popup_error("Export", f"Erreur lors de l'export CSV :\n{e}")
+            return
 
-        self._popup_info("Export", "Export réussi")
+        self._popup_info("Export", "Export CSV effectué.")
 
-    # ================= MONITOR =================
-    def _build_section_monitor(self, parent):
-        self.monitor_text = tk.Text(parent)
-        self.monitor_text.pack(fill="both", expand=True)
-
-        btns = ttk.Frame(parent)
-        btns.pack()
-
-        ttk.Button(btns, text="Refresh", command=self.refresh_status).pack(side="left")
-        ttk.Button(btns, text="Restart", command=self.restart_energy_service).pack(side="left")
-
+    # ------------------------------------------------------------
+    # MONITOR (version sans systemctl, adaptée à /etc/init.d)
+    # ------------------------------------------------------------
     def refresh_status(self):
+        """Affiche le status du service energy manager (init.d + ps)."""
+        if not self.ssh or not getattr(self.ssh, "connected", False):
+            self._popup_error("Erreur SSH", "Non connecté à la borne.")
+            return
+
+        # Ici on évite systemctl, on utilise /etc/init.d + ps
         cmd = (
-            "/etc/init.d/S91energy-manager status 2>&1; "
-            "ps | grep -i energy | grep -v grep"
+            'echo "=== /etc/init.d/S91energy-manager status ==="; '
+            "/etc/init.d/S91energy-manager status 2>&1 || "
+            'echo "No /etc/init.d/S91energy-manager script"; '
+            'echo ""; echo "=== ps | grep -i energy ==="; '
+            "ps | grep -i energy | grep -v grep || "
+            'echo "No energy-related process found"'
         )
 
-        def cb(res):
+        def callback(res):
             self.monitor_text.delete("1.0", "end")
-            self.monitor_text.insert("end", res["out"] or res["err"])
+            if res["success"]:
+                self.monitor_text.insert("end", res["out"])
+            else:
+                err = res["err"] or res["out"] or "Erreur inconnue"
+                # On écrit quand même le message dans la zone
+                self.monitor_text.insert("end", f"ERROR: {err}")
 
-        self.ssh.execute(cmd, callback=cb)
+        self.ssh.execute(cmd, callback=callback)
 
     def restart_energy_service(self):
+        if not self.ssh or not getattr(self.ssh, "connected", False):
+            self._popup_error("Erreur SSH", "Non connecté à la borne.")
+            return
+
         cmd = "/etc/init.d/S91energy-manager restart"
 
-        def cb(res):
+        def callback(res):
             if res["success"]:
-                self._popup_info("OK", "Service redémarré")
+                self._popup_info("OK", "Service S91energy-manager redémarré.")
             else:
-                self._popup_error("Erreur", res["err"])
+                err = res["err"] or res["out"] or "Erreur inconnue"
+                self._popup_error("Erreur", err)
 
-        self.ssh.execute(cmd, callback=cb)
-
-    # ================= CLOSE =================
-    def on_close(self):
-        try:
-            self.win.grab_release()
-        except:
-            pass
-        self.win.destroy()
+        self.ssh.execute(cmd, callback=callback)

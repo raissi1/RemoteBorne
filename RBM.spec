@@ -1,20 +1,42 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import sys
+from PyInstaller.utils.hooks import collect_submodules
+
+block_cipher = None
+
+# 🔥 Inclure tous les modules dynamiques
+hiddenimports = []
+hiddenimports += collect_submodules('ttkbootstrap')
+
+# 🔥 Données (dossiers importants)
+datas = [
+    ('tools', 'tools'),
+    ('configs', 'configs'),
+    ('images', 'images'),
+    ('BorneCommander.ico', '.'),
+]
 
 a = Analysis(
-    ['src\\RemoteBorneManager.py'],
+    ['src/RemoteBorneManager.py'],
     pathex=['src'],
     binaries=[],
-    datas=[('BorneCommander.ico', '.'), ('tools', 'tools')],
-    hiddenimports=['debug_logs', 'energy_manager', 'network_config', 'plink_backend', 'ssh_manager'],
+    datas=datas,
+    hiddenimports=hiddenimports + [
+        'debug_logs',
+        'energy_manager',
+        'network_config',
+        'plink_backend',
+        'ssh_manager',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
     noarchive=False,
-    optimize=0,
 )
-pyz = PYZ(a.pure)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
     pyz,
@@ -27,16 +49,13 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon=['BorneCommander.ico'],
+    icon='BorneCommander.ico',
 )
+
 coll = COLLECT(
     exe,
     a.binaries,
+    a.zipfiles,
     a.datas,
     strip=False,
     upx=True,

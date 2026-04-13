@@ -1,3 +1,15 @@
+import os
+import sys
+
+def resource_path(path):
+    """Retourne le bon chemin (dev ou exe PyInstaller)"""
+    try:
+        base = sys._MEIPASS  # mode exe
+    except Exception:
+        base = os.path.abspath(".")  # mode dev
+
+    return os.path.join(base, path)
+    
 def center_window(parent, win, width=900, height=600):
     win.update_idletasks()
 
