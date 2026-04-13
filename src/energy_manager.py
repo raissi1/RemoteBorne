@@ -38,6 +38,12 @@ class EnergyManagerWindow:
         # Fenêtre principale de l'Energy Manager
         self.win = ttk.Toplevel(master)
         self.win.title("Energy Manager PRO")
+        try:
+            self.win.transient(master)
+            self.win.grab_set()
+            self.win.focus_force()
+        except Exception:
+            pass
         self.win.geometry("1000x680")
         self.win.minsize(900, 580)
         self._center_on_parent(1000, 680)
@@ -119,11 +125,10 @@ class EnergyManagerWindow:
     # ------------------------------------------------------------
     def build_ui(self):
         main = ttk.Frame(self.win)
-        main.pack(fill="both", expand=True, padx=20, pady=20)
+        main.pack(fill="both", expand=True, padx=14, pady=14)
 
-        # Layout général : deux lignes
-        main.rowconfigure(0, weight=1)
-        main.rowconfigure(1, weight=2)
+        # Layout général : zone top + zone bas (history/monitor) + footer
+        main.rowconfigure(1, weight=1)
         main.columnconfigure(0, weight=3)
         main.columnconfigure(1, weight=2)
 
@@ -140,8 +145,8 @@ class EnergyManagerWindow:
         self._build_section_history(bottom_left)
         self._build_section_monitor(bottom_right)
 
-        footer = ttk.Frame(self.win)
-        footer.pack(fill="x", padx=20, pady=(0, 10))
+        footer = ttk.Frame(main)
+        footer.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
         ttk.Button(
             footer,
             text="Close",
@@ -179,7 +184,7 @@ class EnergyManagerWindow:
             width=20,
             validate="key",
             validatecommand=vcmd,
-        ).grid(row=0, column=1, padx=10)
+        ).grid(row=0, column=1, padx=10, sticky="w")
 
         ttk.Label(pq_frame, text="Reactive Power Q (VAR) :").grid(
             row=1, column=0, sticky="w", pady=5
@@ -190,7 +195,7 @@ class EnergyManagerWindow:
             width=20,
             validate="key",
             validatecommand=vcmd,
-        ).grid(row=1, column=1, padx=10)
+        ).grid(row=1, column=1, padx=10, sticky="w")
 
         ttk.Button(
             pq_frame,
@@ -199,8 +204,7 @@ class EnergyManagerWindow:
             command=self.send_pq,
         ).grid(row=2, column=0, columnspan=2, pady=10)
 
-        for i in range(2):
-            pq_frame.grid_columnconfigure(i, weight=1)
+        pq_frame.grid_columnconfigure(2, weight=1)
 
         # --- Mode CosPhi
         cos_frame = ttk.Labelframe(frm, text="Mode CosPhi", padding=15)
@@ -215,7 +219,7 @@ class EnergyManagerWindow:
             width=20,
             validate="key",
             validatecommand=vcmd,
-        ).grid(row=0, column=1, padx=10)
+        ).grid(row=0, column=1, padx=10, sticky="w")
 
         ttk.Label(cos_frame, text="CosPhi (-1 → 1] :").grid(
             row=1, column=0, sticky="w", pady=5
@@ -226,7 +230,7 @@ class EnergyManagerWindow:
             width=20,
             validate="key",
             validatecommand=vcmd,
-        ).grid(row=1, column=1, padx=10)
+        ).grid(row=1, column=1, padx=10, sticky="w")
 
         ttk.Label(cos_frame, text="Reactive Power Q (auto) :").grid(
             row=2, column=0, sticky="w", pady=5
@@ -237,7 +241,7 @@ class EnergyManagerWindow:
             width=20,
             state="readonly",
         )
-        q_auto_entry.grid(row=2, column=1, padx=10)
+        q_auto_entry.grid(row=2, column=1, padx=10, sticky="w")
 
         ttk.Button(
             cos_frame,
@@ -253,8 +257,7 @@ class EnergyManagerWindow:
             command=self.send_cosphi,
         ).grid(row=3, column=1, pady=10, sticky="w")
 
-        for i in range(2):
-            cos_frame.grid_columnconfigure(i, weight=1)
+        cos_frame.grid_columnconfigure(2, weight=1)
 
     # ------------------------------------------------------------
     # SECTION HISTORIQUE
