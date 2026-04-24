@@ -59,16 +59,16 @@ class SSHManager:
         if self._ui_callback:
             try:
                 self._ui_callback(event_type, data)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[SSH WARN] UI callback failed: {e}")
 
     def _log(self, msg: str):
         if self._log_callback:
             try:
                 self._log_callback(msg)
                 return
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[SSH WARN] Log callback failed: {e}")
         # fallback console si pas de callback
         print(msg)
 

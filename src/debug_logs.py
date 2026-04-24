@@ -132,7 +132,7 @@ class DebugLogsWindow:
             self._create_tab(name, path)
 
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
-        self.window.wait_window()
+        # Non-bloquant: la fenêtre reste modale via grab_set mais sans bloquer l'appelant
 
     # ------------------------------------------------------------------
     # Création d'un onglet complet (zone texte + barre grep + boutons)

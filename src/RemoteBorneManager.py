@@ -31,7 +31,7 @@ import posixpath
 import re
 
 import tkinter as tk
-from tkinter import messagebox, filedialog
+from tkinter import messagebox, filedialog, simpledialog
 
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
@@ -999,7 +999,7 @@ class RemoteBorneApp:
                         if heartbeat_failures < 3:
                             return
                         now = time.time()
-                        if now - last_reconnect_try >= 10:
+                        if now - last_reconnect_try >= 30:
                             self.log(
                                 "[ALIVE] 3 heartbeat failures in a row, forcing reconnect."
                             )
@@ -1786,10 +1786,55 @@ class RemoteBorneApp:
             except Exception:
                 pass
 
+        def save_as_upload():
+            new_name = simpledialog.askstring(
+                "Save As",
+                "New remote filename (or full remote path):",
+                initialvalue=posixpath.basename(remote_path),
+                parent=win,
+            )
+            if not new_name:
+                return
+
+            new_name = new_name.strip()
+            if not new_name:
+                self._popup_warning("Save As", "Filename cannot be empty.")
+                return
+
+            if "/" in new_name:
+                target_remote = new_name
+            else:
+                target_remote = self._join_remote(
+                    posixpath.dirname(remote_path), new_name
+                )
+
+            content = txt.get("1.0", "end-1c")
+            content = content.replace("\r\n", "\n").replace("\r", "\n")
+            try:
+                with open(tmp_local, "w", encoding="utf-8", newline="\n") as f:
+                    f.write(content)
+            except Exception as e:
+                self._popup_error("Save As", f"Local save error:\n{e}")
+                return
+
+            self.log(f"[EDIT] Uploading (Save As) {tmp_local} -> {target_remote}")
+            res3 = self.ssh.scp_put(tmp_local, target_remote)
+            if not res3["success"]:
+                err3 = (res3["err"] or res3["out"] or "").strip()
+                self.log(f"[EDIT ERROR] Save As upload failed: {err3}")
+                self._popup_error("Save As", f"Upload failed:\n{err3}")
+                return
+
+            self.log(f"[EDIT] Save As done -> {target_remote}")
+            self.refresh_file_list()
+
         ttk.Button(btn_bar, text="Find", command=open_find_dialog).pack(
             side="left", padx=5, pady=5
         )
         ttk.Button(btn_bar, text="Save", command=save_and_upload).pack(
+            side="right", padx=5, pady=5
+        )
+        ttk.Button(btn_bar, text="Save As", command=save_as_upload).pack(
             side="right", padx=5, pady=5
         )
         ttk.Button(

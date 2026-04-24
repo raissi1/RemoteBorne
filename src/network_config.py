@@ -216,4 +216,4 @@ def open_network_config(parent, config_path, on_saved=None):
     main_frame.columnconfigure(1, weight=1)
     win.minsize(620, 420)
 
-    win.wait_window()
+    # Non-bloquant: la fenêtre reste modale via grab_set mais n'arrête pas la boucle appelante
