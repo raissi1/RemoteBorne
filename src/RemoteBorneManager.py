@@ -262,6 +262,11 @@ class RemoteBorneApp:
         self.path_entry = None
         self._editor_window = None
         self._editor_remote_path = None
+        # --- ADDED ---
+        self.temp_label_var = tk.StringVar(value="Temp: --")
+        self.soc_label_var = tk.StringVar(value="SoC Batterie: --")
+        self._monitor_stop = False
+        self._monitor_thread_started = False
 
         self.led_canvas = None
         self.ip_label = None
@@ -811,10 +816,21 @@ class RemoteBorneApp:
         )
         self.btn_reboot.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
 
+        # --- ADDED ---
+        derate_frame = ttk.Labelframe(main, text="Temperature / Derating", padding=5)
+        derate_frame.grid(row=3, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 6))
+        derate_frame.grid_columnconfigure(0, weight=1)
+        derate_frame.grid_columnconfigure(1, weight=1)
+
+        self.temp_label = ttk.Label(derate_frame, textvariable=self.temp_label_var)
+        self.temp_label.grid(row=0, column=0, sticky="w", padx=2, pady=2)
+        self.soc_label = ttk.Label(derate_frame, textvariable=self.soc_label_var)
+        self.soc_label.grid(row=0, column=1, sticky="w", padx=2, pady=2)
+
         # ----- BOTTOM : LOGS -----
         log_frame = ttk.Labelframe(main, text="Logs", padding=5)
         log_frame.grid(
-            row=3, column=0, columnspan=2, sticky="nsew", padx=10, pady=(0, 10)
+            row=4, column=0, columnspan=2, sticky="nsew", padx=10, pady=(0, 10)
         )
         log_frame.grid_columnconfigure(0, weight=1)
         log_frame.grid_rowconfigure(0, weight=1)
@@ -1020,6 +1036,67 @@ class RemoteBorneApp:
         t = threading.Thread(target=worker, daemon=True)
         t.start()
 
+    # --- ADDED ---
+    def _start_monitor(self):
+        if self._monitor_thread_started:
+            return
+        self._monitor_thread_started = True
+
+        def worker():
+            while not self._monitor_stop:
+                if self.ssh.connected and not self._manual_disconnect_mode:
+                    self.update_temperature()
+                    self.update_soc()
+                time.sleep(5)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    # --- ADDED ---
+    def update_temperature(self):
+        cmd = "tail -n 20 /var/aux/ChargerApp/derate.log"
+
+        def cb(res):
+            if not res.get("success"):
+                return
+            output = (res.get("stdout") or "") + "\n" + (res.get("stderr") or "")
+            match = re.search(r"Temp\\s*[:=]\\s*(-?\\d+)", output, flags=re.IGNORECASE)
+            if not match:
+                return
+            temp = int(match.group(1))
+
+            def apply_ui():
+                self.temp_label_var.set(f"Temp: {temp}")
+                self.temp_label.configure(foreground=("red" if temp > 80 else "green"))
+
+            try:
+                self.root.after(0, apply_ui)
+            except Exception:
+                pass
+
+        self.ssh.execute(cmd, callback=cb, timeout=10, auto_retry=False, log_errors=False)
+
+    # --- ADDED ---
+    def update_soc(self):
+        cmd = "tail -n 50 /var/aux/ChargerApp/ChargerApp.log"
+
+        def cb(res):
+            if not res.get("success"):
+                return
+            output = (res.get("stdout") or "") + "\n" + (res.get("stderr") or "")
+            matches = re.findall(r"evPresentSoc\\s*[:=]\\s*(\\d+)", output, flags=re.IGNORECASE)
+            if not matches:
+                return
+
+            def apply_ui():
+                self.soc_label_var.set(f"SoC Batterie: {matches[-1]}")
+
+            try:
+                self.root.after(0, apply_ui)
+            except Exception:
+                pass
+
+        self.ssh.execute(cmd, callback=cb, timeout=10, auto_retry=False, log_errors=False)
+
     # ==================================================================
     # SSH EVENTS (connect / disconnect / reconnect)
     # ==================================================================
@@ -1044,6 +1121,7 @@ class RemoteBorneApp:
                 self.refresh_file_list()
                 # démarre le heartbeat
                 self._start_alive_monitor()
+                self._start_monitor()
 
             elif ev_type == "disconnected":
                 self.connected = False
@@ -2208,6 +2286,7 @@ class RemoteBorneApp:
     # ==================================================================
     def on_exit(self):
         self._alive_stop = True
+        self._monitor_stop = True
         try:
             self.ssh.close()
         except Exception:
