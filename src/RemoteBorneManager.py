@@ -1980,112 +1980,69 @@ class RemoteBorneApp:
             )
 
         def save_and_upload():
+            user_name = simpledialog.askstring(
+                "Save",
+                "Remote filename (or full remote path):",
+                initialvalue=posixpath.basename(remote_path),
+                parent=win,
+            )
+            if user_name is None:
+                return
+
+            user_name = user_name.strip()
+            if not user_name:
+                self._popup_warning("Save", "Filename cannot be empty.")
+                return
+
+            if "/" in user_name:
+                target_remote = user_name
+            else:
+                target_remote = self._join_remote(posixpath.dirname(remote_path), user_name)
+
+            rc, _, _ = self.ssh.backend.exec(
+                f'test -e "{target_remote}"',
+                timeout=self.ssh_timeout,
+            )
+            if rc == 0:
+                if not messagebox.askyesno(
+                    "Confirm overwrite",
+                    f"File already exists:\n{target_remote}\n\nOverwrite?",
+                    parent=win,
+                ):
+                    return
+
             content = txt.get("1.0", "end-1c")
-            # Normalise explicitement en LF pour éviter les ^M sous vi/MobaXterm
             content = content.replace("\r\n", "\n").replace("\r", "\n")
             try:
                 with open(tmp_local, "w", encoding="utf-8", newline="\n") as f:
                     f.write(content)
             except Exception as e:
-                self._popup_error("Edit", f"Local save error:\n{e}")
+                self._popup_error("Save", f"Local save error:\n{e}")
                 return
 
-            self.log(f"[EDIT] Uploading {tmp_local} -> {remote_path}")
-            res2 = self.ssh.scp_put(tmp_local, remote_path)
+            if target_remote == remote_path:
+                self.log(f"[EDIT] Save overwrite -> {target_remote}")
+            else:
+                self.log(f"[EDIT] Save As -> {target_remote}")
 
+            res2 = self.ssh.scp_put(tmp_local, target_remote)
             if not res2["success"]:
                 err2 = (res2["err"] or res2["out"] or "").strip()
-                self.log(f"[EDIT ERROR] Upload failed: {err2}")
-                self._popup_error("Edit", f"Upload failed:\n{err2}")
+                self.log(f"[EDIT ERROR] Save upload failed: {err2}")
+                self._popup_error("Save", f"Upload failed:\n{err2}")
                 return
 
-            self.log("[EDIT] Upload done.")
+            self.log("[EDIT] Save upload done.")
+            self.refresh_file_list()
 
             if (
-                posixpath.basename(remote_path) == self.remote_file
+                posixpath.basename(target_remote) == self.remote_file
                 and messagebox.askyesno(
                     "Services",
                     "GridCodes.properties modified.\nRestart services now?",
                 )
             ):
                 self.restart_initd_services()
-
-        ttk.Button(btn_bar, text="Find", command=open_find_dialog).pack(side="left", padx=5, pady=5)
-        ttk.Button(btn_bar, text="Save", command=save_and_upload).pack(side="right", padx=5, pady=5)
-        ttk.Button(btn_bar, text="Close", command=on_close, style="Danger.TButton").pack(side="right", padx=5, pady=5)
-
-        def save_as_upload():
-            new_name = simpledialog.askstring(
-                "Save As",
-                "New remote filename (or full remote path):",
-                initialvalue=posixpath.basename(remote_path),
-                parent=win,
-            )
-            if not new_name:
-                return
-
-            new_name = new_name.strip()
-            if not new_name:
-                self._popup_warning("Save As", "Filename cannot be empty.")
-                return
-
-            if "/" in new_name:
-                target_remote = new_name
-            else:
-                target_remote = self._join_remote(
-                    posixpath.dirname(remote_path), new_name
-                )
-
-            content = txt.get("1.0", "end-1c")
-            content = content.replace("\r\n", "\n").replace("\r", "\n")
-            try:
-                with open(tmp_local, "w", encoding="utf-8", newline="\n") as f:
-                    f.write(content)
-            except Exception as e:
-                self._popup_error("Save As", f"Local save error:\n{e}")
-                return
-
-        def save_as_upload():
-            new_name = simpledialog.askstring(
-                "Save As",
-                "New remote filename (or full remote path):",
-                initialvalue=posixpath.basename(remote_path),
-                parent=win,
-            )
-            if not new_name:
-                return
-
-            new_name = new_name.strip()
-            if not new_name:
-                self._popup_warning("Save As", "Filename cannot be empty.")
-                return
-
-            if "/" in new_name:
-                target_remote = new_name
-            else:
-                target_remote = self._join_remote(
-                    posixpath.dirname(remote_path), new_name
-                )
-
-            content = txt.get("1.0", "end-1c")
-            content = content.replace("\r\n", "\n").replace("\r", "\n")
-            try:
-                with open(tmp_local, "w", encoding="utf-8", newline="\n") as f:
-                    f.write(content)
-            except Exception as e:
-                self._popup_error("Save As", f"Local save error:\n{e}")
-                return
-
-            self.log(f"[EDIT] Uploading (Save As) {tmp_local} -> {target_remote}")
-            res3 = self.ssh.scp_put(tmp_local, target_remote)
-            if not res3["success"]:
-                err3 = (res3["err"] or res3["out"] or "").strip()
-                self.log(f"[EDIT ERROR] Save As upload failed: {err3}")
-                self._popup_error("Save As", f"Upload failed:\n{err3}")
-                return
-
-            self.log(f"[EDIT] Save As done -> {target_remote}")
-            self.refresh_file_list()
 
         ttk.Button(btn_bar, text="Find", command=open_find_dialog).pack(
             side="left", padx=5, pady=5
