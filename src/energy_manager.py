@@ -147,6 +147,7 @@ class EnergyManagerWindow:
 
         footer = ttk.Frame(main)
         footer.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+
         ttk.Button(
             footer,
             text="Close",
