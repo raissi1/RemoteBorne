@@ -32,13 +32,11 @@ def open_help(parent=None):
     win.title("RemoteBorneManager – Help")
 
     win.geometry("900x700")
-
     if parent is not None:
         win.transient(parent)
         win.grab_set()
         win.focus_force()
         win.lift()
-
     _center_over_parent(parent, win, 900, 700)
     win.after(30, lambda: _center_over_parent(parent, win, 900, 700))
 
@@ -261,4 +259,3 @@ Nabil RAISSI
 
     btn = ttk.Button(win, text="Close", command=win.destroy)
     btn.pack(pady=5)
-

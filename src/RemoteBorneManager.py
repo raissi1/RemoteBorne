@@ -265,7 +265,8 @@ class RemoteBorneApp:
         self.soc_label_var = tk.StringVar(value="SoC Batterie: --")
         self._monitor_stop = False
         self._monitor_thread_started = False
-
+        self._temp_update_inflight = False
+        self._soc_update_inflight = False
 
         self.led_canvas = None
         self.ip_label = None
@@ -1018,7 +1019,6 @@ class RemoteBorneApp:
                             return
                         now = time.time()
                         if now - last_reconnect_try >= 30:
-
                             self.log(
                                 "[ALIVE] 3 heartbeat failures in a row, forcing reconnect."
                             )
@@ -1056,47 +1056,59 @@ class RemoteBorneApp:
 
     # --- ADDED ---
     def update_temperature(self):
+        if self._temp_update_inflight:
+            return
+        self._temp_update_inflight = True
         cmd = "tail -n 20 /var/aux/ChargerApp/derate.log"
 
         def cb(res):
-            if not res.get("success"):
-                return
-            output = (res.get("stdout") or "") + "\n" + (res.get("stderr") or "")
-            match = re.search(r"Temp\\s*[:=]\\s*(-?\\d+)", output, flags=re.IGNORECASE)
-            if not match:
-                return
-            temp = int(match.group(1))
-
-            def apply_ui():
-                self.temp_label_var.set(f"Temp: {temp}")
-                self.temp_label.configure(foreground=("red" if temp > 80 else "green"))
-
             try:
-                self.root.after(0, apply_ui)
-            except Exception:
-                pass
+                if not res.get("success"):
+                    return
+                output = (res.get("stdout") or "") + "\n" + (res.get("stderr") or "")
+                match = re.search(r"Temp\s*[:=]\s*(-?\d+)", output, flags=re.IGNORECASE)
+                if not match:
+                    return
+                temp = int(match.group(1))
+
+                def apply_ui():
+                    self.temp_label_var.set(f"Temp: {temp}")
+                    self.temp_label.configure(foreground=("red" if temp > 80 else "green"))
+
+                try:
+                    self.root.after(0, apply_ui)
+                except Exception:
+                    pass
+            finally:
+                self._temp_update_inflight = False
 
         self.ssh.execute(cmd, callback=cb, timeout=10, auto_retry=False, log_errors=False)
 
     # --- ADDED ---
     def update_soc(self):
+        if self._soc_update_inflight:
+            return
+        self._soc_update_inflight = True
         cmd = "tail -n 50 /var/aux/ChargerApp/ChargerApp.log"
 
         def cb(res):
-            if not res.get("success"):
-                return
-            output = (res.get("stdout") or "") + "\n" + (res.get("stderr") or "")
-            matches = re.findall(r"evPresentSoc\\s*[:=]\\s*(\\d+)", output, flags=re.IGNORECASE)
-            if not matches:
-                return
-
-            def apply_ui():
-                self.soc_label_var.set(f"SoC Batterie: {matches[-1]}")
-
             try:
-                self.root.after(0, apply_ui)
-            except Exception:
-                pass
+                if not res.get("success"):
+                    return
+                output = (res.get("stdout") or "") + "\n" + (res.get("stderr") or "")
+                matches = re.findall(r"evPresentSoc\s*[:=]\s*(\d+)", output, flags=re.IGNORECASE)
+                if not matches:
+                    return
+
+                def apply_ui():
+                    self.soc_label_var.set(f"SoC Batterie: {matches[-1]}")
+
+                try:
+                    self.root.after(0, apply_ui)
+                except Exception:
+                    pass
+            finally:
+                self._soc_update_inflight = False
 
         self.ssh.execute(cmd, callback=cb, timeout=10, auto_retry=False, log_errors=False)
 
@@ -1700,7 +1712,6 @@ class RemoteBorneApp:
         win = tk.Toplevel(self.root)
         win.title(f"Edit: {remote_path}")
         self._center_toplevel(win, 960, 680, parent=self.root)
-
         win.minsize(820, 560)
         self._editor_window = win
         self._editor_remote_path = remote_path
@@ -1907,6 +1918,37 @@ class RemoteBorneApp:
                 self._popup_error("Save As", f"Local save error:\n{e}")
                 return
 
+        def save_as_upload():
+            new_name = simpledialog.askstring(
+                "Save As",
+                "New remote filename (or full remote path):",
+                initialvalue=posixpath.basename(remote_path),
+                parent=win,
+            )
+            if not new_name:
+                return
+
+            new_name = new_name.strip()
+            if not new_name:
+                self._popup_warning("Save As", "Filename cannot be empty.")
+                return
+
+            if "/" in new_name:
+                target_remote = new_name
+            else:
+                target_remote = self._join_remote(
+                    posixpath.dirname(remote_path), new_name
+                )
+
+            content = txt.get("1.0", "end-1c")
+            content = content.replace("\r\n", "\n").replace("\r", "\n")
+            try:
+                with open(tmp_local, "w", encoding="utf-8", newline="\n") as f:
+                    f.write(content)
+            except Exception as e:
+                self._popup_error("Save As", f"Local save error:\n{e}")
+                return
+
             self.log(f"[EDIT] Uploading (Save As) {tmp_local} -> {target_remote}")
             res3 = self.ssh.scp_put(tmp_local, target_remote)
             if not res3["success"]:
@@ -1930,6 +1972,9 @@ class RemoteBorneApp:
         ttk.Button(
             btn_bar, text="Close", command=on_close, style="Danger.TButton"
         ).pack(side="right", padx=5, pady=5)
+        txt.bind("<Control-f>", lambda e: (open_find_dialog(), "break"))
+        txt.bind("<Escape>", lambda e: (clear_find_highlight(), "break"))
+        txt.bind("<Control-w>", lambda e: (close_editor(), "break"))
 
         txt.bind("<Control-f>", lambda e: (open_find_dialog(), "break"))
         txt.bind("<Escape>", lambda e: (clear_find_highlight(), "break"))
@@ -2198,7 +2243,6 @@ class RemoteBorneApp:
                 win.grab_set()
                 win.focus_force()
                 self._center_toplevel(win, 900, 600, parent=self.root)
-
             except Exception:
                 pass
         except Exception as e:
