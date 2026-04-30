@@ -23,6 +23,8 @@ class SSHManager:
         password: str,
         port: int = 22,
         timeout: int = 5,
+        retry_base_delay: float = 2.0,
+        retry_max_delay: float = 10.0,
     ):
         self.host = host
         self.user = user
@@ -39,7 +41,8 @@ class SSHManager:
 
         # paramètres de reconnexion
         self.max_retries = 3
-        self.retry_base_delay = 2.0
+        self.retry_base_delay = max(0.5, float(retry_base_delay))
+        self.retry_max_delay = max(self.retry_base_delay, float(retry_max_delay))
         self._reconnect_lock = threading.Lock()
         self._reconnect_in_progress = False
         self._reconnect_requested = False
@@ -222,7 +225,7 @@ class SSHManager:
                     self._log("[SSH] Reconnect SUCCESS.")
                     return
 
-                delay = min(self.retry_base_delay * attempt, 10)
+                delay = min(self.retry_base_delay * attempt, self.retry_max_delay)
                 self._log(
                     f"[SSH] Reconnect attempt {attempt} failed, retry in {delay} s"
                 )

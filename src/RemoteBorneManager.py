@@ -140,6 +140,9 @@ def load_config() -> configparser.ConfigParser:
             "password": "CHANGE_ME",
             "port": "22",
             "timeout": "30",
+            "retry_base_delay": "2",
+            "retry_max_delay": "10",
+            "alive_interval": "10",
         }
         cfg["PATHS"] = {
             "remote_path": "/etc/iotecha/configs/GridCodes",
@@ -167,9 +170,18 @@ def load_config() -> configparser.ConfigParser:
                 "password": "",
                 "port": "22",
                 "timeout": "30",
+                "retry_base_delay": "2",
+                "retry_max_delay": "10",
+                "alive_interval": "10",
             }
         elif "timeout" not in cfg["SSH"]:
             cfg["SSH"]["timeout"] = "30"
+        if "retry_base_delay" not in cfg["SSH"]:
+            cfg["SSH"]["retry_base_delay"] = "2"
+        if "retry_max_delay" not in cfg["SSH"]:
+            cfg["SSH"]["retry_max_delay"] = "10"
+        if "alive_interval" not in cfg["SSH"]:
+            cfg["SSH"]["alive_interval"] = "10"
         if "PATHS" not in cfg:
             cfg["PATHS"] = {
                 "remote_path": "/etc/iotecha/configs/GridCodes",
@@ -194,6 +206,11 @@ class RemoteBorneApp:
         self.password = ssh_cfg.get("password", "")
         self.port = int(ssh_cfg.get("port", "22"))
         self.ssh_timeout = max(30, int(ssh_cfg.get("timeout", "30")))
+        self.retry_base_delay = max(0.5, float(ssh_cfg.get("retry_base_delay", "2")))
+        self.retry_max_delay = max(
+            self.retry_base_delay, float(ssh_cfg.get("retry_max_delay", "10"))
+        )
+        self.alive_interval = max(5, int(ssh_cfg.get("alive_interval", "10")))
 
         self.default_path = paths_cfg.get(
             "remote_path", "/etc/iotecha/configs/GridCodes"
@@ -292,6 +309,8 @@ class RemoteBorneApp:
             password=self.password,
             port=self.port,
             timeout=self.ssh_timeout,
+            retry_base_delay=self.retry_base_delay,
+            retry_max_delay=self.retry_max_delay,
         )
 
         # Callbacks pour que ssh_manager remonte les événements à l’UI
@@ -312,7 +331,9 @@ class RemoteBorneApp:
 
         self.log(f"[INFO] RemoteBorne version: {APP_VERSION} ({os.path.basename(__file__)})")
         self.log("[INFO] Application started. Waiting for SSH events...")
-        self.log(f"[SSH] Timeout configured: {self.ssh_timeout}s")
+        self.log(
+            f"[SSH] Timeout={self.ssh_timeout}s | retry_base={self.retry_base_delay}s | retry_max={self.retry_max_delay}s | alive={self.alive_interval}s"
+        )
         self.root.after(200, self.force_reconnect)
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
@@ -1009,7 +1030,7 @@ class RemoteBorneApp:
             last_reconnect_try = 0.0
             heartbeat_failures = 0
             while not self._alive_stop:
-                time.sleep(10)
+                time.sleep(self.alive_interval)
                 # Si l’app est fermée, on sort
                 if not hasattr(self, "ssh"):
                     break
@@ -1627,6 +1648,17 @@ class RemoteBorneApp:
                 if not attempt_success:
                     fail_count += 1
                     self.log(f"[UPLOAD ERROR] {filename}: failed after 3 attempts ({last_err})")
+                else:
+                    check_cmd = f'test -f "{remote_path}" && wc -c < "{remote_path}"'
+                    rc, out, err = self.ssh.backend.exec(check_cmd, timeout=self.ssh_timeout)
+                    local_size = os.path.getsize(local_path)
+                    remote_size = int((out or "0").strip() or 0) if rc == 0 else -1
+                    if rc != 0 or remote_size != local_size:
+                        fail_count += 1
+                        ok_count -= 1
+                        self.log(
+                            f"[UPLOAD ERROR] size mismatch {filename}: local={local_size}, remote={remote_size}, err={err}"
+                        )
 
             self.log(f"[UPLOAD] Completed: {ok_count} success, {fail_count} failed.")
             try:
