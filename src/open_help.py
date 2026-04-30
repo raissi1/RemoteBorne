@@ -4,19 +4,26 @@ import tkinter as tk
 from tkinter import ttk
 import datetime
 
+
 def _center_over_parent(parent, win, w=900, h=700):
-    """Centre la fenêtre d'aide sur la fenêtre parente."""
+    """Centre la fenêtre d'aide sur la fenêtre parente, fallback écran."""
     if parent is not None:
-        parent.update_idletasks()
-        px, py = parent.winfo_rootx(), parent.winfo_rooty()
-        pw, ph = parent.winfo_width(), parent.winfo_height()
-        x = px + (pw - w) // 2
-        y = py + (ph - h) // 2
-    else:
-        win.update_idletasks()
-        sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
-        x = (sw - w) // 2
-        y = (sh - h) // 2
+        try:
+            parent.update_idletasks()
+            px, py = parent.winfo_rootx(), parent.winfo_rooty()
+            pw, ph = parent.winfo_width(), parent.winfo_height()
+            if pw > 1 and ph > 1:
+                x = px + (pw - w) // 2
+                y = py + (ph - h) // 2
+                win.geometry(f"{w}x{h}+{max(x, 0)}+{max(y, 0)}")
+                return
+        except Exception:
+            pass
+
+    win.update_idletasks()
+    sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+    x = (sw - w) // 2
+    y = (sh - h) // 2
     win.geometry(f"{w}x{h}+{max(x, 0)}+{max(y, 0)}")
 
 
@@ -35,9 +42,13 @@ def open_help(parent=None):
     win = tk.Toplevel(parent)
     win.title("RemoteBorneManager – Help")
     win.geometry("900x700")
-    win.transient(parent)
-    win.grab_set()
+    if parent is not None:
+        win.transient(parent)
+        win.grab_set()
+        win.focus_force()
+        win.lift()
     _center_over_parent(parent, win, 900, 700)
+    win.after(30, lambda: _center_over_parent(parent, win, 900, 700))
 
     # ----- zone texte scrollable -----
     frame = ttk.Frame(win)
@@ -488,4 +499,3 @@ Fin du document.
 
     btn = ttk.Button(win, text="Close", command=win.destroy)
     btn.pack(pady=5)
-
