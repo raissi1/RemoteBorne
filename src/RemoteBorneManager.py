@@ -798,7 +798,7 @@ class RemoteBorneApp:
 
         # Services
         srv_frame = ttk.Labelframe(em_frame, text="Services", padding=5)
-        srv_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        srv_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 4), pady=(4, 0))
         srv_frame.grid_columnconfigure(0, weight=1)
         srv_frame.grid_columnconfigure(1, weight=1)
 
@@ -825,7 +825,7 @@ class RemoteBorneApp:
             em_frame, text="Temperature / Derating", padding=5
         )
         derate_frame.grid(
-            row=2, column=0, columnspan=2, sticky="ew", pady=(4, 0)
+            row=1, column=1, sticky="nsew", padx=(4, 0), pady=(4, 0)
         )
         derate_frame.grid_columnconfigure(0, weight=1)
         derate_frame.grid_columnconfigure(1, weight=1)
