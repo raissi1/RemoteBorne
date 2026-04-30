@@ -31,24 +31,54 @@ import posixpath
 import re
 
 import tkinter as tk
-from tkinter import messagebox, filedialog
+from tkinter import messagebox, filedialog, simpledialog
 
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 
 
 # ----------------------------------------------------------------------
-# Imports projet
+# Imports projet (compat mode script + mode package "src")
 # ----------------------------------------------------------------------
-from ssh_manager import SSHManager
-from network_config import open_network_config
-from open_help import open_help
-import energy_manager
-import debug_logs
+try:
+    from .ssh_manager import SSHManager
+    from .network_config import open_network_config
+    from .open_help import open_help
+    from . import energy_manager
+    from . import debug_logs
+except ImportError:
+    try:
+        from ssh_manager import SSHManager
+        from network_config import open_network_config
+        from open_help import open_help
+        import energy_manager
+        import debug_logs
+    except ImportError:
+        from src.ssh_manager import SSHManager
+        from src.network_config import open_network_config
+        from src.open_help import open_help
+        from src import energy_manager
+        from src import debug_logs
+
+APP_VERSION = "2026.03.31.1"
+
+ENERGY_TOOL_RESOLVE = (
+    'EM_TOOL="$(command -v EnergyManagerTestingTool 2>/dev/null || true)"; '
+    'if [ -z "$EM_TOOL" ]; then '
+    'for p in /usr/local/bin/EnergyManagerTestingTool /usr/bin/EnergyManagerTestingTool; do '
+    '[ -x "$p" ] && EM_TOOL="$p" && break; '
+    "done; "
+    'fi; '
+    'if [ -z "$EM_TOOL" ]; then '
+    "echo 'EnergyManagerTestingTool not found on target (checked PATH, /usr/local/bin, /usr/bin)' >&2; "
+    "exit 127; "
+    "fi; "
+)
 
 try:
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas as pdf_canvas
+    from reportlab.pdfbase import pdfmetrics
 
     HAVE_REPORTLAB = True
 except Exception:
@@ -109,8 +139,12 @@ def load_config() -> configparser.ConfigParser:
         cfg["SSH"] = {
             "host": "192.168.1.100",
             "username": "root",
-            "password": "QD3@1Njv7h1HYB*4",  # laissé en clair comme tu voulais
+            "password": "CHANGE_ME",
             "port": "22",
+            "timeout": "30",
+            "retry_base_delay": "2",
+            "retry_max_delay": "10",
+            "alive_interval": "10",
         }
         cfg["PATHS"] = {
             "remote_path": "/etc/iotecha/configs/GridCodes",
@@ -137,7 +171,19 @@ def load_config() -> configparser.ConfigParser:
                 "username": "",
                 "password": "",
                 "port": "22",
+                "timeout": "30",
+                "retry_base_delay": "2",
+                "retry_max_delay": "10",
+                "alive_interval": "10",
             }
+        elif "timeout" not in cfg["SSH"]:
+            cfg["SSH"]["timeout"] = "30"
+        if "retry_base_delay" not in cfg["SSH"]:
+            cfg["SSH"]["retry_base_delay"] = "2"
+        if "retry_max_delay" not in cfg["SSH"]:
+            cfg["SSH"]["retry_max_delay"] = "10"
+        if "alive_interval" not in cfg["SSH"]:
+            cfg["SSH"]["alive_interval"] = "10"
         if "PATHS" not in cfg:
             cfg["PATHS"] = {
                 "remote_path": "/etc/iotecha/configs/GridCodes",
@@ -161,6 +207,12 @@ class RemoteBorneApp:
         self.user = ssh_cfg.get("username", "")
         self.password = ssh_cfg.get("password", "")
         self.port = int(ssh_cfg.get("port", "22"))
+        self.ssh_timeout = max(30, int(ssh_cfg.get("timeout", "30")))
+        self.retry_base_delay = max(0.5, float(ssh_cfg.get("retry_base_delay", "2")))
+        self.retry_max_delay = max(
+            self.retry_base_delay, float(ssh_cfg.get("retry_max_delay", "10"))
+        )
+        self.alive_interval = max(5, int(ssh_cfg.get("alive_interval", "10")))
 
         self.default_path = paths_cfg.get(
             "remote_path", "/etc/iotecha/configs/GridCodes"
@@ -175,12 +227,14 @@ class RemoteBorneApp:
         # ---------- ETAT ----------
         self.connected = False
         self._alive_stop = False
+        self._manual_disconnect_mode = False
         self.current_theme = "flatly"
 
         # ---------- ROOT / STYLE ----------
         # Fenêtre ttkbootstrap, thème "flatly" comme V7
         self.root = ttk.Window(themename=self.current_theme)
         self.root.title("Remote Borne Control Interface - RNA")
+        self._set_app_icon()
 
         try:
             # plein écran si possible
@@ -211,6 +265,7 @@ class RemoteBorneApp:
         self.btn_copy = None
         self.btn_edit = None
         self.btn_download = None
+        self.btn_upload = None
         self.btn_print = None
 
         self.btn_send_power = None
@@ -228,6 +283,15 @@ class RemoteBorneApp:
         self.log_text = None 
         self.file_list = None
         self.path_entry = None
+        self._editor_window = None
+        self._editor_remote_path = None
+        # --- ADDED ---
+        self.temp_label_var = tk.StringVar(value="Temp: --")
+        self.soc_label_var = tk.StringVar(value="SoC Batterie: --")
+        self._monitor_stop = False
+        self._monitor_thread_started = False
+        self._temp_update_inflight = False
+        self._soc_update_inflight = False
 
         self.led_canvas = None
         self.ip_label = None
@@ -246,7 +310,9 @@ class RemoteBorneApp:
             user=self.user,
             password=self.password,
             port=self.port,
-            timeout=10,
+            timeout=self.ssh_timeout,
+            retry_base_delay=self.retry_base_delay,
+            retry_max_delay=self.retry_max_delay,
         )
 
         # Callbacks pour que ssh_manager remonte les événements à l’UI
@@ -265,11 +331,23 @@ class RemoteBorneApp:
         self._update_controls_state()
 
 
+        self.log(f"[INFO] RemoteBorne version: {APP_VERSION} ({os.path.basename(__file__)})")
         self.log("[INFO] Application started. Waiting for SSH events...")
-        # Connexion initiale
-        self.force_reconnect()
+        self.log(
+            f"[SSH] Timeout={self.ssh_timeout}s | retry_base={self.retry_base_delay}s | retry_max={self.retry_max_delay}s | alive={self.alive_interval}s"
+        )
+        self.root.after(200, self.force_reconnect)
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
+
+    def _set_app_icon(self):
+        icon_path = os.path.join(BASE_DIR, "BorneCommander.ico")
+        if not os.path.isfile(icon_path):
+            return
+        try:
+            self.root.iconbitmap(icon_path)
+        except Exception:
+            pass
 
     # ==================================================================
     # THEMES (flatly / darkly)
@@ -290,6 +368,27 @@ class RemoteBorneApp:
         except Exception as e:
             print(f"[THEME ERROR] {e}")
             self._popup_error("Theme", f"Cannot switch theme:\n{e}")
+
+    def _center_toplevel(self, win: tk.Toplevel, width: int, height: int, parent=None):
+        """Centre une fenêtre fille par rapport à la fenêtre parente (fallback écran)."""
+        parent = parent or self.root
+        try:
+            parent.update_idletasks()
+            px, py = parent.winfo_rootx(), parent.winfo_rooty()
+            pw, ph = parent.winfo_width(), parent.winfo_height()
+            if pw > 1 and ph > 1:
+                x = px + max(0, (pw - width) // 2)
+                y = py + max(0, (ph - height) // 2)
+                win.geometry(f"{width}x{height}+{x}+{y}")
+                return
+        except Exception:
+            pass
+
+        # fallback : centre écran
+        win.update_idletasks()
+        x = (win.winfo_screenwidth() - width) // 2
+        y = (win.winfo_screenheight() - height) // 2
+        win.geometry(f"{width}x{height}+{x}+{y}")
             
     # ==========================================================
     # Validation clavier pour les champs numériques (float + signe)
@@ -454,6 +553,7 @@ class RemoteBorneApp:
         main.grid_columnconfigure(1, weight=2)
         main.grid_rowconfigure(1, weight=1)
         main.grid_rowconfigure(2, weight=1)
+        main.grid_rowconfigure(3, weight=1)
 
         # ----- HEADER (logos + titre + status) -----
         header = ttk.Frame(main)
@@ -630,10 +730,15 @@ class RemoteBorneApp:
         )
         self.btn_print.grid(row=1, column=1, padx=2, pady=2, sticky="ew")
 
+        self.btn_upload = ttk.Button(
+            file_actions, text="Upload", command=self.upload_files_to_current_path
+        )
+        self.btn_upload.grid(row=2, column=0, padx=2, pady=2, sticky="ew")
+
         self.btn_edit = ttk.Button(
             file_actions, text="Edit", command=self._menu_edit
         )
-        self.btn_edit.grid(row=2, column=0, columnspan=2, padx=2, pady=2, sticky="ew")
+        self.btn_edit.grid(row=2, column=1, padx=2, pady=2, sticky="ew")
 
         # ----- RIGHT MIDDLE : ENERGY MANAGER -----
         em_frame = ttk.Labelframe(main, text="Energy Manager Controls", padding=5)
@@ -726,7 +831,7 @@ class RemoteBorneApp:
 
         # Services
         srv_frame = ttk.Labelframe(em_frame, text="Services", padding=5)
-        srv_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        srv_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 4), pady=(4, 0))
         srv_frame.grid_columnconfigure(0, weight=1)
         srv_frame.grid_columnconfigure(1, weight=1)
 
@@ -747,6 +852,21 @@ class RemoteBorneApp:
             command=self.reboot_device,
         )
         self.btn_reboot.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
+
+        # --- ADDED ---
+        derate_frame = ttk.Labelframe(
+            em_frame, text="Temperature / Derating", padding=5
+        )
+        derate_frame.grid(
+            row=1, column=1, sticky="nsew", padx=(4, 0), pady=(4, 0)
+        )
+        derate_frame.grid_columnconfigure(0, weight=1)
+        derate_frame.grid_columnconfigure(1, weight=1)
+
+        self.temp_label = ttk.Label(derate_frame, textvariable=self.temp_label_var)
+        self.temp_label.grid(row=0, column=0, sticky="w", padx=2, pady=2)
+        self.soc_label = ttk.Label(derate_frame, textvariable=self.soc_label_var)
+        self.soc_label.grid(row=0, column=1, sticky="w", padx=2, pady=2)
 
         # ----- BOTTOM : LOGS -----
         log_frame = ttk.Labelframe(main, text="Logs", padding=5)
@@ -855,13 +975,15 @@ class RemoteBorneApp:
     # SSH EVENTS & CONNECT/DISCONNECT
     # ==================================================================
     def force_reconnect(self):
+        self._manual_disconnect_mode = False
         self.log("[SSH] Reconnecting...")
         try:
-            self.ssh.force_reconnect()
+            self.ssh.restart()
         except Exception as e:
             self.log(f"[SSH ERROR] {e}")
 
     def _manual_disconnect(self):
+        self._manual_disconnect_mode = True
         try:
             self.ssh.close()
         except Exception:
@@ -869,7 +991,17 @@ class RemoteBorneApp:
         self.connected = False
         self.status_var.set("Disconnected")
         self._set_led(False)
+        self._clear_file_list_ui()
         self._update_controls_state()
+
+    def _clear_file_list_ui(self):
+        if self.file_list is None:
+            return
+        try:
+            self.file_list.delete(0, "end")
+            self.file_list.selection_clear(0, "end")
+        except Exception:
+            pass
 
     def _join_remote(self, *parts):
         cleaned = []
@@ -894,25 +1026,142 @@ class RemoteBorneApp:
         self._alive_thread_started = True
 
         def worker():
+            last_reconnect_try = 0.0
+            heartbeat_failures = 0
             while not self._alive_stop:
-                time.sleep(10)
+                time.sleep(self.alive_interval)
                 # Si l’app est fermée, on sort
                 if not hasattr(self, "ssh"):
                     break
-                # Si pas connecté → on ne fait rien
+                # Si pas connecté -> on tente une reconnexion périodique
                 if not self.ssh.connected:
+                    heartbeat_failures = 0
+                    if self._manual_disconnect_mode:
+                        continue
+                    now = time.time()
+                    # évite de spammer plusieurs tentatives/logs toutes les 10s
+                    if now - last_reconnect_try >= 30:
+                        self.log("[ALIVE] Disconnected, attempting reconnect.")
+                        self.ssh.restart()
+                        last_reconnect_try = now
                     continue
 
                 def cb(res):
+                    nonlocal heartbeat_failures, last_reconnect_try
                     if not res["success"]:
-                        self.log("[ALIVE] Heartbeat failed, forcing reconnect.")
-                        self.ssh.force_reconnect()
+                        heartbeat_failures += 1
+                        self.log(
+                            f"[ALIVE] Heartbeat failed ({heartbeat_failures}/3)."
+                        )
+                        if heartbeat_failures < 3:
+                            return
+                        now = time.time()
+                        if now - last_reconnect_try >= 30:
+                            self.log(
+                                "[ALIVE] 3 heartbeat failures in a row, forcing reconnect."
+                            )
+                            self.ssh.force_reconnect(force_if_connected=True)
+                            last_reconnect_try = now
+                        heartbeat_failures = 0
+                    else:
+                        heartbeat_failures = 0
 
                 # IMPORTANT : pas d’auto_retry ici, sinon double gestion
-                self.ssh.execute("echo alive", callback=cb, auto_retry=False)
+                self.ssh.execute(
+                    "echo alive",
+                    callback=cb,
+                    timeout=self.ssh_timeout,
+                    auto_retry=False,
+                    log_errors=False,
+                )
 
         t = threading.Thread(target=worker, daemon=True)
         t.start()
+
+    # --- ADDED ---
+    def _start_monitor(self):
+        if self._monitor_thread_started:
+            return
+        self._monitor_thread_started = True
+
+        def worker():
+            while not self._monitor_stop:
+                if self.ssh.connected and not self._manual_disconnect_mode:
+                    self.update_temperature()
+                    self.update_soc()
+                time.sleep(5)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    # --- ADDED ---
+    def update_temperature(self):
+        if self._temp_update_inflight:
+            return
+        self._temp_update_inflight = True
+        cmd = "tail -n 20 /var/aux/ChargerApp/derate.log"
+
+        def cb(res):
+            try:
+                if not res.get("success"):
+                    return
+                output = (res.get("stdout") or "") + "\n" + (res.get("stderr") or "")
+                match = re.search(r"Temp\s*[:=]\s*(-?\d+)", output, flags=re.IGNORECASE)
+                if not match:
+                    return
+                temp = int(match.group(1))
+
+                def apply_ui():
+                    self.temp_label_var.set(f"Temp: {temp}")
+                    self.temp_label.configure(foreground=("red" if temp > 80 else "green"))
+
+                try:
+                    self.root.after(0, apply_ui)
+                except Exception:
+                    pass
+            finally:
+                self._temp_update_inflight = False
+
+        self.ssh.execute(
+            cmd,
+            callback=cb,
+            timeout=self.ssh_timeout,
+            auto_retry=False,
+            log_errors=False,
+        )
+
+    # --- ADDED ---
+    def update_soc(self):
+        if self._soc_update_inflight:
+            return
+        self._soc_update_inflight = True
+        cmd = "tail -n 50 /var/aux/ChargerApp/ChargerApp.log"
+
+        def cb(res):
+            try:
+                if not res.get("success"):
+                    return
+                output = (res.get("stdout") or "") + "\n" + (res.get("stderr") or "")
+                matches = re.findall(r"evPresentSoc\s*[:=]\s*(\d+)", output, flags=re.IGNORECASE)
+                if not matches:
+                    return
+
+                def apply_ui():
+                    self.soc_label_var.set(f"SoC Batterie: {matches[-1]}")
+
+                try:
+                    self.root.after(0, apply_ui)
+                except Exception:
+                    pass
+            finally:
+                self._soc_update_inflight = False
+
+        self.ssh.execute(
+            cmd,
+            callback=cb,
+            timeout=self.ssh_timeout,
+            auto_retry=False,
+            log_errors=False,
+        )
 
     # ==================================================================
     # SSH EVENTS (connect / disconnect / reconnect)
@@ -927,6 +1176,7 @@ class RemoteBorneApp:
 
         def _handle(ev_type, ev_data):
             if ev_type == "connected":
+                self._manual_disconnect_mode = False
                 self.connected = True
                 self.status_var.set("Connected")
                 self.log("[SSH] Connected")
@@ -937,12 +1187,14 @@ class RemoteBorneApp:
                 self.refresh_file_list()
                 # démarre le heartbeat
                 self._start_alive_monitor()
+                self._start_monitor()
 
             elif ev_type == "disconnected":
                 self.connected = False
                 self.status_var.set("Disconnected")
                 self.log("[SSH] Disconnected")
                 self._set_led(False)
+                self._clear_file_list_ui()
                 self._update_controls_state()
 
             elif ev_type == "reconnecting":
@@ -953,6 +1205,7 @@ class RemoteBorneApp:
                 self._update_controls_state()
 
             elif ev_type == "reconnected":
+                self._manual_disconnect_mode = False
                 self.connected = True
                 self.status_var.set("Connected")
                 self.log("[SSH] Reconnected")
@@ -980,6 +1233,7 @@ class RemoteBorneApp:
             self.btn_refresh,
             self.btn_copy_panel,
             self.btn_download,
+            self.btn_upload,
             self.btn_print,
             self.btn_edit,
             self.btn_send_power,
@@ -1339,6 +1593,80 @@ class RemoteBorneApp:
             return
         self.print_file(remote)
 
+    def upload_files_to_current_path(self):
+        if not self.connected:
+            self._popup_warning("Upload", "Not connected.")
+            return
+
+        local_files = filedialog.askopenfilenames(
+            title="Select file(s) to upload",
+            parent=self.root,
+        )
+        if not local_files:
+            return
+
+        target_dir = (self.current_path or self.default_path).rstrip("/")
+        self.log(f"[UPLOAD] Preparing {len(local_files)} file(s) to {target_dir}")
+
+        def worker():
+            ok_count = 0
+            fail_count = 0
+            ensure_res = self.ssh.ensure_remote_dir(target_dir)
+            if not ensure_res["success"]:
+                self.log(
+                    f"[UPLOAD ERROR] Remote path unavailable: {target_dir} ({ensure_res['err'] or ensure_res['out']})"
+                )
+                try:
+                    self.root.after(
+                        0,
+                        lambda: self._popup_error(
+                            "Upload",
+                            f"Cannot prepare remote path:\n{target_dir}\n\n{(ensure_res['err'] or ensure_res['out']).strip()}",
+                        ),
+                    )
+                except Exception:
+                    pass
+                return
+
+            for local_path in local_files:
+                filename = os.path.basename(local_path)
+                remote_path = self._join_remote(target_dir, filename)
+                attempt_success = False
+                last_err = ""
+                for attempt in range(1, 4):
+                    self.log(f"[UPLOAD] {filename} attempt {attempt}/3...")
+                    res = self.ssh.scp_put(local_path, remote_path)
+                    if res["success"]:
+                        attempt_success = True
+                        ok_count += 1
+                        self.log(f"[UPLOAD] OK: {filename} -> {remote_path}")
+                        break
+                    last_err = (res["err"] or res["out"] or "").strip()
+                    self.log(f"[UPLOAD WARN] {filename} attempt {attempt} failed: {last_err}")
+                    time.sleep(0.5 * attempt)
+                if not attempt_success:
+                    fail_count += 1
+                    self.log(f"[UPLOAD ERROR] {filename}: failed after 3 attempts ({last_err})")
+                else:
+                    check_cmd = f'test -f "{remote_path}" && wc -c < "{remote_path}"'
+                    rc, out, err = self.ssh.backend.exec(check_cmd, timeout=self.ssh_timeout)
+                    local_size = os.path.getsize(local_path)
+                    remote_size = int((out or "0").strip() or 0) if rc == 0 else -1
+                    if rc != 0 or remote_size != local_size:
+                        fail_count += 1
+                        ok_count -= 1
+                        self.log(
+                            f"[UPLOAD ERROR] size mismatch {filename}: local={local_size}, remote={remote_size}, err={err}"
+                        )
+
+            self.log(f"[UPLOAD] Completed: {ok_count} success, {fail_count} failed.")
+            try:
+                self.root.after(0, self.refresh_file_list)
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def print_file(self, remote_path: str):
         if not HAVE_REPORTLAB:
             self._popup_error(
@@ -1366,10 +1694,13 @@ class RemoteBorneApp:
                 pass
             return
 
+        remote_name = posixpath.basename(remote_path)
+        default_pdf_name = f"{os.path.splitext(remote_name)[0]}.pdf"
+
         pdf_path = filedialog.asksaveasfilename(
             title="Save PDF as",
             defaultextension=".pdf",
-            initialfile="GridCodes.pdf",
+            initialfile=default_pdf_name,
             initialdir=EXPORTS_DIR,
         )
         if not pdf_path:
@@ -1387,13 +1718,58 @@ class RemoteBorneApp:
             width, height = A4
             x_margin = 40
             y = height - 40
+            font_name = "Courier"
+            font_size = 9
+            max_text_width = width - (x_margin * 2)
+            c.setFont(font_name, font_size)
+
+            def _wrap_line_for_pdf(raw_line: str):
+                expanded = raw_line.expandtabs(4)
+                if expanded == "":
+                    return [""]
+
+                wrapped = []
+                current = ""
+                for word in expanded.split(" "):
+                    candidate = word if not current else f"{current} {word}"
+                    if (
+                        pdfmetrics.stringWidth(candidate, font_name, font_size)
+                        <= max_text_width
+                    ):
+                        current = candidate
+                        continue
+
+                    if current:
+                        wrapped.append(current)
+                        current = ""
+
+                    # mot très long sans espace: coupe au caractère
+                    chunk = ""
+                    for ch in word:
+                        cnd = chunk + ch
+                        if (
+                            pdfmetrics.stringWidth(cnd, font_name, font_size)
+                            <= max_text_width
+                        ):
+                            chunk = cnd
+                        else:
+                            if chunk:
+                                wrapped.append(chunk)
+                            chunk = ch
+                    current = chunk
+
+                wrapped.append(current)
+                return wrapped
 
             for line in content.splitlines():
-                c.drawString(x_margin, y, line[:120])
-                y -= 14
-                if y < 40:
-                    c.showPage()
-                    y = height - 40
+                wrapped_lines = _wrap_line_for_pdf(line)
+                for wrapped in wrapped_lines:
+                    c.drawString(x_margin, y, wrapped)
+                    y -= 12
+                    if y < 40:
+                        c.showPage()
+                        c.setFont(font_name, font_size)
+                        y = height - 40
 
             c.save()
             self.log(f"[PRINT] PDF saved to {pdf_path}")
@@ -1417,6 +1793,22 @@ class RemoteBorneApp:
         if not self.connected:
             self._popup_warning("Edit", "Not connected.")
             return
+        if self._editor_window is not None:
+            try:
+                if self._editor_window.winfo_exists():
+                    self._editor_window.deiconify()
+                    self._editor_window.lift()
+                    self._editor_window.focus_force()
+                    if self._editor_remote_path:
+                        self.log(f"[INFO] Editor already open ({self._editor_remote_path})")
+                    else:
+                        self.log("[INFO] Editor already open")
+                    return
+            except Exception:
+                # Référence stale (fenêtre détruite côté Tk/OS) -> reset et ouverture propre
+                pass
+            self._editor_window = None
+            self._editor_remote_path = None
 
         self.log(f"[EDIT] Downloading {remote_path}...")
         with tempfile.NamedTemporaryFile(delete=False, suffix=".conf") as tmp:
@@ -1436,14 +1828,24 @@ class RemoteBorneApp:
         # ----- Fenêtre d’édition -----
         win = tk.Toplevel(self.root)
         win.title(f"Edit: {remote_path}")
-        win.geometry("900x600")
+        self._center_toplevel(win, 960, 680, parent=self.root)
+        win.minsize(820, 560)
+        self._editor_window = win
+        self._editor_remote_path = remote_path
 
-        txt = tk.Text(win, wrap="none")
-        txt.pack(fill="both", expand=True)
+        editor_frame = ttk.Frame(win)
+        editor_frame.pack(fill="both", expand=True)
+        editor_frame.grid_rowconfigure(0, weight=1)
+        editor_frame.grid_columnconfigure(0, weight=1)
 
-        vs = ttk.Scrollbar(win, orient="vertical", command=txt.yview)
-        vs.pack(side="right", fill="y")
-        txt.configure(yscrollcommand=vs.set)
+        txt = tk.Text(editor_frame, wrap="none")
+        txt.grid(row=0, column=0, sticky="nsew")
+
+        vs = ttk.Scrollbar(editor_frame, orient="vertical", command=txt.yview)
+        vs.grid(row=0, column=1, sticky="ns")
+        hs = ttk.Scrollbar(editor_frame, orient="horizontal", command=txt.xview)
+        hs.grid(row=1, column=0, sticky="ew")
+        txt.configure(yscrollcommand=vs.set, xscrollcommand=hs.set)
 
         try:
             with open(tmp_local, "r", encoding="utf-8", errors="ignore") as f:
@@ -1451,28 +1853,180 @@ class RemoteBorneApp:
         except Exception as e:
             self.log(f"[EDIT ERROR] {e}")
 
-        def save_and_upload():
-            content = txt.get("1.0", "end-1c")
+        btn_bar = ttk.Frame(win)
+        btn_bar.pack(fill="x", side="bottom")
+
+        status_bar = ttk.Label(win, text="")
+        status_bar.pack(fill="x", side="bottom", padx=6, pady=(0, 4))
+
+        def clear_find_highlight():
+            txt.tag_remove("find_match", "1.0", "end")
+            status_bar.configure(text="")
+
+        def close_editor():
+            if getattr(self, "_find_dialog", None) and self._find_dialog.winfo_exists():
+                try:
+                    self._find_dialog.destroy()
+                except Exception:
+                    pass
+                self._find_dialog = None
             try:
-                with open(tmp_local, "w", encoding="utf-8") as f:
+                if os.path.exists(tmp_local):
+                    os.remove(tmp_local)
+            except Exception:
+                pass
+            self._editor_window = None
+            self._editor_remote_path = None
+            try:
+                win.destroy()
+            except Exception:
+                pass
+
+        # Alias de compatibilité: certains builds/appels réfèrent encore "on_close"
+        on_close = close_editor
+        win.protocol("WM_DELETE_WINDOW", close_editor)
+
+        def open_find_dialog():
+            if hasattr(self, "_find_dialog") and self._find_dialog and self._find_dialog.winfo_exists():
+                self._find_dialog.lift()
+                self._find_dialog.focus_force()
+                return
+
+            dialog = tk.Toplevel(win)
+            self._find_dialog = dialog
+            dialog.title("Find (Ctrl+F)")
+            dialog.transient(win)
+            dialog.grab_set()
+            dialog.resizable(False, False)
+            self._center_toplevel(dialog, 420, 120, parent=win)
+            dialog.protocol("WM_DELETE_WINDOW", lambda: (setattr(self, "_find_dialog", None), dialog.destroy()))
+
+            ttk.Label(dialog, text="Search text:").grid(row=0, column=0, padx=8, pady=8, sticky="w")
+            q_var = tk.StringVar()
+            q_entry = ttk.Entry(dialog, textvariable=q_var, width=35)
+            q_entry.grid(row=0, column=1, padx=8, pady=8)
+            q_entry.focus_set()
+
+            txt.tag_configure("find_match", background="#ffe082", foreground="#000000")
+            find_state = {"ranges": [], "pos": -1}
+
+            def _focus_match(i: int):
+                if not find_state["ranges"]:
+                    return
+                i = i % len(find_state["ranges"])
+                find_state["pos"] = i
+                start, end = find_state["ranges"][i]
+                txt.mark_set("insert", start)
+                txt.see(start)
+                txt.tag_remove("sel", "1.0", "end")
+                txt.tag_add("sel", start, end)
+                status_bar.configure(
+                    text=f"Find: {len(find_state['ranges'])} match(es) | {i + 1}/{len(find_state['ranges'])}"
+                )
+
+            def run_find(*_):
+                needle = q_var.get()
+                txt.tag_remove("find_match", "1.0", "end")
+                find_state["ranges"] = []
+                find_state["pos"] = -1
+                if not needle:
+                    status_bar.configure(text="Find: empty query")
+                    return
+
+                start = "1.0"
+                while True:
+                    idx = txt.search(needle, start, stopindex="end", nocase=True)
+                    if not idx:
+                        break
+                    end = f"{idx}+{len(needle)}c"
+                    txt.tag_add("find_match", idx, end)
+                    find_state["ranges"].append((idx, end))
+                    start = end
+
+                if find_state["ranges"]:
+                    _focus_match(0)
+                else:
+                    status_bar.configure(text="Find: no match")
+
+            def next_match(*_):
+                if find_state["ranges"]:
+                    _focus_match(find_state["pos"] + 1)
+
+            def prev_match(*_):
+                if find_state["ranges"]:
+                    _focus_match(find_state["pos"] - 1)
+
+            btns = ttk.Frame(dialog)
+            btns.grid(row=1, column=0, columnspan=2, sticky="e", padx=8, pady=(0, 8))
+            ttk.Button(btns, text="Previous", command=prev_match).pack(side="right", padx=4)
+            ttk.Button(btns, text="Next", command=next_match).pack(side="right", padx=4)
+            ttk.Button(btns, text="Find", command=run_find).pack(side="right", padx=4)
+            q_entry.bind("<Return>", run_find)
+            dialog.bind("<F3>", next_match)
+            dialog.bind("<Shift-F3>", prev_match)
+            dialog.bind(
+                "<Escape>",
+                lambda _e: (setattr(self, "_find_dialog", None), dialog.destroy()),
+            )
+
+        def save_and_upload():
+            user_name = simpledialog.askstring(
+                "Save",
+                "Remote filename (or full remote path):",
+                initialvalue=posixpath.basename(remote_path),
+                parent=win,
+            )
+            if user_name is None:
+                return
+
+            user_name = user_name.strip()
+            if not user_name:
+                self._popup_warning("Save", "Filename cannot be empty.")
+                return
+
+            if "/" in user_name:
+                target_remote = user_name
+            else:
+                target_remote = self._join_remote(posixpath.dirname(remote_path), user_name)
+
+            rc, _, _ = self.ssh.backend.exec(
+                f'test -e "{target_remote}"',
+                timeout=self.ssh_timeout,
+            )
+            if rc == 0:
+                if not messagebox.askyesno(
+                    "Confirm overwrite",
+                    f"File already exists:\n{target_remote}\n\nOverwrite?",
+                    parent=win,
+                ):
+                    return
+
+            content = txt.get("1.0", "end-1c")
+            content = content.replace("\r\n", "\n").replace("\r", "\n")
+            try:
+                with open(tmp_local, "w", encoding="utf-8", newline="\n") as f:
                     f.write(content)
             except Exception as e:
-                self._popup_error("Edit", f"Local save error:\n{e}")
+                self._popup_error("Save", f"Local save error:\n{e}")
                 return
 
-            self.log(f"[EDIT] Uploading {tmp_local} -> {remote_path}")
-            res2 = self.ssh.scp_put(tmp_local, remote_path)
+            if target_remote == remote_path:
+                self.log(f"[EDIT] Save overwrite -> {target_remote}")
+            else:
+                self.log(f"[EDIT] Save As -> {target_remote}")
+
+            res2 = self.ssh.scp_put(tmp_local, target_remote)
             if not res2["success"]:
                 err2 = (res2["err"] or res2["out"] or "").strip()
-                self.log(f"[EDIT ERROR] Upload failed: {err2}")
-                self._popup_error("Edit", f"Upload failed:\n{err2}")
+                self.log(f"[EDIT ERROR] Save upload failed: {err2}")
+                self._popup_error("Save", f"Upload failed:\n{err2}")
                 return
 
-            self.log("[EDIT] Upload done.")
+            self.log("[EDIT] Save upload done.")
+            self.refresh_file_list()
 
-            # Si on vient de modifier GridCodes.properties, propose un restart
             if (
-                posixpath.basename(remote_path) == self.remote_file
+                posixpath.basename(target_remote) == self.remote_file
                 and messagebox.askyesno(
                     "Services",
                     "GridCodes.properties modified.\nRestart services now?",
@@ -1480,19 +2034,18 @@ class RemoteBorneApp:
             ):
                 self.restart_initd_services()
 
-            try:
-                os.remove(tmp_local)
-            except Exception:
-                pass
-
-        btn_bar = ttk.Frame(win)
-        btn_bar.pack(fill="x")
+        ttk.Button(btn_bar, text="Find", command=open_find_dialog).pack(
+            side="left", padx=5, pady=5
+        )
         ttk.Button(btn_bar, text="Save", command=save_and_upload).pack(
             side="right", padx=5, pady=5
         )
         ttk.Button(
-            btn_bar, text="Close", command=win.destroy, style="Danger.TButton"
+            btn_bar, text="Close", command=on_close, style="Danger.TButton"
         ).pack(side="right", padx=5, pady=5)
+        txt.bind("<Control-f>", lambda e: (open_find_dialog(), "break"))
+        txt.bind("<Escape>", lambda e: (clear_find_highlight(), "break"))
+        txt.bind("<Control-w>", lambda e: (close_editor(), "break"))
 
     # ==================================================================
     # ENERGY MANAGER – P/Q (ULTIMATE)
@@ -1550,7 +2103,8 @@ class RemoteBorneApp:
         remote_cmd = (
             "cd /var/aux/EnergyManager && "
             "export LD_LIBRARY_PATH=/usr/local/lib && "
-            f"/usr/local/bin/EnergyManagerTestingTool -S -s ocpp -a "
+            f"{ENERGY_TOOL_RESOLVE}"
+            f"\"$EM_TOOL\" -S -s ocpp -a "
             f"--power {active_int} --reactive-power {reactive_int} "
             "-m CentralSetpoint"
         )
@@ -1621,8 +2175,10 @@ class RemoteBorneApp:
             )
             return
 
-        # Calcul Q comme avant
+        # Calcul Q conservé pour information opérateur
         q_val = int(round(abs(active_val) * math.tan(math.acos(cosphi_val))))
+        cosphi_pct = int(round(cosphi_val * 100))
+        active_int = int(round(active_val))
 
         self.log("CosPhi calculation:")
         self.log(f"  Active = {active_val} W")
@@ -1632,15 +2188,22 @@ class RemoteBorneApp:
         )
         self.log(
             f"Sending CosPhi command: Active={active_val} W, "
-            f"CosPhi={cosphi_val}, Reactive={q_val} var"
+            f"CosPhi={cosphi_val} ({cosphi_pct}%), Reactive={q_val} var"
         )
 
+        grid_opt_cmd = (
+            f"\"$EM_TOOL\" --grid-option "
+            f"\"SetpointCosPhi_Pct={cosphi_pct}\""
+        )
+        setpoint_cmd = (
+            f"\"$EM_TOOL\" -S -s ocpp -a "
+            f"--power {active_int} -m CentralSetpoint"
+        )
         remote_cmd = (
             "cd /var/aux/EnergyManager && "
             "export LD_LIBRARY_PATH=/usr/local/lib && "
-            f"/usr/local/bin/EnergyManagerTestingTool -S -s ocpp -a "
-            f"--power {int(round(active_val))} --reactive-power {q_val} "
-            "-m CentralSetpoint"
+            f"{ENERGY_TOOL_RESOLVE}"
+            f"({grid_opt_cmd} && {setpoint_cmd}) >/dev/null 2>&1 &"
         )
 
         def cb(res):
@@ -1741,6 +2304,14 @@ class RemoteBorneApp:
         try:
             # même principe que V7 / RemoteBorneManager.py
             self._energy_win = energy_manager.EnergyManagerWindow(self.root, self.ssh)
+            try:
+                win = getattr(self._energy_win, "win", self._energy_win)
+                win.transient(self.root)
+                win.grab_set()
+                win.focus_force()
+                self._center_toplevel(win, 900, 600, parent=self.root)
+            except Exception:
+                pass
         except Exception as e:
             self.log(f"[ERROR] Unable to open Energy Manager: {e}")
             self._popup_error(
@@ -1770,11 +2341,25 @@ class RemoteBorneApp:
                 if self.user_label is not None:
                     self.user_label.configure(text=f"User: {self.user or '-'}")
 
-                # Mise à jour de la cible SSH si supportée
-                try:
-                    self.ssh.update_target(self.host, self.user, self.password, self.port)
-                except Exception:
-                    pass
+                if self.connected:
+                    try:
+                        self.ssh.close()
+                    except Exception:
+                        pass
+                    self.connected = False
+                    self._set_led(False)
+                    self.status_var.set("Reconnecting…")
+                    self._update_controls_state()
+                # Mise à jour de la cible SSH puis reconnexion unique
+                self.ssh.update_target(
+                    self.host,
+                    self.user,
+                    self.password,
+                    self.port,
+                    auto_reconnect=False,
+                )
+                self._manual_disconnect_mode = False
+                self.force_reconnect()
 
                 self.log("[NETWORK] config.ini reloaded.")
                 self._popup_info(
@@ -1802,7 +2387,6 @@ class RemoteBorneApp:
             return
 
         try:
-            import debug_logs
             debug_logs.open_debug_logs_window(
                 self.root,
                 self.ssh.host,
@@ -1827,6 +2411,7 @@ class RemoteBorneApp:
     # ==================================================================
     def on_exit(self):
         self._alive_stop = True
+        self._monitor_stop = True
         try:
             self.ssh.close()
         except Exception:
@@ -1870,7 +2455,17 @@ class RemoteBorneApp:
 def start_app():
     cfg = load_config()
     app = RemoteBorneApp(cfg)
-    app.root.mainloop()
+    try:
+        app.root.mainloop()
+    except KeyboardInterrupt:
+        print("[INFO] KeyboardInterrupt received, closing application...")
+        try:
+            app.on_exit()
+        except Exception:
+            try:
+                app.root.destroy()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
