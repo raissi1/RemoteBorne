@@ -241,6 +241,7 @@ class RemoteBorneApp:
         self.btn_copy = None
         self.btn_edit = None
         self.btn_download = None
+        self.btn_upload = None
         self.btn_print = None
 
         self.btn_send_power = None
@@ -702,10 +703,15 @@ class RemoteBorneApp:
         )
         self.btn_print.grid(row=1, column=1, padx=2, pady=2, sticky="ew")
 
+        self.btn_upload = ttk.Button(
+            file_actions, text="Upload", command=self.upload_files_to_current_path
+        )
+        self.btn_upload.grid(row=2, column=0, padx=2, pady=2, sticky="ew")
+
         self.btn_edit = ttk.Button(
             file_actions, text="Edit", command=self._menu_edit
         )
-        self.btn_edit.grid(row=2, column=0, columnspan=2, padx=2, pady=2, sticky="ew")
+        self.btn_edit.grid(row=2, column=1, padx=2, pady=2, sticky="ew")
 
         # ----- RIGHT MIDDLE : ENERGY MANAGER -----
         em_frame = ttk.Labelframe(main, text="Energy Manager Controls", padding=5)
@@ -1187,6 +1193,7 @@ class RemoteBorneApp:
             self.btn_refresh,
             self.btn_copy_panel,
             self.btn_download,
+            self.btn_upload,
             self.btn_print,
             self.btn_edit,
             self.btn_send_power,
@@ -1545,6 +1552,44 @@ class RemoteBorneApp:
         if not remote:
             return
         self.print_file(remote)
+
+    def upload_files_to_current_path(self):
+        if not self.connected:
+            self._popup_warning("Upload", "Not connected.")
+            return
+
+        local_files = filedialog.askopenfilenames(
+            title="Select file(s) to upload",
+            parent=self.root,
+        )
+        if not local_files:
+            return
+
+        target_dir = (self.current_path or self.default_path).rstrip("/")
+        self.log(f"[UPLOAD] Preparing {len(local_files)} file(s) to {target_dir}")
+
+        def worker():
+            ok_count = 0
+            fail_count = 0
+            for local_path in local_files:
+                filename = os.path.basename(local_path)
+                remote_path = self._join_remote(target_dir, filename)
+                res = self.ssh.scp_put(local_path, remote_path)
+                if res["success"]:
+                    ok_count += 1
+                    self.log(f"[UPLOAD] OK: {filename}")
+                else:
+                    fail_count += 1
+                    err = (res["err"] or res["out"] or "").strip()
+                    self.log(f"[UPLOAD ERROR] {filename}: {err}")
+
+            self.log(f"[UPLOAD] Completed: {ok_count} success, {fail_count} failed.")
+            try:
+                self.root.after(0, self.refresh_file_list)
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def print_file(self, remote_path: str):
         if not HAVE_REPORTLAB:
