@@ -525,6 +525,7 @@ class RemoteBorneApp:
         main.grid_columnconfigure(1, weight=2)
         main.grid_rowconfigure(1, weight=1)
         main.grid_rowconfigure(2, weight=1)
+        main.grid_rowconfigure(3, weight=1)
 
         # ----- HEADER (logos + titre + status) -----
         header = ttk.Frame(main)
@@ -820,8 +821,12 @@ class RemoteBorneApp:
         self.btn_reboot.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
 
         # --- ADDED ---
-        derate_frame = ttk.Labelframe(main, text="Temperature / Derating", padding=5)
-        derate_frame.grid(row=3, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 6))
+        derate_frame = ttk.Labelframe(
+            em_frame, text="Temperature / Derating", padding=5
+        )
+        derate_frame.grid(
+            row=2, column=0, columnspan=2, sticky="ew", pady=(4, 0)
+        )
         derate_frame.grid_columnconfigure(0, weight=1)
         derate_frame.grid_columnconfigure(1, weight=1)
 
@@ -1972,10 +1977,6 @@ class RemoteBorneApp:
         ttk.Button(
             btn_bar, text="Close", command=on_close, style="Danger.TButton"
         ).pack(side="right", padx=5, pady=5)
-        txt.bind("<Control-f>", lambda e: (open_find_dialog(), "break"))
-        txt.bind("<Escape>", lambda e: (clear_find_highlight(), "break"))
-        txt.bind("<Control-w>", lambda e: (close_editor(), "break"))
-
         txt.bind("<Control-f>", lambda e: (open_find_dialog(), "break"))
         txt.bind("<Escape>", lambda e: (clear_find_highlight(), "break"))
         txt.bind("<Control-w>", lambda e: (close_editor(), "break"))
