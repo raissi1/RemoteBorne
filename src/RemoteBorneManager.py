@@ -139,6 +139,7 @@ def load_config() -> configparser.ConfigParser:
             "username": "root",
             "password": "CHANGE_ME",
             "port": "22",
+            "timeout": "30",
         }
         cfg["PATHS"] = {
             "remote_path": "/etc/iotecha/configs/GridCodes",
@@ -165,7 +166,10 @@ def load_config() -> configparser.ConfigParser:
                 "username": "",
                 "password": "",
                 "port": "22",
+                "timeout": "30",
             }
+        elif "timeout" not in cfg["SSH"]:
+            cfg["SSH"]["timeout"] = "30"
         if "PATHS" not in cfg:
             cfg["PATHS"] = {
                 "remote_path": "/etc/iotecha/configs/GridCodes",
@@ -189,6 +193,7 @@ class RemoteBorneApp:
         self.user = ssh_cfg.get("username", "")
         self.password = ssh_cfg.get("password", "")
         self.port = int(ssh_cfg.get("port", "22"))
+        self.ssh_timeout = max(30, int(ssh_cfg.get("timeout", "30")))
 
         self.default_path = paths_cfg.get(
             "remote_path", "/etc/iotecha/configs/GridCodes"
@@ -286,7 +291,7 @@ class RemoteBorneApp:
             user=self.user,
             password=self.password,
             port=self.port,
-            timeout=10,
+            timeout=self.ssh_timeout,
         )
 
         # Callbacks pour que ssh_manager remonte les événements à l’UI
@@ -307,6 +312,8 @@ class RemoteBorneApp:
 
         self.log(f"[INFO] RemoteBorne version: {APP_VERSION} ({os.path.basename(__file__)})")
         self.log("[INFO] Application started. Waiting for SSH events...")
+        self.log(f"[SSH] Timeout configured: {self.ssh_timeout}s")
+        self.root.after(200, self.force_reconnect)
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
 
@@ -1571,17 +1578,43 @@ class RemoteBorneApp:
         def worker():
             ok_count = 0
             fail_count = 0
+            ensure_dir_cmd = f'mkdir -p "{target_dir}"'
+            ensure_res = self.ssh.backend.exec(ensure_dir_cmd, timeout=self.ssh_timeout)
+            if ensure_res[0] != 0:
+                self.log(
+                    f"[UPLOAD ERROR] Remote path unavailable: {target_dir} ({ensure_res[2] or ensure_res[1]})"
+                )
+                try:
+                    self.root.after(
+                        0,
+                        lambda: self._popup_error(
+                            "Upload",
+                            f"Cannot prepare remote path:\n{target_dir}\n\n{(ensure_res[2] or ensure_res[1]).strip()}",
+                        ),
+                    )
+                except Exception:
+                    pass
+                return
+
             for local_path in local_files:
                 filename = os.path.basename(local_path)
                 remote_path = self._join_remote(target_dir, filename)
-                res = self.ssh.scp_put(local_path, remote_path)
-                if res["success"]:
-                    ok_count += 1
-                    self.log(f"[UPLOAD] OK: {filename}")
-                else:
+                attempt_success = False
+                last_err = ""
+                for attempt in range(1, 4):
+                    self.log(f"[UPLOAD] {filename} attempt {attempt}/3...")
+                    res = self.ssh.scp_put(local_path, remote_path)
+                    if res["success"]:
+                        attempt_success = True
+                        ok_count += 1
+                        self.log(f"[UPLOAD] OK: {filename} -> {remote_path}")
+                        break
+                    last_err = (res["err"] or res["out"] or "").strip()
+                    self.log(f"[UPLOAD WARN] {filename} attempt {attempt} failed: {last_err}")
+                    time.sleep(0.5 * attempt)
+                if not attempt_success:
                     fail_count += 1
-                    err = (res["err"] or res["out"] or "").strip()
-                    self.log(f"[UPLOAD ERROR] {filename}: {err}")
+                    self.log(f"[UPLOAD ERROR] {filename}: failed after 3 attempts ({last_err})")
 
             self.log(f"[UPLOAD] Completed: {ok_count} success, {fail_count} failed.")
             try:
