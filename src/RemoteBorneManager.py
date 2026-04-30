@@ -1050,6 +1050,7 @@ class RemoteBorneApp:
                 self.ssh.execute(
                     "echo alive",
                     callback=cb,
+                    timeout=self.ssh_timeout,
                     auto_retry=False,
                     log_errors=False,
                 )
@@ -1100,7 +1101,13 @@ class RemoteBorneApp:
             finally:
                 self._temp_update_inflight = False
 
-        self.ssh.execute(cmd, callback=cb, timeout=10, auto_retry=False, log_errors=False)
+        self.ssh.execute(
+            cmd,
+            callback=cb,
+            timeout=self.ssh_timeout,
+            auto_retry=False,
+            log_errors=False,
+        )
 
     # --- ADDED ---
     def update_soc(self):
@@ -1128,7 +1135,13 @@ class RemoteBorneApp:
             finally:
                 self._soc_update_inflight = False
 
-        self.ssh.execute(cmd, callback=cb, timeout=10, auto_retry=False, log_errors=False)
+        self.ssh.execute(
+            cmd,
+            callback=cb,
+            timeout=self.ssh_timeout,
+            auto_retry=False,
+            log_errors=False,
+        )
 
     # ==================================================================
     # SSH EVENTS (connect / disconnect / reconnect)
@@ -1578,18 +1591,17 @@ class RemoteBorneApp:
         def worker():
             ok_count = 0
             fail_count = 0
-            ensure_dir_cmd = f'mkdir -p "{target_dir}"'
-            ensure_res = self.ssh.backend.exec(ensure_dir_cmd, timeout=self.ssh_timeout)
-            if ensure_res[0] != 0:
+            ensure_res = self.ssh.ensure_remote_dir(target_dir)
+            if not ensure_res["success"]:
                 self.log(
-                    f"[UPLOAD ERROR] Remote path unavailable: {target_dir} ({ensure_res[2] or ensure_res[1]})"
+                    f"[UPLOAD ERROR] Remote path unavailable: {target_dir} ({ensure_res['err'] or ensure_res['out']})"
                 )
                 try:
                     self.root.after(
                         0,
                         lambda: self._popup_error(
                             "Upload",
-                            f"Cannot prepare remote path:\n{target_dir}\n\n{(ensure_res[2] or ensure_res[1]).strip()}",
+                            f"Cannot prepare remote path:\n{target_dir}\n\n{(ensure_res['err'] or ensure_res['out']).strip()}",
                         ),
                     )
                 except Exception:

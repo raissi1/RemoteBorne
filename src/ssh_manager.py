@@ -304,6 +304,7 @@ class SSHManager:
         callback: Optional[Callable[[dict], None]] = None,
         auto_retry: bool = True,
         log_errors: bool = True,
+        timeout: Optional[int] = None,
     ):
         """
         Exécute une commande SSH dans un thread séparé.
@@ -325,7 +326,8 @@ class SSHManager:
                         pass
                 return
 
-            rc, out, err = self.backend.exec(cmd, timeout=self.timeout)
+            exec_timeout = timeout if timeout is not None else self.timeout
+            rc, out, err = self.backend.exec(cmd, timeout=exec_timeout)
             success = (rc == 0)
             res = {"success": success, "out": out, "err": err}
 
@@ -339,6 +341,19 @@ class SSHManager:
                     pass
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def ensure_remote_dir(self, remote_dir: str) -> dict:
+        if not self.connected:
+            self._try_reconnect()
+        if not self.connected:
+            err = "SSH not connected"
+            self._log(f"[SSH CMD ERROR] {err}")
+            return {"success": False, "out": "", "err": err}
+        rc, out, err = self.backend.exec(f'mkdir -p "{remote_dir}"', timeout=self.timeout)
+        success = (rc == 0)
+        if not success:
+            self._log(f"[SSH CMD ERROR] {err or out or 'unknown error'}")
+        return {"success": success, "out": out, "err": err}
 
     # ------------------------------------------------------------------ #
     #  SCP
