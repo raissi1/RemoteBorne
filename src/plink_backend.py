@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import sys
 
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
@@ -9,11 +10,14 @@ CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 class PlinkBackend:
     def __init__(self, host, username, password, port=22,
                  plink_path=None, pscp_path=None):
-        # dossier où se trouve ce fichier (src)
-        this_dir = os.path.dirname(os.path.abspath(__file__))
-
-        # racine du projet = dossier parent de src
-        project_root = os.path.dirname(this_dir)
+        if getattr(sys, "frozen", False):
+            # mode exe PyInstaller: outils à côté du .exe
+            project_root = os.path.dirname(sys.executable)
+        else:
+            # dossier où se trouve ce fichier (src)
+            this_dir = os.path.dirname(os.path.abspath(__file__))
+            # racine du projet = dossier parent de src
+            project_root = os.path.dirname(this_dir)
 
         # dossier tools à la racine
         tools_dir = os.path.join(project_root, "tools")
@@ -59,6 +63,8 @@ class PlinkBackend:
     # SSH COMMAND
     # ----------------------------------------------------------
     def exec(self, remote_cmd, timeout=None):
+        if not remote_cmd or not str(remote_cmd).strip():
+            return 1, "", "Empty remote command"
         cmd = [
             self.plink_path,
             "-ssh",
@@ -89,6 +95,14 @@ class PlinkBackend:
             return 1, "", str(e)
 
     def scp_get(self, remote_path, local_path, timeout=None):
+        if not remote_path:
+            return False, "", "Empty remote path"
+        if not local_path:
+            return False, "", "Empty local path"
+
+        local_dir = os.path.dirname(local_path) or "."
+        os.makedirs(local_dir, exist_ok=True)
+
         cmd = [
             self.pscp_path,
             "-batch",
@@ -117,6 +131,13 @@ class PlinkBackend:
             return False, "", str(e)
 
     def scp_put(self, local_path, remote_path, timeout=None):
+        if not local_path:
+            return False, "", "Empty local path"
+        if not os.path.isfile(local_path):
+            return False, "", f"Local file not found: {local_path}"
+        if not remote_path:
+            return False, "", "Empty remote path"
+
         cmd = [
             self.pscp_path,
             "-batch",
