@@ -235,15 +235,20 @@ class RemoteBorneApp:
         self._set_app_icon()
 
         try:
-            # plein écran si possible
-            self.root.state("zoomed")
+            sw = self.root.winfo_screenwidth()
+            sh = self.root.winfo_screenheight()
+            w = int(sw * 0.90)
+            h = int(sh * 0.90)
+            x = max(0, (sw - w) // 2)
+            y = max(0, (sh - h) // 2)
+            self.root.geometry(f"{w}x{h}+{x}+{y}")
         except Exception:
             try:
-                self.root.attributes("-zoomed", True)
+                self.root.state("zoomed")
             except Exception:
                 self.root.geometry("1200x800")
 
-        self.root.minsize(1000, 700)
+        self.root.minsize(900, 620)
 
         # style ttkbootstrap
         self.style = self.root.style
@@ -1029,8 +1034,9 @@ class RemoteBorneApp:
         def worker():
             last_reconnect_try = time.time()
             heartbeat_failures = 0
+            monitor_interval = max(10, self.alive_interval)
             while not self._alive_stop:
-                time.sleep(self.alive_interval)
+                time.sleep(monitor_interval)
                 # Si l’app est fermée, on sort
                 if not hasattr(self, "ssh"):
                     break
@@ -1097,8 +1103,9 @@ class RemoteBorneApp:
             while not self._monitor_stop:
                 if self.ssh.connected and not self._manual_disconnect_mode:
                     self.update_temperature()
+                    time.sleep(1)
                     self.update_soc()
-                time.sleep(5)
+                time.sleep(max(10, self.alive_interval))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -2093,9 +2100,6 @@ class RemoteBorneApp:
         ttk.Button(btn_bar, text="Save As", command=save_as_upload).pack(
             side="right", padx=5, pady=5
         )
-        ttk.Button(
-            btn_bar, text="Exit", command=close_editor, style="Danger.TButton"
-        ).pack(side="right", padx=5, pady=5)
         ttk.Button(
             btn_bar, text="Close", command=on_close, style="Danger.TButton"
         ).pack(side="right", padx=5, pady=5)
