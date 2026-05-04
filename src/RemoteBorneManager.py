@@ -1114,11 +1114,10 @@ class RemoteBorneApp:
                 if not res.get("success"):
                     return
                 output = (res.get("out") or "") + "\n" + (res.get("err") or "")
-                match = re.search(
-                    r"(PowerBoard|MainBoard)\s*T1[^0-9-]*(-?\d+)",
-                    output,
-                    flags=re.IGNORECASE,
-                )
+                match = re.search(r"PowerBoard T1:\s*(\d+)", output)
+                if not match:
+                    match = re.search(r"MainBoard T1:\s*(\d+)", output)
+                    
                 temp = int(match.group(2)) if match else None
 
                 def apply_ui():
@@ -1156,7 +1155,7 @@ class RemoteBorneApp:
                 if not res.get("success"):
                     return
                 output = (res.get("out") or "") + "\n" + (res.get("err") or "")
-                match = re.search(r"evPresentSoC\s*[:=]\s*(\d+)", output, flags=re.IGNORECASE)
+                matches = re.findall(r"evPresentSoC\s*[:=]\s*(\d+)", output, flags=re.IGNORECASE)
 
                 def apply_ui():
                     self.soc_label_var.set(
@@ -2090,15 +2089,8 @@ class RemoteBorneApp:
         ttk.Button(btn_bar, text="Save", command=save_and_upload).pack(
             side="right", padx=5, pady=5
         )
-        ttk.Button(btn_bar, text="Save As", command=save_as_upload).pack(
-            side="right", padx=5, pady=5
-        )
-        ttk.Button(
-            btn_bar, text="Exit", command=close_editor, style="Danger.TButton"
-        ).pack(side="right", padx=5, pady=5)
-        ttk.Button(
-            btn_bar, text="Close", command=on_close, style="Danger.TButton"
-        ).pack(side="right", padx=5, pady=5)
+        
+        ttk.Button(btn_bar, text="Close", command=close_editor).pack(side="right", padx=5, pady=5)
         txt.bind("<Control-f>", lambda e: (open_find_dialog(), "break"))
         txt.bind("<Escape>", lambda e: (clear_find_highlight(), "break"))
         txt.bind("<Control-w>", lambda e: (close_editor(), "break"))
@@ -2292,6 +2284,51 @@ class RemoteBorneApp:
             self.cosphi_entry.configure(state=cos_state)
         if self.btn_send_cosphi:
             self.btn_send_cosphi.configure(state=cos_state if self.connected else "disabled")
+
+
+    def save_as_upload():
+        new_name = simpledialog.askstring(
+            "Save As",
+            "New remote filename (or full remote path):",
+            initialvalue=posixpath.basename(remote_path),
+            parent=win,
+        )
+        if not new_name:
+            return
+
+        new_name = new_name.strip()
+        if not new_name:
+            self._popup_warning("Save As", "Filename cannot be empty.")
+            return
+
+        if "/" in new_name:
+            target_remote = new_name
+        else:
+            target_remote = self._join_remote(
+                posixpath.dirname(remote_path), new_name
+            )
+
+        content = txt.get("1.0", "end-1c")
+        content = content.replace("\r\n", "\n").replace("\r", "\n")
+
+        try:
+            with open(tmp_local, "w", encoding="utf-8", newline="\n") as f:
+                f.write(content)
+        except Exception as e:
+            self._popup_error("Save As", f"Local save error:\n{e}")
+            return
+
+        self.log(f"[EDIT] Save As -> {target_remote}")
+
+        res = self.ssh.scp_put(tmp_local, target_remote)
+        if not res["success"]:
+            err = (res["err"] or res["out"] or "").strip()
+            self._popup_error("Save As", f"Upload failed:\n{err}")
+            return
+
+        self.log("[EDIT] Save As done.")
+        self.refresh_file_list()
+
 
     # ==================================================================
     # SERVICES / REBOOT
