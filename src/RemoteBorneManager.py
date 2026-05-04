@@ -1027,7 +1027,7 @@ class RemoteBorneApp:
         self._alive_thread_started = True
 
         def worker():
-            last_reconnect_try = 0.0
+            last_reconnect_try = time.time()
             heartbeat_failures = 0
             while not self._alive_stop:
                 time.sleep(self.alive_interval)
@@ -1041,6 +1041,8 @@ class RemoteBorneApp:
                 if not self.ssh.connected:
                     heartbeat_failures = 0
                     if self._manual_disconnect_mode:
+                        continue
+                    if self.status_var.get().startswith("Reconnecting"):
                         continue
                     now = time.time()
                     # évite de spammer plusieurs tentatives/logs toutes les 10s
