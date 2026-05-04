@@ -1099,20 +1099,27 @@ class RemoteBorneApp:
         if self._temp_update_inflight:
             return
         self._temp_update_inflight = True
-        cmd = "tail -n 20 /var/aux/ChargerApp/derate.log"
+        cmd = 'grep -E "PowerBoard T1|MainBoard T1" /var/aux/ChargerApp/derate.log | tail -1'
 
         def cb(res):
             try:
                 if not res.get("success"):
                     return
-                output = (res.get("stdout") or "") + "\n" + (res.get("stderr") or "")
-                match = re.search(r"PowerBoard T1:\s*(\d+)", output)
-                if not match:
-                    match = re.search(r"MainBoard T1:\s*(\d+)", output)
+                output = (res.get("out") or "") + "\n" + (res.get("err") or "")
+                match = re.search(
+                    r"(PowerBoard|MainBoard)\s*T1[^0-9-]*(-?\d+)",
+                    output,
+                    flags=re.IGNORECASE,
+                )
+                temp = int(match.group(2)) if match else None
 
                 def apply_ui():
-                    self.temp_label_var.set(f"Temp: {temp}")
-                    self.temp_label.configure(foreground=("red" if temp > 80 else "green"))
+                    if temp is None:
+                        self.temp_label_var.set("Temp: --")
+                        self.temp_label.configure(foreground="")
+                    else:
+                        self.temp_label_var.set(f"Temp: {temp}")
+                        self.temp_label.configure(foreground=("red" if temp > 80 else "green"))
 
                 try:
                     self.root.after(0, apply_ui)
@@ -1134,19 +1141,19 @@ class RemoteBorneApp:
         if self._soc_update_inflight:
             return
         self._soc_update_inflight = True
-        cmd = "tail -n 50 /var/aux/ChargerApp/ChargerApp.log"
+        cmd = 'grep -oiE "evPresentSoC: [0-9]+" /var/aux/ChargerApp/ChargerApp.log | tail -1'
 
         def cb(res):
             try:
                 if not res.get("success"):
                     return
-                output = (res.get("stdout") or "") + "\n" + (res.get("stderr") or "")
-                matches = re.findall(r"evPresentSoC\s*[:=]\s*(\d+)", output, flags=re.IGNORECASE)
-                if not matches:
-                    return
+                output = (res.get("out") or "") + "\n" + (res.get("err") or "")
+                match = re.search(r"evPresentSoC\s*[:=]\s*(\d+)", output, flags=re.IGNORECASE)
 
                 def apply_ui():
-                    self.soc_label_var.set(f"SoC Batterie: {matches[-1]}")
+                    self.soc_label_var.set(
+                        f"SoC Batterie: {match.group(1)}" if match else "SoC Batterie: --"
+                    )
 
                 try:
                     self.root.after(0, apply_ui)
@@ -1305,7 +1312,7 @@ class RemoteBorneApp:
     # NAVIGATION FICHIERS — VERSION ASYNC AVEC SSHManager.execute
     # ==================================================================
     def refresh_file_list(self):
-        """Rafraîchit la liste distante (ls -Ap) de façon SYNCHRONE."""
+        """Rafraîchit la liste distante (ls -Ap) en asynchrone via SSHManager.execute."""
         if not self.connected:
             self.log("[FILES] Please connect before refreshing list.")
             return
@@ -1318,41 +1325,30 @@ class RemoteBorneApp:
         cmd = f'ls -Ap "{self.current_path}"'
         self.log(f"[FILES] Listing {self.current_path}")
 
-        # Appel direct au backend plink (synchrone)
-        try:
-            rc, out, err = self.ssh.backend.exec(cmd, timeout=self.ssh.timeout)
-        except Exception as e:
-            self.log(f"[FILES] Exception during ls: {e}")
-            self._popup_error("Files", f"Error listing directory:\n{e}")
-            return
+        def cb(res):
+            def apply_ui():
+                self.file_list.delete(0, "end")
+                if not res.get("success"):
+                    msg = (res.get("err") or res.get("out") or "").strip()
+                    self.log(f"[FILES] Error: {msg}")
+                    self._popup_error("Files", f"Error listing directory:\n{msg}")
+                    return
 
-        # On vide la liste avant de remplir
-        self.file_list.delete(0, "end")
+                lines = (res.get("out") or "").splitlines()
+                if self.current_path.rstrip("/") != self.default_path.rstrip("/"):
+                    self.file_list.insert("end", "[.] (Parent)")
+                for e in lines:
+                    e = e.strip()
+                    if e:
+                        self.file_list.insert("end", e)
+                if hasattr(self, "path_entry"):
+                    self.path_entry.delete(0, "end")
+                    self.path_entry.insert(0, self.current_path)
+                self.log(f"[FILES] {len(lines)} entries in {self.current_path}")
 
-        if rc != 0:
-            msg = (err or out or "").strip()
-            self.log(f"[FILES] Error: {msg}")
-            self._popup_error("Files", f"Error listing directory:\n{msg}")
-            return
+            self.root.after(0, apply_ui)
 
-        lines = out.splitlines()
-
-        # Ajout de l’entrée [.] (Parent) sauf si on est au path par défaut
-        if self.current_path.rstrip("/") != self.default_path.rstrip("/"):
-            self.file_list.insert("end", "[.] (Parent)")
-
-        # Ajout des fichiers / dossiers
-        for e in lines:
-            e = e.strip()
-            if e:
-                self.file_list.insert("end", e)
-
-        # Mise à jour du champ Path si présent
-        if hasattr(self, "path_entry"):
-            self.path_entry.delete(0, "end")
-            self.path_entry.insert(0, self.current_path)
-
-        self.log(f"[FILES] {len(lines)} entries in {self.current_path}")
+        self.ssh.execute(cmd, callback=cb, timeout=self.ssh_timeout)
 
     def _go_root(self):
         if not self.connected:
@@ -1649,14 +1645,32 @@ class RemoteBorneApp:
                     self.log(f"[UPLOAD ERROR] {filename}: failed after 3 attempts ({last_err})")
                 else:
                     check_cmd = f'test -f "{remote_path}" && wc -c < "{remote_path}"'
-                    rc, out, err = self.ssh.backend.exec(check_cmd, timeout=self.ssh_timeout)
+                    size_evt = threading.Event()
+                    size_res = {"success": False, "out": "", "err": "timeout"}
+
+                    def _size_cb(r):
+                        size_res.update(r)
+                        size_evt.set()
+
+                    self.ssh.execute(
+                        check_cmd,
+                        callback=_size_cb,
+                        timeout=self.ssh_timeout,
+                        auto_retry=False,
+                        log_errors=False,
+                    )
+                    size_evt.wait(self.ssh_timeout + 2)
                     local_size = os.path.getsize(local_path)
-                    remote_size = int((out or "0").strip() or 0) if rc == 0 else -1
-                    if rc != 0 or remote_size != local_size:
+                    remote_size = (
+                        int((size_res.get("out") or "0").strip() or 0)
+                        if size_res.get("success")
+                        else -1
+                    )
+                    if (not size_res.get("success")) or remote_size != local_size:
                         fail_count += 1
                         ok_count -= 1
                         self.log(
-                            f"[UPLOAD ERROR] size mismatch {filename}: local={local_size}, remote={remote_size}, err={err}"
+                            f"[UPLOAD ERROR] size mismatch {filename}: local={local_size}, remote={remote_size}, err={size_res.get('err')}"
                         )
 
             self.log(f"[UPLOAD] Completed: {ok_count} success, {fail_count} failed.")
@@ -1998,11 +2012,23 @@ class RemoteBorneApp:
             else:
                 target_remote = self._join_remote(posixpath.dirname(remote_path), user_name)
 
-            rc, _, _ = self.ssh.backend.exec(
+            exists_evt = threading.Event()
+            exists_res = {"success": False, "out": "", "err": "timeout"}
+
+            def _exists_cb(r):
+                exists_res.update(r)
+                exists_evt.set()
+
+            self.ssh.execute(
                 f'test -e "{target_remote}"',
+                callback=_exists_cb,
                 timeout=self.ssh_timeout,
+                auto_retry=False,
+                log_errors=False,
             )
-            if rc == 0:
+            exists_evt.wait(self.ssh_timeout + 2)
+
+            if exists_res.get("success"):
                 if not messagebox.askyesno(
                     "Confirm overwrite",
                     f"File already exists:\n{target_remote}\n\nOverwrite?",
