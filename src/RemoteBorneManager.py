@@ -552,9 +552,9 @@ class RemoteBorneApp:
         main.pack(fill="both", expand=True)
         main.grid_columnconfigure(0, weight=3)
         main.grid_columnconfigure(1, weight=2)
-        main.grid_rowconfigure(1, weight=1)
-        main.grid_rowconfigure(2, weight=1)
-        main.grid_rowconfigure(3, weight=1)
+        main.grid_rowconfigure(1, weight=3)
+        main.grid_rowconfigure(2, weight=0)
+        main.grid_rowconfigure(3, weight=2)
 
         # ----- HEADER (logos + titre + status) -----
         header = ttk.Frame(main)
@@ -647,7 +647,7 @@ class RemoteBorneApp:
 
         # ----- RIGHT TOP : STATUS + CONTROLS -----
         right_top = ttk.Labelframe(main, text="Status & Controls", padding=5)
-        right_top.grid(row=1, column=1, sticky="nsew", padx=(5, 10), pady=(5, 2))
+        right_top.grid(row=1, column=1, sticky="new", padx=(5, 10), pady=(5, 2))
         right_top.grid_columnconfigure(0, weight=1)
 
         # Status row
@@ -743,7 +743,7 @@ class RemoteBorneApp:
 
         # ----- RIGHT MIDDLE : ENERGY MANAGER -----
         em_frame = ttk.Labelframe(main, text="Energy Manager Controls", padding=5)
-        em_frame.grid(row=2, column=1, sticky="nsew", padx=(5, 10), pady=(2, 5))
+        em_frame.grid(row=2, column=1, sticky="ew", padx=(5, 10), pady=(2, 5))
         em_frame.grid_columnconfigure(0, weight=1)
         em_frame.grid_columnconfigure(1, weight=1)
 
@@ -872,14 +872,14 @@ class RemoteBorneApp:
         # ----- BOTTOM : LOGS -----
         log_frame = ttk.Labelframe(main, text="Logs", padding=5)
         log_frame.grid(
-            row=4, column=0, columnspan=2, sticky="nsew", padx=10, pady=(0, 10)
+            row=3, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 10)
         )
         log_frame.grid_columnconfigure(0, weight=1)
         log_frame.grid_rowconfigure(0, weight=1)
 
         self.log_text = tk.Text(
             log_frame,
-            height=6,
+            height=10,
             wrap="word",
             state="disabled",
         )
