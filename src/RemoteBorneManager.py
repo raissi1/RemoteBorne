@@ -1087,7 +1087,7 @@ class RemoteBorneApp:
         t = threading.Thread(target=worker, daemon=True)
         t.start()
 
-    # --- ADDED ---
+    # --- Monitor SOC TEMP ---
     def _start_monitor(self):
         if self._monitor_thread_started:
             return
@@ -1097,41 +1097,45 @@ class RemoteBorneApp:
             while not self._monitor_stop:
                 if self.ssh.connected and not self._manual_disconnect_mode:
                     self.update_temperature()
+                    time.sleep(1)  # petit décalage
                     self.update_soc()
-                time.sleep(5)
+                time.sleep(10)  # intervalle global
 
         threading.Thread(target=worker, daemon=True).start()
 
-    # --- ADDED ---
+    # --- Temp Target ---
     def update_temperature(self):
         if self._temp_update_inflight:
             return
         self._temp_update_inflight = True
+
         cmd = 'grep -E "PowerBoard T1|MainBoard T1" /var/aux/ChargerApp/derate.log | tail -1'
 
         def cb(res):
             try:
                 if not res.get("success"):
                     return
+
                 output = (res.get("out") or "") + "\n" + (res.get("err") or "")
+
                 match = re.search(r"PowerBoard T1:\s*(\d+)", output)
                 if not match:
                     match = re.search(r"MainBoard T1:\s*(\d+)", output)
-                    
-                temp = int(match.group(2)) if match else None
+
+                temp = int(match.group(1)) if match else None
 
                 def apply_ui():
                     if temp is None:
                         self.temp_label_var.set("Temp: --")
                         self.temp_label.configure(foreground="")
                     else:
-                        self.temp_label_var.set(f"Temp: {temp}")
-                        self.temp_label.configure(foreground=("red" if temp > 80 else "green"))
+                        self.temp_label_var.set(f"Temp: {temp}°C")
+                        self.temp_label.configure(
+                            foreground=("red" if temp > 80 else "green")
+                        )
 
-                try:
-                    self.root.after(0, apply_ui)
-                except Exception:
-                    pass
+                self.root.after(0, apply_ui)
+
             finally:
                 self._temp_update_inflight = False
 
@@ -1143,29 +1147,32 @@ class RemoteBorneApp:
             log_errors=False,
         )
 
-    # --- ADDED ---
+    # --- SOC Target ---
     def update_soc(self):
         if self._soc_update_inflight:
             return
         self._soc_update_inflight = True
+
         cmd = 'grep -oiE "evPresentSoC: [0-9]+" /var/aux/ChargerApp/ChargerApp.log | tail -1'
 
         def cb(res):
             try:
                 if not res.get("success"):
                     return
+
                 output = (res.get("out") or "") + "\n" + (res.get("err") or "")
-                matches = re.findall(r"evPresentSoC\s*[:=]\s*(\d+)", output, flags=re.IGNORECASE)
+
+                match = re.search(r"evPresentSoC\s*[:=]\s*(\d+)", output, re.IGNORECASE)
+                soc = match.group(1) if match else None
 
                 def apply_ui():
-                    self.soc_label_var.set(
-                        f"SoC Batterie: {match.group(1)}" if match else "SoC Batterie: --"
-                    )
+                    if soc:
+                        self.soc_label_var.set(f"SoC Batterie: {soc}%")
+                    else:
+                        self.soc_label_var.set("SoC Batterie: --")
 
-                try:
-                    self.root.after(0, apply_ui)
-                except Exception:
-                    pass
+                self.root.after(0, apply_ui)
+
             finally:
                 self._soc_update_inflight = False
 
@@ -1176,7 +1183,6 @@ class RemoteBorneApp:
             auto_retry=False,
             log_errors=False,
         )
-
     # ==================================================================
     # SSH EVENTS (connect / disconnect / reconnect)
     # ==================================================================
