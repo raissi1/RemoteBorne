@@ -1034,6 +1034,9 @@ class RemoteBorneApp:
                 # Si l’app est fermée, on sort
                 if not hasattr(self, "ssh"):
                     break
+                if getattr(self.ssh, "_reconnect_in_progress", False):
+                    heartbeat_failures = 0
+                    continue
                 # Si pas connecté -> on tente une reconnexion périodique
                 if not self.ssh.connected:
                     heartbeat_failures = 0
@@ -1050,6 +1053,9 @@ class RemoteBorneApp:
                 def cb(res):
                     nonlocal heartbeat_failures, last_reconnect_try
                     if not res["success"]:
+                        if getattr(self.ssh, "_reconnect_in_progress", False):
+                            heartbeat_failures = 0
+                            return
                         heartbeat_failures += 1
                         self.log(
                             f"[ALIVE] Heartbeat failed ({heartbeat_failures}/3)."
