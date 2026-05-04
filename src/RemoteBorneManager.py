@@ -1106,10 +1106,9 @@ class RemoteBorneApp:
                 if not res.get("success"):
                     return
                 output = (res.get("stdout") or "") + "\n" + (res.get("stderr") or "")
-                match = re.search(r"Temp\s*[:=]\s*(-?\d+)", output, flags=re.IGNORECASE)
+                match = re.search(r"PowerBoard T1:\s*(\d+)", output)
                 if not match:
-                    return
-                temp = int(match.group(1))
+                    match = re.search(r"MainBoard T1:\s*(\d+)", output)
 
                 def apply_ui():
                     self.temp_label_var.set(f"Temp: {temp}")
@@ -1142,7 +1141,7 @@ class RemoteBorneApp:
                 if not res.get("success"):
                     return
                 output = (res.get("stdout") or "") + "\n" + (res.get("stderr") or "")
-                matches = re.findall(r"evPresentSoc\s*[:=]\s*(\d+)", output, flags=re.IGNORECASE)
+                matches = re.findall(r"evPresentSoC\s*[:=]\s*(\d+)", output, flags=re.IGNORECASE)
                 if not matches:
                     return
 
