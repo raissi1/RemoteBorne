@@ -281,6 +281,7 @@ class RemoteBorneApp:
         self.log_text = None 
         self.file_list = None
         self.path_entry = None
+        self._file_refresh_seq = 0
         self._editor_window = None
         self._editor_remote_path = None
         # --- ADDED ---
@@ -334,7 +335,6 @@ class RemoteBorneApp:
         self.log(
             f"[SSH] Timeout={self.ssh_timeout}s | retry_base={self.retry_base_delay}s | retry_max={self.retry_max_delay}s | alive={self.alive_interval}s"
         )
-        self.root.after(200, self.force_reconnect)
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
 
@@ -1324,9 +1324,13 @@ class RemoteBorneApp:
         # On quote le path pour éviter les soucis d'espaces, etc.
         cmd = f'ls -Ap "{self.current_path}"'
         self.log(f"[FILES] Listing {self.current_path}")
+        self._file_refresh_seq += 1
+        req_id = self._file_refresh_seq
 
         def cb(res):
             def apply_ui():
+                if req_id != self._file_refresh_seq:
+                    return
                 self.file_list.delete(0, "end")
                 if not res.get("success"):
                     msg = (res.get("err") or res.get("out") or "").strip()
