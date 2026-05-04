@@ -1350,7 +1350,10 @@ class RemoteBorneApp:
                     self.path_entry.insert(0, self.current_path)
                 self.log(f"[FILES] {len(lines)} entries in {self.current_path}")
 
-            self.root.after(0, apply_ui)
+            try:
+                self.root.after(0, apply_ui)
+            except Exception:
+                pass
 
         self.ssh.execute(cmd, callback=cb, timeout=self.ssh_timeout)
 
@@ -2082,6 +2085,9 @@ class RemoteBorneApp:
         ttk.Button(btn_bar, text="Save As", command=save_as_upload).pack(
             side="right", padx=5, pady=5
         )
+        ttk.Button(
+            btn_bar, text="Exit", command=close_editor, style="Danger.TButton"
+        ).pack(side="right", padx=5, pady=5)
         ttk.Button(
             btn_bar, text="Close", command=on_close, style="Danger.TButton"
         ).pack(side="right", padx=5, pady=5)
