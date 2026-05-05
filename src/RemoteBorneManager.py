@@ -1095,7 +1095,7 @@ class RemoteBorneApp:
         t = threading.Thread(target=worker, daemon=True)
         t.start()
 
-    # --- ADDED ---
+    # --- Monitor SOC TEMP ---
     def _start_monitor(self):
         if self._monitor_thread_started:
             return
@@ -1112,47 +1112,44 @@ class RemoteBorneApp:
                     and (time.time() - self._last_monitor_poll_ts) >= 180
                 ):
                     self.update_temperature()
-                    time.sleep(1)
                     self.update_soc()
-                    self._last_monitor_poll_ts = time.time()
-                time.sleep(5)
+                time.sleep(max(10, self.alive_interval))
 
         threading.Thread(target=worker, daemon=True).start()
-
-    def _mark_user_command(self):
-        self._last_user_command_ts = time.time()
 
     # --- ADDED ---
     def update_temperature(self):
         if self._temp_update_inflight:
             return
         self._temp_update_inflight = True
+
         cmd = 'grep -E "PowerBoard T1|MainBoard T1" /var/aux/ChargerApp/derate.log | tail -1'
 
         def cb(res):
             try:
                 if not res.get("success"):
                     return
+
                 output = (res.get("out") or "") + "\n" + (res.get("err") or "")
-                match = re.search(
-                    r"(PowerBoard|MainBoard)\s*T1[^0-9-]*(-?\d+)",
-                    output,
-                    flags=re.IGNORECASE,
-                )
-                temp = int(match.group(2)) if match else None
+
+                match = re.search(r"PowerBoard T1:\s*(\d+)", output)
+                if not match:
+                    match = re.search(r"MainBoard T1:\s*(\d+)", output)
+
+                temp = int(match.group(1)) if match else None
 
                 def apply_ui():
                     if temp is None:
                         self.temp_label_var.set("Temp: --")
                         self.temp_label.configure(foreground="")
                     else:
-                        self.temp_label_var.set(f"Temp: {temp}")
-                        self.temp_label.configure(foreground=("red" if temp > 80 else "green"))
+                        self.temp_label_var.set(f"Temp: {temp}°C")
+                        self.temp_label.configure(
+                            foreground=("red" if temp > 80 else "green")
+                        )
 
-                try:
-                    self.root.after(0, apply_ui)
-                except Exception:
-                    pass
+                self.root.after(0, apply_ui)
+
             finally:
                 self._temp_update_inflight = False
 
@@ -1164,29 +1161,32 @@ class RemoteBorneApp:
             log_errors=False,
         )
 
-    # --- ADDED ---
+    # --- SOC Target ---
     def update_soc(self):
         if self._soc_update_inflight:
             return
         self._soc_update_inflight = True
+
         cmd = 'grep -oiE "evPresentSoC: [0-9]+" /var/aux/ChargerApp/ChargerApp.log | tail -1'
 
         def cb(res):
             try:
                 if not res.get("success"):
                     return
+
                 output = (res.get("out") or "") + "\n" + (res.get("err") or "")
-                match = re.search(r"evPresentSoC\s*[:=]\s*(\d+)", output, flags=re.IGNORECASE)
+
+                match = re.search(r"evPresentSoC\s*[:=]\s*(\d+)", output, re.IGNORECASE)
+                soc = match.group(1) if match else None
 
                 def apply_ui():
-                    self.soc_label_var.set(
-                        f"SoC Batterie: {match.group(1)}" if match else "SoC Batterie: --"
-                    )
+                    if soc:
+                        self.soc_label_var.set(f"SoC Batterie: {soc}%")
+                    else:
+                        self.soc_label_var.set("SoC Batterie: --")
 
-                try:
-                    self.root.after(0, apply_ui)
-                except Exception:
-                    pass
+                self.root.after(0, apply_ui)
+
             finally:
                 self._soc_update_inflight = False
 
@@ -1197,7 +1197,6 @@ class RemoteBorneApp:
             auto_retry=False,
             log_errors=False,
         )
-
     # ==================================================================
     # SSH EVENTS (connect / disconnect / reconnect)
     # ==================================================================
@@ -2113,6 +2112,9 @@ class RemoteBorneApp:
             side="right", padx=5, pady=5
         )
         ttk.Button(
+            btn_bar, text="Exit", command=close_editor, style="Danger.TButton"
+        ).pack(side="right", padx=5, pady=5)
+        ttk.Button(
             btn_bar, text="Close", command=on_close, style="Danger.TButton"
         ).pack(side="right", padx=5, pady=5)
         txt.bind("<Control-f>", lambda e: (open_find_dialog(), "break"))
@@ -2310,6 +2312,51 @@ class RemoteBorneApp:
             self.cosphi_entry.configure(state=cos_state)
         if self.btn_send_cosphi:
             self.btn_send_cosphi.configure(state=cos_state if self.connected else "disabled")
+
+
+    def save_as_upload():
+        new_name = simpledialog.askstring(
+            "Save As",
+            "New remote filename (or full remote path):",
+            initialvalue=posixpath.basename(remote_path),
+            parent=win,
+        )
+        if not new_name:
+            return
+
+        new_name = new_name.strip()
+        if not new_name:
+            self._popup_warning("Save As", "Filename cannot be empty.")
+            return
+
+        if "/" in new_name:
+            target_remote = new_name
+        else:
+            target_remote = self._join_remote(
+                posixpath.dirname(remote_path), new_name
+            )
+
+        content = txt.get("1.0", "end-1c")
+        content = content.replace("\r\n", "\n").replace("\r", "\n")
+
+        try:
+            with open(tmp_local, "w", encoding="utf-8", newline="\n") as f:
+                f.write(content)
+        except Exception as e:
+            self._popup_error("Save As", f"Local save error:\n{e}")
+            return
+
+        self.log(f"[EDIT] Save As -> {target_remote}")
+
+        res = self.ssh.scp_put(tmp_local, target_remote)
+        if not res["success"]:
+            err = (res["err"] or res["out"] or "").strip()
+            self._popup_error("Save As", f"Upload failed:\n{err}")
+            return
+
+        self.log("[EDIT] Save As done.")
+        self.refresh_file_list()
+
 
     # ==================================================================
     # SERVICES / REBOOT

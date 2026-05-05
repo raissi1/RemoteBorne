@@ -22,7 +22,7 @@ class SSHManager:
         user: str,
         password: str,
         port: int = 22,
-        timeout: int = 5,
+        timeout: int = 20,
         retry_base_delay: float = 2.0,
         retry_max_delay: float = 10.0,
     ):
@@ -316,8 +316,6 @@ class SSHManager:
         """
 
         def worker():
-            if not self.connected and auto_retry:
-                self._try_reconnect()
             if not self.connected:
                 err_msg = "SSH not connected"
                 if log_errors:
