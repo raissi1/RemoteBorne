@@ -296,6 +296,8 @@ class RemoteBorneApp:
         self._monitor_thread_started = False
         self._temp_update_inflight = False
         self._soc_update_inflight = False
+        self._last_user_command_ts = time.time()
+        self._last_monitor_poll_ts = 0.0
 
         self.led_canvas = None
         self.ip_label = None
@@ -1101,13 +1103,24 @@ class RemoteBorneApp:
 
         def worker():
             while not self._monitor_stop:
-                if self.ssh.connected and not self._manual_disconnect_mode:
+                idle_seconds = time.time() - self._last_user_command_ts
+                if (
+                    self.ssh.connected
+                    and not self._manual_disconnect_mode
+                    and not getattr(self.ssh, "_reconnect_in_progress", False)
+                    and idle_seconds >= 180
+                    and (time.time() - self._last_monitor_poll_ts) >= 180
+                ):
                     self.update_temperature()
                     time.sleep(1)
                     self.update_soc()
-                time.sleep(max(10, self.alive_interval))
+                    self._last_monitor_poll_ts = time.time()
+                time.sleep(5)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _mark_user_command(self):
+        self._last_user_command_ts = time.time()
 
     # --- ADDED ---
     def update_temperature(self):
@@ -1572,6 +1585,7 @@ class RemoteBorneApp:
 
 
     def _menu_download(self):
+        self._mark_user_command()
         remote = self._selected_remote_file()
         if not remote:
             return
@@ -1606,12 +1620,14 @@ class RemoteBorneApp:
 
 
     def _menu_print(self):
+        self._mark_user_command()
         remote = self._selected_remote_file()
         if not remote:
             return
         self.print_file(remote)
 
     def upload_files_to_current_path(self):
+        self._mark_user_command()
         if not self.connected:
             self._popup_warning("Upload", "Not connected.")
             return
@@ -1826,11 +1842,7 @@ class RemoteBorneApp:
         self.open_file_editor(remote)
 
     def open_file_editor(self, remote_path: str):
-        # 🔒 bloque multi ouverture
-        if getattr(self, "editor_open", False):
-            self.log("[INFO] Editor already open")
-            return
-
+        self._mark_user_command()
         if not self.connected:
             self._popup_warning("Edit", "Not connected.")
             return
@@ -2111,6 +2123,7 @@ class RemoteBorneApp:
     # ENERGY MANAGER – P/Q (ULTIMATE)
     # ==================================================================
     def send_power_command(self):
+        self._mark_user_command()
         if not self.connected:
             messagebox.showwarning(
                 "Warning", "Please connect before sending commands."
@@ -2182,6 +2195,7 @@ class RemoteBorneApp:
     # ENERGY MANAGER – CosPhi (ULTIMATE)
     # ==================================================================
     def send_cosphi_command(self):
+        self._mark_user_command()
         if not self.connected:
             messagebox.showwarning(
                 "Warning", "Please connect before sending commands."
