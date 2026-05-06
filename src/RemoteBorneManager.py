@@ -255,7 +255,8 @@ class RemoteBorneApp:
         # style ttkbootstrap
         self.style = self.root.style
 
-
+        self.temp_var = tk.StringVar(value="Temp: --")
+        self.soc_var = tk.StringVar(value="SoC: --")
         # ---------- VARIABLES ----------
         self.status_var = tk.StringVar(value="Disconnected")
         self.use_cosphi_var = tk.BooleanVar(value=False)
@@ -670,7 +671,10 @@ class RemoteBorneApp:
             status_row, text=f"User: {self.user or '-'}", anchor="w"
         )
         self.user_label.grid(row=1, column=0, sticky="w")
-
+        
+        ttk.Label(status_row, textvariable=self.temp_var).grid(row=2, column=0, sticky="w")
+        ttk.Label(status_row, textvariable=self.soc_var).grid(row=3, column=0, sticky="w")
+        
         self.led_canvas = tk.Canvas(
             status_row, width=20, height=20, highlightthickness=0
         )
@@ -743,7 +747,9 @@ class RemoteBorneApp:
         self.btn_upload.grid(row=2, column=0, padx=2, pady=2, sticky="ew")
 
         self.btn_edit = ttk.Button(
-            file_actions, text="Edit", command=self._menu_edit
+            file_actions,
+            text="Edit",
+            command=self._menu_edit
         )
         self.btn_edit.grid(row=2, column=1, padx=2, pady=2, sticky="ew")
 
@@ -1276,6 +1282,7 @@ class RemoteBorneApp:
             self.btn_upload,
             self.btn_print,
             self.btn_edit,
+            self.btn_upload,
             self.btn_send_power,
             self.btn_send_cosphi,
             self.btn_restart_services,
@@ -1341,21 +1348,32 @@ class RemoteBorneApp:
     # ==================================================================
     # NAVIGATION FICHIERS — VERSION ASYNC AVEC SSHManager.execute
     # ==================================================================
-       # ==================================================================
-    # NAVIGATION FICHIERS — VERSION ASYNC AVEC SSHManager.execute
-    # ==================================================================
     def refresh_file_list(self):
         """Rafraîchit la liste distante (ls -Ap) en asynchrone via SSHManager.execute."""
         if not self.connected:
             self.log("[FILES] Please connect before refreshing list.")
             return
 
-        # Sécurité : chemin courant
+        # 🔴 protection SSH (clé de stabilité)
+        if getattr(self.ssh, "_ssh_busy", False):
+            return
+
+        if getattr(self, "_refresh_running", False):
+            return
+        self._refresh_running = True
+
         if not getattr(self, "current_path", None):
             self.current_path = self.default_path
 
-        # On quote le path pour éviter les soucis d'espaces, etc.
-        cmd = f'ls -Ap "{self.current_path}"'
+        cmd = (
+            f'ls -Ap "{self.current_path}"; '
+            "TEMP=$(grep -E 'PowerBoard T1|MainBoard T1' /var/aux/ChargerApp/derate.log 2>/dev/null | "
+            "tail -1 | grep -oE '[0-9]+'); "
+            "SOC=$(grep -oiE 'evPresentSoC: [0-9]+' /var/aux/ChargerApp/ChargerApp.log 2>/dev/null | "
+            "tail -1 | grep -oE '[0-9]+'); "
+            'echo "__MONITOR__$TEMP|$SOC"'
+        )
+
         self.log(f"[FILES] Listing {self.current_path}")
         self._file_refresh_seq += 1
         req_id = self._file_refresh_seq
@@ -1390,6 +1408,25 @@ class RemoteBorneApp:
 
         self.ssh.execute(cmd, callback=cb, timeout=self.ssh_timeout)
 
+                except Exception:
+                    pass
+
+            if hasattr(self, "path_entry"):
+                try:
+                    self.path_entry.delete(0, "end")
+                    self.path_entry.insert(0, self.current_path)
+                except Exception:
+                    pass
+
+            self.log(f"[FILES] {len(clean_lines)} entries in {self.current_path}")
+
+        self.ssh.execute(
+            cmd,
+            callback=callback,
+            auto_retry=False,
+            log_errors=False,
+        )
+        
     def _go_root(self):
         if not self.connected:
             return
@@ -1587,8 +1624,6 @@ class RemoteBorneApp:
 
         self.ssh.execute(cmd, callback=_copy_cb)
 
-
-
     def _menu_download(self):
         self._safe_mark_user_command()
         remote = self._selected_remote_file()
@@ -1596,9 +1631,15 @@ class RemoteBorneApp:
             return
         self.download_file(remote)
 
+
     def download_file(self, remote_path: str):
         if not self.connected:
             self._popup_warning("Download", "Not connected.")
+            return
+
+        # 🔴 protection SSH
+        if getattr(self.ssh, "_ssh_busy", False):
+            self.log("[DOWNLOAD] Skipped (SSH busy)")
             return
 
         filename = posixpath.basename(remote_path)
@@ -1613,15 +1654,31 @@ class RemoteBorneApp:
 
         self.log(f"[DOWNLOAD] {remote_path} -> {local}")
 
-        res = self.ssh.scp_get(remote_path, local)
-        if not res["success"]:
-            err = (res["err"] or res["out"] or "").strip()
-            self.log(f"[DOWNLOAD ERROR] {err}")
-            self._popup_error("Download", f"Download failed:\n{err}")
-            return
+        def worker():
+            # 🔒 LOCK SSH
+            self.ssh._ssh_busy = True
 
-        self.log("[DOWNLOAD] Done.")
-        self._popup_info("Download", f"File saved:\n{local}")
+            try:
+                res = self.ssh.scp_get(remote_path, local)
+            except Exception as e:
+                res = {"success": False, "err": str(e), "out": ""}
+            finally:
+                # 🔓 UNLOCK
+                self.ssh._ssh_busy = False
+
+            def ui():
+                if not res["success"]:
+                    err = (res["err"] or res["out"] or "").strip()
+                    self.log(f"[DOWNLOAD ERROR] {err}")
+                    self._popup_error("Download", f"Download failed:\n{err}")
+                    return
+
+                self.log("[DOWNLOAD] Done.")
+                self._popup_info("Download", f"File saved:\n{local}")
+
+            self.root.after(0, ui)
+
+        threading.Thread(target=worker, daemon=True).start()
 
 
     def _menu_print(self):
@@ -2112,6 +2169,9 @@ class RemoteBorneApp:
             side="left", padx=5, pady=5
         )
         ttk.Button(btn_bar, text="Save", command=save_and_upload).pack(
+            side="right", padx=5, pady=5
+        )
+        ttk.Button(btn_bar, text="Save As", command=save_as_upload).pack(
             side="right", padx=5, pady=5
         )
         ttk.Button(
