@@ -6,7 +6,13 @@
 import threading
 import time
 
-from plink_backend import PlinkBackend
+try:
+    from .plink_backend import PlinkBackend
+except ImportError:
+    try:
+        from plink_backend import PlinkBackend
+    except ImportError:
+        from src.plink_backend import PlinkBackend
 
 
 class LogManager:

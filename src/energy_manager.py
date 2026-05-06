@@ -11,6 +11,19 @@ import math
 import csv
 import re
 
+ENERGY_TOOL_RESOLVE = (
+    'EM_TOOL="$(command -v EnergyManagerTestingTool 2>/dev/null || true)"; '
+    'if [ -z "$EM_TOOL" ]; then '
+    'for p in /usr/local/bin/EnergyManagerTestingTool /usr/bin/EnergyManagerTestingTool; do '
+    '[ -x "$p" ] && EM_TOOL="$p" && break; '
+    "done; "
+    'fi; '
+    'if [ -z "$EM_TOOL" ]; then '
+    "echo 'EnergyManagerTestingTool not found on target (checked PATH, /usr/local/bin, /usr/bin)' >&2; "
+    "exit 127; "
+    "fi; "
+)
+
 
 class EnergyManagerWindow:
     """Fenêtre Energy Manager PRO (plein écran, une seule vue)."""
@@ -26,10 +39,14 @@ class EnergyManagerWindow:
         self.win = ttk.Toplevel(master)
         self.win.title("Energy Manager PRO")
         try:
-            self.win.state("zoomed")  # plein écran si possible
+            self.win.transient(master)
+            self.win.grab_set()
+            self.win.focus_force()
         except Exception:
-            self.win.geometry("1200x800")
-        self.win.minsize(1100, 700)
+            pass
+        self.win.geometry("1000x680")
+        self.win.minsize(900, 580)
+        self._center_on_parent(1000, 680)
 
         # Champs P/Q & CosPhi
         self.p_var = tk.StringVar()
@@ -43,6 +60,23 @@ class EnergyManagerWindow:
         self.monitor_text = None
 
         self.build_ui()
+
+    def _center_on_parent(self, width: int, height: int):
+        try:
+            self.master.update_idletasks()
+            px, py = self.master.winfo_rootx(), self.master.winfo_rooty()
+            pw, ph = self.master.winfo_width(), self.master.winfo_height()
+            if pw > 1 and ph > 1:
+                x = px + max(0, (pw - width) // 2)
+                y = py + max(0, (ph - height) // 2)
+                self.win.geometry(f"{width}x{height}+{x}+{y}")
+                return
+        except Exception:
+            pass
+        self.win.update_idletasks()
+        x = (self.win.winfo_screenwidth() - width) // 2
+        y = (self.win.winfo_screenheight() - height) // 2
+        self.win.geometry(f"{width}x{height}+{max(0, x)}+{max(0, y)}")
 
     # ------------------------------------------------------------
     # Helpers popups : toujours devant et modales
@@ -91,11 +125,10 @@ class EnergyManagerWindow:
     # ------------------------------------------------------------
     def build_ui(self):
         main = ttk.Frame(self.win)
-        main.pack(fill="both", expand=True, padx=20, pady=20)
+        main.pack(fill="both", expand=True, padx=14, pady=14)
 
-        # Layout général : deux lignes
-        main.rowconfigure(0, weight=1)
-        main.rowconfigure(1, weight=2)
+        # Layout général : zone top + zone bas (history/monitor) + footer
+        main.rowconfigure(1, weight=1)
         main.columnconfigure(0, weight=3)
         main.columnconfigure(1, weight=2)
 
@@ -111,6 +144,15 @@ class EnergyManagerWindow:
         self._build_section_pq_cosphi(top)
         self._build_section_history(bottom_left)
         self._build_section_monitor(bottom_right)
+
+        footer = ttk.Frame(main)
+        footer.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        ttk.Button(
+            footer,
+            text="Close",
+            bootstyle="danger",
+            command=self.win.destroy,
+        ).pack(side="right")
 
     # ------------------------------------------------------------
     # SECTION P/Q & COSPHI
@@ -142,7 +184,7 @@ class EnergyManagerWindow:
             width=20,
             validate="key",
             validatecommand=vcmd,
-        ).grid(row=0, column=1, padx=10)
+        ).grid(row=0, column=1, padx=10, sticky="w")
 
         ttk.Label(pq_frame, text="Reactive Power Q (VAR) :").grid(
             row=1, column=0, sticky="w", pady=5
@@ -153,7 +195,7 @@ class EnergyManagerWindow:
             width=20,
             validate="key",
             validatecommand=vcmd,
-        ).grid(row=1, column=1, padx=10)
+        ).grid(row=1, column=1, padx=10, sticky="w")
 
         ttk.Button(
             pq_frame,
@@ -162,8 +204,7 @@ class EnergyManagerWindow:
             command=self.send_pq,
         ).grid(row=2, column=0, columnspan=2, pady=10)
 
-        for i in range(2):
-            pq_frame.grid_columnconfigure(i, weight=1)
+        pq_frame.grid_columnconfigure(2, weight=1)
 
         # --- Mode CosPhi
         cos_frame = ttk.Labelframe(frm, text="Mode CosPhi", padding=15)
@@ -178,7 +219,7 @@ class EnergyManagerWindow:
             width=20,
             validate="key",
             validatecommand=vcmd,
-        ).grid(row=0, column=1, padx=10)
+        ).grid(row=0, column=1, padx=10, sticky="w")
 
         ttk.Label(cos_frame, text="CosPhi (-1 → 1] :").grid(
             row=1, column=0, sticky="w", pady=5
@@ -189,7 +230,7 @@ class EnergyManagerWindow:
             width=20,
             validate="key",
             validatecommand=vcmd,
-        ).grid(row=1, column=1, padx=10)
+        ).grid(row=1, column=1, padx=10, sticky="w")
 
         ttk.Label(cos_frame, text="Reactive Power Q (auto) :").grid(
             row=2, column=0, sticky="w", pady=5
@@ -200,7 +241,7 @@ class EnergyManagerWindow:
             width=20,
             state="readonly",
         )
-        q_auto_entry.grid(row=2, column=1, padx=10)
+        q_auto_entry.grid(row=2, column=1, padx=10, sticky="w")
 
         ttk.Button(
             cos_frame,
@@ -216,8 +257,7 @@ class EnergyManagerWindow:
             command=self.send_cosphi,
         ).grid(row=3, column=1, pady=10, sticky="w")
 
-        for i in range(2):
-            cos_frame.grid_columnconfigure(i, weight=1)
+        cos_frame.grid_columnconfigure(2, weight=1)
 
     # ------------------------------------------------------------
     # SECTION HISTORIQUE
@@ -296,7 +336,8 @@ class EnergyManagerWindow:
         cmd = (
             "cd /var/aux/EnergyManager && "
             "export LD_LIBRARY_PATH=/usr/local/lib && "
-            f"/usr/local/bin/EnergyManagerTestingTool -S -s ocpp -a "
+            f"{ENERGY_TOOL_RESOLVE}"
+            f"\"$EM_TOOL\" -S -s ocpp -a "
             f"--power {p_val} --reactive-power {q_val} -m CentralSetpoint"
         )
         self.execute_energy_cmd("P/Q", cmd)
@@ -341,8 +382,11 @@ class EnergyManagerWindow:
         cmd = (
             "cd /var/aux/EnergyManager && "
             "export LD_LIBRARY_PATH=/usr/local/lib && "
-            f"/usr/local/bin/EnergyManagerTestingTool -S -s ocpp -a "
-            f"--power {p_val} --reactive-power {q_val} -m CentralSetpoint"
+            f"{ENERGY_TOOL_RESOLVE}"
+            f"(\"$EM_TOOL\" --grid-option "
+            f"\"SetpointCosPhi_Pct={int(round(cosphi_val * 100))}\" && "
+            f"\"$EM_TOOL\" -S -s ocpp -a "
+            f"--power {p_val} -m CentralSetpoint) >/dev/null 2>&1 &"
         )
         self.execute_energy_cmd("CosPhi", cmd)
 

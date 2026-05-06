@@ -1,0 +1,13 @@
+# Python cache/bytecode
+__pycache__/
+*.py[cod]
+
+# Local runtime/config artifacts
+config/config.ini
+logs/
+exports/
+documents/
+
+# Build artifacts
+build/
+dist/

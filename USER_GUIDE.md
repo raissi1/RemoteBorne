@@ -1,133 +1,71 @@
 # Remote Borne Manager — Guide Utilisateur
 
-## 1. Introduction
+## 1. Démarrage
 
-Remote Borne Manager permet de gérer des bornes IOTECHA à distance via SSH.
-L’application simplifie :
-- la gestion des fichiers GridCodes
-- le contrôle de puissance
-- le debug en temps réel
-- le redémarrage des services
-
-## 2. Démarrage
-
-1. Ouvrir PowerShell
-2. Aller dans le dossier src :
+1. Initialiser la config locale (une seule fois) :
+```powershell
+copy config\config.example.ini config\config.ini
 ```
-cd remote_borne_manager/src
-```
-3. Lancer l'app :
-```
-python RemoteBorneManager_v3.py
+2. Lancer l'application :
+```bash
+python src/RemoteBorneManager.py
 ```
 
-## 3. Connexion
+## 2. Connexion
 
-Cliquer sur **Connect**.
+- **Connect** : démarre/reprend la connexion SSH.
+- **Disconnect** : déconnexion manuelle stricte (pas de reconnexion auto immédiate).
+- La version de l'app est affichée au démarrage dans les logs.
 
-Si succès :
-- LED verte
-- Liste des fichiers affichée
+## 3. Navigation fichiers
 
-Si erreur :
-- Messages dans logs
-- Tentative de reconnexion
+- Double-clic dossier : entrer
+- `[.] (Parent)` : remonter
+- Clic droit : Open/Edit, Download, Print, Copy to GridCodes
 
-## 4. Navigation fichiers
+## 4. Édition de fichier
 
-- Double-clic dossier → entrer
-- Double-clic `[.] (Parent)` → remonter
-- Double-clic fichier → ouvrir
+1. Ouvrir un fichier avec **Edit**.
+2. Modifier le contenu.
+3. Recherche: **Ctrl+F** (ou bouton Find).
+4. Save (upload automatique).
 
-Menu clic droit :
-- Open/Edit
-- Download
-- Print
-- Copy to GridCodes
+Notes:
+- Les fins de lignes sont normalisées en **LF** (évite les `^M` sous vi/MobaXterm).
+- `Escape` retire le surlignage Find.
 
-## 5. Modifier un fichier
+## 5. Impression PDF
 
-1. Double-clic fichier
-2. Modifier
-3. Save
-4. Upload
+- Action **Print** depuis un fichier sélectionné.
+- Le nom proposé est celui du fichier source (`<nom>.pdf`).
+- Le texte est automatiquement wrapped pour éviter les lignes tronquées.
 
-Si GridCodes.properties :
-- Proposition de redémarrer les services
+## 6. Energy Manager
 
-## 6. Télécharger un fichier
+### P/Q
+- Envoi standard `--power` + `--reactive-power`.
 
-Clic droit → Download  
-Choisir emplacement
+### CosPhi
+- Procédure en 2 commandes chaînées:
+  1) `--grid-option "SetpointCosPhi_Pct=..."`
+  2) setpoint actif `--power ... -m CentralSetpoint`
 
-## 7. Imprimer (PDF)
+## 7. Debug logs
 
-Clic droit → Print  
-Conversion automatique en PDF  
-Choisir emplacement
+- Ouvrir `Debug -> Debug logs`.
+- Bouton **Start** démarre le suivi `tail -f` distant.
+- Plus de popup bloquante au Start ; infos affichées directement dans l'onglet.
+- Sous Windows, `plink` est lancé sans fenêtre cmd visible.
 
-## 8. Energy Manager
+## 8. Network config
 
-### Mode P/Q
+- Champs validés: Host/IP, Username, Password, Port, Remote path/file, Local path.
+- Port accepté: **1..65535**.
+- Le dossier local est créé si nécessaire.
+- Sauvegarde recharge la config et déclenche la reconnexion.
 
-- Active power (W)
-- Reactive power (VAR)
-- Send
+## 9. Dépannage rapide
 
-### Mode CosPhi
-
-- Active power (W)
-- CosPhi
-- Send
-
-## 9. Services
-
-- Restart services
-- Reboot device
-
-## 10. Logs
-
-Zone en bas :
-- Horodatée
-- Séquentielle
-- Auto-scroll
-
-## 11. Debug logs
-
-Menu : Debug → Debug logs
-
-Fonctionnalités :
-- multi-onglet
-- stream temps réel
-- save
-- clear
-- pause
-
-## 12. Problèmes courants
-
-### Connexion impossible
-
-- Vérifier IP
-- Vérifier mot de passe
-- Vérifier réseau
-
-### PDF vide
-
-- Fichier source vide
-
-### Upload échoue
-
-- Permissions
-- Fichier verrouillé
-
-## 13. Bonnes pratiques
-
-- Sauvegarder avant modification
-- Ne pas reboot en boucle
-- Redémarrer services après changement de GridCodes
-
-## 14. Sécurité
-
-Le mot de passe n'est pas chiffré.  
-Ne pas distribuer config.ini publiquement.
-
+- Si connexion instable : vérifier IP/port/réseau physique.
+- Si heartbeat échoue ponctuellement : l'app n'impose la reconnexion qu'après échecs consécutifs.
+- Si print vide/tronqué : re-tester après mise à jour et vérifier droits d'écriture dossier export.
