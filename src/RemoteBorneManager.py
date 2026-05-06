@@ -250,7 +250,7 @@ class RemoteBorneApp:
             except Exception:
                 self.root.geometry("1200x800")
 
-        self.root.minsize(900, 620)
+        self.root.minsize(1000, 700)
 
         # style ttkbootstrap
         self.style = self.root.style
@@ -557,10 +557,14 @@ class RemoteBorneApp:
         # ----- MAIN -----
         main = ttk.Frame(self.root)
         main.pack(fill="both", expand=True)
+
+        # 🔥 IMPORTANT (responsive)
         main.grid_columnconfigure(0, weight=3)
         main.grid_columnconfigure(1, weight=2)
+
+        main.grid_rowconfigure(0, weight=0)
         main.grid_rowconfigure(1, weight=3)
-        main.grid_rowconfigure(2, weight=0)
+        main.grid_rowconfigure(2, weight=2)
         main.grid_rowconfigure(3, weight=2)
 
         # ----- HEADER (logos + titre + status) -----
@@ -600,7 +604,11 @@ class RemoteBorneApp:
             main, text=f"GridCodes browser ({self.default_path})", padding=5
         )
         left.grid(row=1, column=0, rowspan=2, sticky="nsew", padx=(10, 5), pady=5)
-        left.grid_rowconfigure(1, weight=1)
+
+        # 🔥 IMPORTANT (responsive)
+        left.grid_rowconfigure(0, weight=0)   # barre de path
+        left.grid_rowconfigure(1, weight=1)   # liste fichiers
+        left.grid_columnconfigure(0, weight=1)
 
         # Path bar
         path_row = ttk.Frame(left)
@@ -654,7 +662,7 @@ class RemoteBorneApp:
 
         # ----- RIGHT TOP : STATUS + CONTROLS -----
         right_top = ttk.Labelframe(main, text="Status & Controls", padding=5)
-        right_top.grid(row=1, column=1, sticky="new", padx=(5, 10), pady=(5, 2))
+        right_top.grid(row=1, column=1, sticky="nsew", padx=(5, 10), pady=(5, 2))
         right_top.grid_columnconfigure(0, weight=1)
 
         # Status row
@@ -672,8 +680,8 @@ class RemoteBorneApp:
         )
         self.user_label.grid(row=1, column=0, sticky="w")
         
-        ttk.Label(status_row, textvariable=self.temp_var).grid(row=2, column=0, sticky="w")
-        ttk.Label(status_row, textvariable=self.soc_var).grid(row=3, column=0, sticky="w")
+        #ttk.Label(status_row, textvariable=self.temp_var).grid(row=2, column=0, sticky="w")
+        #ttk.Label(status_row, textvariable=self.soc_var).grid(row=3, column=0, sticky="w")
         
         self.led_canvas = tk.Canvas(
             status_row, width=20, height=20, highlightthickness=0
@@ -715,43 +723,46 @@ class RemoteBorneApp:
 
         # File actions
         file_actions = ttk.Labelframe(right_top, text="GridCodes", padding=5)
-        file_actions.grid(row=2, column=0, sticky="ew", pady=(4, 0))
+        file_actions.grid(row=2, column=0, sticky="nsew", pady=(4, 0))
+
+        # 🔥 3 colonnes (au lieu de 2)
         file_actions.grid_columnconfigure(0, weight=1)
         file_actions.grid_columnconfigure(1, weight=1)
+        file_actions.grid_columnconfigure(2, weight=1)
 
+        # LIGNE 1
         self.btn_refresh = ttk.Button(
             file_actions, text="Refresh", command=self.refresh_file_list
         )
         self.btn_refresh.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
 
-        self.btn_copy_panel = ttk.Button(
-            file_actions,
-            text="Copy to GridCodes.properties",
-            command=self.copy_selected_to_gridcodes,
-        )
-        self.btn_copy_panel.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
-
         self.btn_download = ttk.Button(
             file_actions, text="Download", command=self._menu_download
         )
-        self.btn_download.grid(row=1, column=0, padx=2, pady=2, sticky="ew")
+        self.btn_download.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
+
+        self.btn_upload = ttk.Button(
+            file_actions, text="Upload", command=self.upload_files_to_current_path
+        )
+        self.btn_upload.grid(row=0, column=2, padx=2, pady=2, sticky="ew")
+
+        # LIGNE 2
+        self.btn_edit = ttk.Button(
+            file_actions, text="Edit", command=self._menu_edit
+        )
+        self.btn_edit.grid(row=1, column=0, padx=2, pady=2, sticky="ew")
 
         self.btn_print = ttk.Button(
             file_actions, text="Print", command=self._menu_print
         )
         self.btn_print.grid(row=1, column=1, padx=2, pady=2, sticky="ew")
 
-        self.btn_upload = ttk.Button(
-            file_actions, text="Upload", command=self.upload_files_to_current_path
-        )
-        self.btn_upload.grid(row=2, column=0, padx=2, pady=2, sticky="ew")
-
-        self.btn_edit = ttk.Button(
+        self.btn_copy_panel = ttk.Button(
             file_actions,
-            text="Edit",
-            command=self._menu_edit
+            text="Copy to GridCodes.properties",
+            command=self.copy_selected_to_gridcodes,
         )
-        self.btn_edit.grid(row=2, column=1, padx=2, pady=2, sticky="ew")
+        self.btn_copy_panel.grid(row=1, column=2, padx=2, pady=2, sticky="ew")
 
         # ----- RIGHT MIDDLE : ENERGY MANAGER -----
         em_frame = ttk.Labelframe(main, text="Energy Manager Controls", padding=5)
@@ -884,14 +895,18 @@ class RemoteBorneApp:
         # ----- BOTTOM : LOGS -----
         log_frame = ttk.Labelframe(main, text="Logs", padding=5)
         log_frame.grid(
-            row=3, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 10)
+            row=3, column=0, columnspan=2, sticky="nsew", padx=10, pady=(0, 10)
         )
+
+        # 🔥 IMPORTANT : moins de priorité verticale
+        main.grid_rowconfigure(3, weight=1)
+
         log_frame.grid_columnconfigure(0, weight=1)
         log_frame.grid_rowconfigure(0, weight=1)
 
         self.log_text = tk.Text(
             log_frame,
-            height=10,
+            height=6,
             wrap="word",
             state="disabled",
         )
@@ -901,6 +916,7 @@ class RemoteBorneApp:
             log_frame, orient="vertical", command=self.log_text.yview
         )
         log_scroll.grid(row=0, column=1, sticky="ns")
+
         self.log_text.configure(yscrollcommand=log_scroll.set)
 
         # style du log en fonction du thème
@@ -1349,12 +1365,13 @@ class RemoteBorneApp:
     # NAVIGATION FICHIERS — VERSION ASYNC AVEC SSHManager.execute
     # ==================================================================
     def refresh_file_list(self):
-        """Rafraîchit la liste distante (ls -Ap) en asynchrone via SSHManager.execute."""
+        """Rafraîchit la liste distante + met à jour Temp & SoC (safe industriel)."""
+
         if not self.connected:
             self.log("[FILES] Please connect before refreshing list.")
             return
 
-        # 🔴 protection SSH (clé de stabilité)
+        # 🔴 protection SSH
         if getattr(self.ssh, "_ssh_busy", False):
             return
 
@@ -1365,45 +1382,60 @@ class RemoteBorneApp:
         if not getattr(self, "current_path", None):
             self.current_path = self.default_path
 
-        # On quote le path pour éviter les soucis d'espaces, etc.
         cmd = f'ls -Ap "{self.current_path}"'
         self.log(f"[FILES] Listing {self.current_path}")
+
         self._file_refresh_seq += 1
         req_id = self._file_refresh_seq
 
         def cb(res):
             def apply_ui():
-                if req_id != self._file_refresh_seq:
-                    return
-                self.file_list.delete(0, "end")
-                if not res.get("success"):
-                    msg = (res.get("err") or res.get("out") or "").strip()
-                    self.log(f"[FILES] Error: {msg}")
-                    self._popup_error("Files", f"Error listing directory:\n{msg}")
-                    return
+                try:
+                    if req_id != self._file_refresh_seq:
+                        return
 
-                lines = (res.get("out") or "").splitlines()
-                if self.current_path.rstrip("/") != self.default_path.rstrip("/"):
-                    self.file_list.insert("end", "[.] (Parent)")
-                for e in lines:
-                    e = e.strip()
-                    if e:
-                        self.file_list.insert("end", e)
-                if hasattr(self, "path_entry"):
-                    self.path_entry.delete(0, "end")
-                    self.path_entry.insert(0, self.current_path)
-                self.log(f"[FILES] {len(lines)} entries in {self.current_path}")
+                    self.file_list.delete(0, "end")
+
+                    if not res.get("success"):
+                        msg = (res.get("err") or res.get("out") or "").strip()
+                        self.log(f"[FILES] Error: {msg}")
+                        self._popup_error("Files", f"Error listing directory:\n{msg}")
+                        return
+
+                    lines = (res.get("out") or "").splitlines()
+
+                    if self.current_path.rstrip("/") != self.default_path.rstrip("/"):
+                        self.file_list.insert("end", "[.] (Parent)")
+
+                    for e in lines:
+                        e = e.strip()
+                        if e:
+                            self.file_list.insert("end", e)
+
+                    if hasattr(self, "path_entry"):
+                        self.path_entry.delete(0, "end")
+                        self.path_entry.insert(0, self.current_path)
+
+                    self.log(f"[FILES] {len(lines)} entries in {self.current_path}")
+
+                    # 🔥 UPDATE TEMP + SOC APRÈS REFRESH
+                    self.update_temperature()
+                    self.update_soc()
+
+                finally:
+                    # 🔓 IMPORTANT → reset flag
+                    self._refresh_running = False
 
             try:
                 self.root.after(0, apply_ui)
             except Exception:
-                pass
+                self._refresh_running = False
 
-        self.ssh.execute(cmd, callback=cb, timeout=self.ssh_timeout)
-
+        # 🔥 UN SEUL execute (fix bug)
         self.ssh.execute(
             cmd,
-            callback=callback,
+            callback=cb,
+            timeout=self.ssh_timeout,
             auto_retry=False,
             log_errors=False,
         )
@@ -1622,15 +1654,9 @@ class RemoteBorneApp:
             self._popup_warning("Download", "Not connected.")
             return
 
-        # 🔴 protection SSH
-        if getattr(self.ssh, "_ssh_busy", False):
-            self.log("[DOWNLOAD] Skipped (SSH busy)")
-            return
-
         filename = posixpath.basename(remote_path)
         local = filedialog.asksaveasfilename(
             title="Save file as",
-            defaultextension="",
             initialfile=filename,
             initialdir=os.path.dirname(self.local_default_path),
         )
@@ -1639,32 +1665,22 @@ class RemoteBorneApp:
 
         self.log(f"[DOWNLOAD] {remote_path} -> {local}")
 
-        def worker():
-            # 🔒 LOCK SSH
-            self.ssh._ssh_busy = True
+        # 🔥 SIMPLE ET STABLE
+        try:
+            res = self.ssh.scp_get(remote_path, local)
+        except Exception as e:
+            self.log(f"[DOWNLOAD ERROR] {e}")
+            self._popup_error("Download", str(e))
+            return
 
-            try:
-                res = self.ssh.scp_get(remote_path, local)
-            except Exception as e:
-                res = {"success": False, "err": str(e), "out": ""}
-            finally:
-                # 🔓 UNLOCK
-                self.ssh._ssh_busy = False
+        if not res["success"]:
+            err = (res["err"] or res["out"] or "").strip()
+            self.log(f"[DOWNLOAD ERROR] {err}")
+            self._popup_error("Download", f"Download failed:\n{err}")
+            return
 
-            def ui():
-                if not res["success"]:
-                    err = (res["err"] or res["out"] or "").strip()
-                    self.log(f"[DOWNLOAD ERROR] {err}")
-                    self._popup_error("Download", f"Download failed:\n{err}")
-                    return
-
-                self.log("[DOWNLOAD] Done.")
-                self._popup_info("Download", f"File saved:\n{local}")
-
-            self.root.after(0, ui)
-
-        threading.Thread(target=worker, daemon=True).start()
-
+        self.log("[DOWNLOAD] Done.")
+        self._popup_info("Download", f"File saved:\n{local}")
 
     def _menu_print(self):
         self._safe_mark_user_command()
@@ -1672,99 +1688,6 @@ class RemoteBorneApp:
         if not remote:
             return
         self.print_file(remote)
-
-    def upload_files_to_current_path(self):
-        self._safe_mark_user_command()
-        if not self.connected:
-            self._popup_warning("Upload", "Not connected.")
-            return
-
-        local_files = filedialog.askopenfilenames(
-            title="Select file(s) to upload",
-            parent=self.root,
-        )
-        if not local_files:
-            return
-
-        target_dir = (self.current_path or self.default_path).rstrip("/")
-        self.log(f"[UPLOAD] Preparing {len(local_files)} file(s) to {target_dir}")
-
-        def worker():
-            ok_count = 0
-            fail_count = 0
-            ensure_res = self.ssh.ensure_remote_dir(target_dir)
-            if not ensure_res["success"]:
-                self.log(
-                    f"[UPLOAD ERROR] Remote path unavailable: {target_dir} ({ensure_res['err'] or ensure_res['out']})"
-                )
-                try:
-                    self.root.after(
-                        0,
-                        lambda: self._popup_error(
-                            "Upload",
-                            f"Cannot prepare remote path:\n{target_dir}\n\n{(ensure_res['err'] or ensure_res['out']).strip()}",
-                        ),
-                    )
-                except Exception:
-                    pass
-                return
-
-            for local_path in local_files:
-                filename = os.path.basename(local_path)
-                remote_path = self._join_remote(target_dir, filename)
-                attempt_success = False
-                last_err = ""
-                for attempt in range(1, 4):
-                    self.log(f"[UPLOAD] {filename} attempt {attempt}/3...")
-                    res = self.ssh.scp_put(local_path, remote_path)
-                    if res["success"]:
-                        attempt_success = True
-                        ok_count += 1
-                        self.log(f"[UPLOAD] OK: {filename} -> {remote_path}")
-                        break
-                    last_err = (res["err"] or res["out"] or "").strip()
-                    self.log(f"[UPLOAD WARN] {filename} attempt {attempt} failed: {last_err}")
-                    time.sleep(0.5 * attempt)
-                if not attempt_success:
-                    fail_count += 1
-                    self.log(f"[UPLOAD ERROR] {filename}: failed after 3 attempts ({last_err})")
-                else:
-                    check_cmd = f'test -f "{remote_path}" && wc -c < "{remote_path}"'
-                    size_evt = threading.Event()
-                    size_res = {"success": False, "out": "", "err": "timeout"}
-
-                    def _size_cb(r):
-                        size_res.update(r)
-                        size_evt.set()
-
-                    self.ssh.execute(
-                        check_cmd,
-                        callback=_size_cb,
-                        timeout=self.ssh_timeout,
-                        auto_retry=False,
-                        log_errors=False,
-                    )
-                    size_evt.wait(self.ssh_timeout + 2)
-                    local_size = os.path.getsize(local_path)
-                    remote_size = (
-                        int((size_res.get("out") or "0").strip() or 0)
-                        if size_res.get("success")
-                        else -1
-                    )
-                    if (not size_res.get("success")) or remote_size != local_size:
-                        fail_count += 1
-                        ok_count -= 1
-                        self.log(
-                            f"[UPLOAD ERROR] size mismatch {filename}: local={local_size}, remote={remote_size}, err={size_res.get('err')}"
-                        )
-
-            self.log(f"[UPLOAD] Completed: {ok_count} success, {fail_count} failed.")
-            try:
-                self.root.after(0, self.refresh_file_list)
-            except Exception:
-                pass
-
-        threading.Thread(target=worker, daemon=True).start()
 
     def print_file(self, remote_path: str):
         if not HAVE_REPORTLAB:
@@ -1881,7 +1804,99 @@ class RemoteBorneApp:
                 os.remove(tmp_local)
             except Exception:
                 pass
+                
+    def upload_files_to_current_path(self):
+        self._safe_mark_user_command()
+        if not self.connected:
+            self._popup_warning("Upload", "Not connected.")
+            return
 
+        local_files = filedialog.askopenfilenames(
+            title="Select file(s) to upload",
+            parent=self.root,
+        )
+        if not local_files:
+            return
+
+        target_dir = (self.current_path or self.default_path).rstrip("/")
+        self.log(f"[UPLOAD] Preparing {len(local_files)} file(s) to {target_dir}")
+
+        def worker():
+            ok_count = 0
+            fail_count = 0
+            ensure_res = self.ssh.ensure_remote_dir(target_dir)
+            if not ensure_res["success"]:
+                self.log(
+                    f"[UPLOAD ERROR] Remote path unavailable: {target_dir} ({ensure_res['err'] or ensure_res['out']})"
+                )
+                try:
+                    self.root.after(
+                        0,
+                        lambda: self._popup_error(
+                            "Upload",
+                            f"Cannot prepare remote path:\n{target_dir}\n\n{(ensure_res['err'] or ensure_res['out']).strip()}",
+                        ),
+                    )
+                except Exception:
+                    pass
+                return
+
+            for local_path in local_files:
+                filename = os.path.basename(local_path)
+                remote_path = self._join_remote(target_dir, filename)
+                attempt_success = False
+                last_err = ""
+                for attempt in range(1, 4):
+                    self.log(f"[UPLOAD] {filename} attempt {attempt}/3...")
+                    res = self.ssh.scp_put(local_path, remote_path)
+                    if res["success"]:
+                        attempt_success = True
+                        ok_count += 1
+                        self.log(f"[UPLOAD] OK: {filename} -> {remote_path}")
+                        break
+                    last_err = (res["err"] or res["out"] or "").strip()
+                    self.log(f"[UPLOAD WARN] {filename} attempt {attempt} failed: {last_err}")
+                    time.sleep(0.5 * attempt)
+                if not attempt_success:
+                    fail_count += 1
+                    self.log(f"[UPLOAD ERROR] {filename}: failed after 3 attempts ({last_err})")
+                else:
+                    check_cmd = f'test -f "{remote_path}" && wc -c < "{remote_path}"'
+                    size_evt = threading.Event()
+                    size_res = {"success": False, "out": "", "err": "timeout"}
+
+                    def _size_cb(r):
+                        size_res.update(r)
+                        size_evt.set()
+
+                    self.ssh.execute(
+                        check_cmd,
+                        callback=_size_cb,
+                        timeout=self.ssh_timeout,
+                        auto_retry=False,
+                        log_errors=False,
+                    )
+                    size_evt.wait(self.ssh_timeout + 2)
+                    local_size = os.path.getsize(local_path)
+                    remote_size = (
+                        int((size_res.get("out") or "0").strip() or 0)
+                        if size_res.get("success")
+                        else -1
+                    )
+                    if (not size_res.get("success")) or remote_size != local_size:
+                        fail_count += 1
+                        ok_count -= 1
+                        self.log(
+                            f"[UPLOAD ERROR] size mismatch {filename}: local={local_size}, remote={remote_size}, err={size_res.get('err')}"
+                        )
+
+            self.log(f"[UPLOAD] Completed: {ok_count} success, {fail_count} failed.")
+            try:
+                self.root.after(0, self.refresh_file_list)
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
     def _menu_edit(self):
         remote = self._selected_remote_file()
         if not remote:
