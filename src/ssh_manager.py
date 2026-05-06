@@ -22,9 +22,7 @@ class SSHManager:
         user: str,
         password: str,
         port: int = 22,
-        timeout: int = 20,
-        retry_base_delay: float = 2.0,
-        retry_max_delay: float = 10.0,
+        timeout: int = 5,
     ):
         self.host = host
         self.user = user
@@ -41,8 +39,7 @@ class SSHManager:
 
         # paramètres de reconnexion
         self.max_retries = 3
-        self.retry_base_delay = max(0.5, float(retry_base_delay))
-        self.retry_max_delay = max(self.retry_base_delay, float(retry_max_delay))
+        self.retry_base_delay = 2.0
         self._reconnect_lock = threading.Lock()
         self._reconnect_in_progress = False
         self._reconnect_requested = False
@@ -225,7 +222,7 @@ class SSHManager:
                     self._log("[SSH] Reconnect SUCCESS.")
                     return
 
-                delay = min(self.retry_base_delay * attempt, self.retry_max_delay)
+                delay = min(self.retry_base_delay * attempt, 10)
                 self._log(
                     f"[SSH] Reconnect attempt {attempt} failed, retry in {delay} s"
                 )
@@ -307,7 +304,6 @@ class SSHManager:
         callback: Optional[Callable[[dict], None]] = None,
         auto_retry: bool = True,
         log_errors: bool = True,
-        timeout: Optional[int] = None,
     ):
         """
         Exécute une commande SSH dans un thread séparé.
@@ -316,6 +312,8 @@ class SSHManager:
         """
 
         def worker():
+            if not self.connected and auto_retry:
+                self._try_reconnect()
             if not self.connected:
                 err_msg = "SSH not connected"
                 if log_errors:
@@ -327,8 +325,7 @@ class SSHManager:
                         pass
                 return
 
-            exec_timeout = timeout if timeout is not None else self.timeout
-            rc, out, err = self.backend.exec(cmd, timeout=exec_timeout)
+            rc, out, err = self.backend.exec(cmd, timeout=self.timeout)
             success = (rc == 0)
             res = {"success": success, "out": out, "err": err}
 
@@ -342,19 +339,6 @@ class SSHManager:
                     pass
 
         threading.Thread(target=worker, daemon=True).start()
-
-    def ensure_remote_dir(self, remote_dir: str) -> dict:
-        if not self.connected:
-            self._try_reconnect()
-        if not self.connected:
-            err = "SSH not connected"
-            self._log(f"[SSH CMD ERROR] {err}")
-            return {"success": False, "out": "", "err": err}
-        rc, out, err = self.backend.exec(f'mkdir -p "{remote_dir}"', timeout=self.timeout)
-        success = (rc == 0)
-        if not success:
-            self._log(f"[SSH CMD ERROR] {err or out or 'unknown error'}")
-        return {"success": success, "out": out, "err": err}
 
     # ------------------------------------------------------------------ #
     #  SCP
