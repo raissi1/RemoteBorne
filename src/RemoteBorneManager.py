@@ -1365,15 +1365,8 @@ class RemoteBorneApp:
         if not getattr(self, "current_path", None):
             self.current_path = self.default_path
 
-        cmd = (
-            f'ls -Ap "{self.current_path}"; '
-            "TEMP=$(grep -E 'PowerBoard T1|MainBoard T1' /var/aux/ChargerApp/derate.log 2>/dev/null | "
-            "tail -1 | grep -oE '[0-9]+'); "
-            "SOC=$(grep -oiE 'evPresentSoC: [0-9]+' /var/aux/ChargerApp/ChargerApp.log 2>/dev/null | "
-            "tail -1 | grep -oE '[0-9]+'); "
-            'echo "__MONITOR__$TEMP|$SOC"'
-        )
-
+        # On quote le path pour éviter les soucis d'espaces, etc.
+        cmd = f'ls -Ap "{self.current_path}"'
         self.log(f"[FILES] Listing {self.current_path}")
         self._file_refresh_seq += 1
         req_id = self._file_refresh_seq
@@ -1408,18 +1401,6 @@ class RemoteBorneApp:
 
         self.ssh.execute(cmd, callback=cb, timeout=self.ssh_timeout)
 
-                except Exception:
-                    pass
-
-            if hasattr(self, "path_entry"):
-                try:
-                    self.path_entry.delete(0, "end")
-                    self.path_entry.insert(0, self.current_path)
-                except Exception:
-                    pass
-
-            self.log(f"[FILES] {len(clean_lines)} entries in {self.current_path}")
-
         self.ssh.execute(
             cmd,
             callback=callback,
@@ -1436,7 +1417,11 @@ class RemoteBorneApp:
     def _go_to_path(self):
         if not self.connected:
             return
-        target = self.path_entry.get().strip() if hasattr(self, "path_entry") else self.current_path
+        target = (
+            self.path_entry.get().strip()
+            if hasattr(self, "path_entry")
+            else self.current_path
+        )
         if not target:
             target = self.current_path
 
