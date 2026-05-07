@@ -231,7 +231,7 @@ class RemoteBorneApp:
         self.current_theme = "flatly"
 
         # ---------- ROOT / STYLE ----------
-        # Fenêtre ttkbootstrap, thème "flatly" comme V7
+        # Fenêtre ttkbootstrap, thème "flatly"
         self.root = ttk.Window(themename=self.current_theme)
         self.root.title("Remote Borne Control Interface - RNA")
         self._set_app_icon()
@@ -887,11 +887,25 @@ class RemoteBorneApp:
         derate_frame.grid_columnconfigure(0, weight=1)
         derate_frame.grid_columnconfigure(1, weight=1)
 
+        # Labels
         self.temp_label = ttk.Label(derate_frame, textvariable=self.temp_label_var)
         self.temp_label.grid(row=0, column=0, sticky="w", padx=2, pady=2)
+
         self.soc_label = ttk.Label(derate_frame, textvariable=self.soc_label_var)
         self.soc_label.grid(row=0, column=1, sticky="w", padx=2, pady=2)
 
+        # 🔥 PETIT BOUTON SOUS TEMP (colonne 0 uniquement)
+        style = ttk.Style()
+        style.configure("Small.TButton", padding=(3, 1))
+
+        self.btn_monitor = ttk.Button(
+            derate_frame,
+            text="↻",
+            style="Small.TButton",
+            width=3,
+            command=self.update_monitor
+        )
+        self.btn_monitor.grid(row=1, column=0, sticky="w", padx=2, pady=(2, 2))
         # ----- BOTTOM : LOGS -----
         log_frame = ttk.Labelframe(main, text="Logs", padding=5)
         log_frame.grid(
@@ -1149,7 +1163,7 @@ class RemoteBorneApp:
         except Exception:
             self._last_user_command_ts = time.time()
 
-    # --- ADDED ---
+    # --- Update Temp ---
     def update_temperature(self):
         if self._temp_update_inflight:
             return
@@ -1191,7 +1205,7 @@ class RemoteBorneApp:
             log_errors=False,
         )
 
-    # --- ADDED ---
+    # --- Update SoC ---
     def update_soc(self):
         if self._soc_update_inflight:
             return
@@ -1224,6 +1238,20 @@ class RemoteBorneApp:
             auto_retry=False,
             log_errors=False,
         )
+
+    def update_monitor(self):
+        """Met à jour Temp + SoC (bouton manuel industriel)"""
+
+        if not self.connected:
+            return
+
+        # 🔴 évite conflit SSH
+        if getattr(self.ssh, "_ssh_busy", False):
+            return
+
+        # Appelle tes fonctions existantes
+        self.update_temperature()
+        self.update_soc()
 
     # ==================================================================
     # SSH EVENTS (connect / disconnect / reconnect)
@@ -1299,6 +1327,7 @@ class RemoteBorneApp:
             self.btn_print,
             self.btn_edit,
             self.btn_upload,
+            self.btn_monitor,
             self.btn_send_power,
             self.btn_send_cosphi,
             self.btn_restart_services,
