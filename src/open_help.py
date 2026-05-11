@@ -1,261 +1,695 @@
 import os
 import sys
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 import datetime
 
 
-def _center_over_parent(parent, win, w=900, h=700):
-    """Centre la fenêtre d'aide sur la fenêtre parente, fallback écran."""
+# ==========================================================
+# CENTER WINDOW
+# ==========================================================
+def _center_over_parent(parent, win, w=980, h=760):
+
     if parent is not None:
+
         try:
+
             parent.update_idletasks()
-            px, py = parent.winfo_rootx(), parent.winfo_rooty()
-            pw, ph = parent.winfo_width(), parent.winfo_height()
+
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+
             if pw > 1 and ph > 1:
+
                 x = px + (pw - w) // 2
                 y = py + (ph - h) // 2
-                win.geometry(f"{w}x{h}+{max(x, 0)}+{max(y, 0)}")
+
+                win.geometry(
+                    f"{w}x{h}+{max(x, 0)}+{max(y, 0)}"
+                )
+
                 return
+
         except Exception:
             pass
 
     win.update_idletasks()
-    sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+
+    sw = win.winfo_screenwidth()
+    sh = win.winfo_screenheight()
+
     x = (sw - w) // 2
     y = (sh - h) // 2
-    win.geometry(f"{w}x{h}+{max(x, 0)}+{max(y, 0)}")
+
+    win.geometry(
+        f"{w}x{h}+{max(x, 0)}+{max(y, 0)}"
+    )
 
 
+# ==========================================================
+# OPEN HELP
+# ==========================================================
 def open_help(parent=None):
-    win = tk.Toplevel(parent)
-    win.title("RemoteBorneManager – Help")
 
-    win.geometry("900x700")
+    # ======================================================
+    # PROTECTION
+    # ======================================================
     if parent is not None:
-        win.transient(parent)
-        win.grab_set()
-        win.focus_force()
-        win.lift()
-    _center_over_parent(parent, win, 900, 700)
-    win.after(30, lambda: _center_over_parent(parent, win, 900, 700))
 
-    # ----- UI -----
-    frame = ttk.Frame(win)
-    frame.pack(fill="both", expand=True, padx=10, pady=10)
+        try:
 
-    text = tk.Text(frame, wrap="word", font=("Segoe UI", 10))
-    scroll = ttk.Scrollbar(frame, command=text.yview)
-    text.configure(yscrollcommand=scroll.set)
+            if getattr(parent, "_closing", False):
+                return
 
-    text.pack(side="left", fill="both", expand=True)
-    scroll.pack(side="right", fill="y")
+        except Exception:
+            pass
 
+    # ======================================================
+    # WINDOW
+    # ======================================================
+    win = tk.Toplevel(parent)
+
+    win.title("RemoteBorneManager –Professional Help")
+
+    win.geometry("1000x800")
+
+    win.minsize(850, 600)
+
+    try:
+
+        if parent is not None:
+
+            win.transient(parent)
+            win.grab_set()
+            win.focus_force()
+            win.lift()
+
+    except Exception:
+        pass
+
+    _center_over_parent(parent, win, 980, 760)
+
+    win.after(
+        30,
+        lambda: _center_over_parent(parent, win, 980, 760)
+    )
+
+    # ======================================================
+    # SAFE CLOSE
+    # ======================================================
+    def _close():
+
+        try:
+
+            if win.winfo_exists():
+                win.destroy()
+
+        except Exception:
+            pass
+
+    win.bind("<Escape>", lambda e: _close())
+
+    # ======================================================
+    # MAIN FRAME
+    # ======================================================
+    main = ttk.Frame(win)
+
+    main.pack(
+        fill="both",
+        expand=True,
+        padx=10,
+        pady=10
+    )
+
+    # ======================================================
+    # TOP BAR
+    # ======================================================
+    top = ttk.Frame(main)
+
+    top.pack(
+        fill="x",
+        pady=(0, 10)
+    )
+
+    title_lbl = ttk.Label(
+        top,
+        text="📘 User Guide",
+        font=("Segoe UI", 16, "bold")
+    )
+
+    title_lbl.pack(side="left")
+
+    # ======================================================
+    # SEARCH BAR
+    # ======================================================
+    search_var = tk.StringVar()
+
+    search_entry = ttk.Entry(
+        top,
+        textvariable=search_var,
+        width=35
+    )
+
+    search_entry.pack(
+        side="right",
+        padx=(5, 0)
+    )
+
+    search_entry.focus_set()
+
+    # ======================================================
+    # TEXT AREA
+    # ======================================================
+    text_frame = ttk.Frame(main)
+
+    text_frame.pack(
+        fill="both",
+        expand=True
+    )
+
+    text = tk.Text(
+        text_frame,
+        wrap="word",
+        font=("Segoe UI", 10),
+        padx=20,
+        pady=20,
+        spacing3=6,
+        background="#FFFFFF",
+        foreground="#1E1E1E",
+        relief="flat"
+    )
+
+    scroll = ttk.Scrollbar(
+        text_frame,
+        orient="vertical",
+        command=text.yview
+    )
+
+    text.configure(
+        yscrollcommand=scroll.set
+    )
+
+    text.pack(
+        side="left",
+        fill="both",
+        expand=True
+    )
+
+    scroll.pack(
+        side="right",
+        fill="y"
+    )
+
+    # ======================================================
+    # TAGS / STYLES
+    # ======================================================
+    text.tag_configure(
+        "title",
+        font=("Segoe UI", 18, "bold"),
+        foreground="#0F172A",
+        spacing3=20
+    )
+
+    text.tag_configure(
+        "section",
+        font=("Segoe UI", 13, "bold"),
+        foreground="#1D4ED8",
+        spacing1=20,
+        spacing3=10
+    )
+
+    text.tag_configure(
+        "subtitle",
+        font=("Segoe UI", 11, "bold"),
+        foreground="#0F766E",
+        spacing1=10,
+        spacing3=5
+    )
+
+    text.tag_configure(
+        "normal",
+        font=("Segoe UI", 10),
+        spacing3=4
+    )
+
+    text.tag_configure(
+        "code",
+        font=("Consolas", 10),
+        foreground="#7C2D12",
+        background="#F8FAFC"
+    )
+
+    text.tag_configure(
+        "warning",
+        foreground="#B91C1C",
+        font=("Segoe UI", 10, "bold")
+    )
+
+    text.tag_configure(
+        "highlight",
+        background="#FFF59D",
+        foreground="#000000"
+    )
+
+    # ======================================================
+    # INSERT HELP CONTENT
+    # ======================================================
     script_name = os.path.basename(sys.argv[0])
 
-    help_content = f"""
-📘 RemoteBorneManager – Guide Utilisateur
-===========================================================
+    today = datetime.date.today()
 
-🧭 1. PRESENTATION
-------------------
-RemoteBorneManager est une application permettant de gérer à distance une borne via SSH.
+    # TITLE
+    text.insert(
+        "end",
+        "📘 RemoteBorneManager – Professional Guide\n",
+        "title"
+    )
 
-Fonctionnalités principales :
-• Connexion SSH sécurisée (plink)
-• Navigation et gestion des fichiers distants
-• Edition directe des fichiers
-• Terminal SSH intégré
-• Energy Manager (P / Q / CosPhi)
-• Debug logs en temps réel
-• Configuration réseau
+    # ======================================================
+    # PRESENTATION
+    # ======================================================
+    text.insert(
+        "end",
+        "\n1. PRESENTATION\n",
+        "section"
+    )
 
------------------------------------------------------------
+    text.insert(
+        "end",
+        "RemoteBorneManager (RBM) est une application desktop industrielle "
+        "permettant la gestion distante de bornes via SSH et SCP.\n\n",
+        "normal"
+    )
 
-🚀 2. DEMARRAGE
----------------
-Mode Python :
-    python {script_name}
+    text.insert(
+        "end",
+        "Objectifs principaux :\n",
+        "subtitle"
+    )
 
-Mode EXE :
-    lancer RBM.exe
+    features = [
+        "Connexion SSH sécurisée",
+        "Gestion distante des fichiers",
+        "Upload / Download SCP",
+        "Monitoring temps réel",
+        "Energy Manager PRO",
+        "Logs SSH industriels",
+        "Reconnexion automatique",
+        "Edition fichiers distante",
+        "Protection anti-race-condition",
+        "Architecture thread-safe"
+    ]
 
------------------------------------------------------------
+    for item in features:
 
-🔐 3. CONNEXION SSH
--------------------
-Menu : File → Connect
+        text.insert(
+            "end",
+            f"• {item}\n",
+            "normal"
+        )
 
-Statuts :
-🔴 Disconnected
-🟠 Reconnecting
-🟢 Connected
+    # ======================================================
+    # STARTUP
+    # ======================================================
+    text.insert(
+        "end",
+        "\n2. DEMARRAGE\n",
+        "section"
+    )
 
-Fonctionnement :
-• reconnexion automatique
-• gestion des erreurs réseau
-• timeout configurable
+    text.insert(
+        "end",
+        "Mode Python :\n",
+        "subtitle"
+    )
 
------------------------------------------------------------
+    text.insert(
+        "end",
+        f"python {script_name}\n\n",
+        "code"
+    )
 
-📂 4. EXPLORATEUR DE FICHIERS
------------------------------
-Interface principale (gauche)
+    text.insert(
+        "end",
+        "Mode EXE portable :\n",
+        "subtitle"
+    )
 
-Actions :
-• Double clic dossier → entrer
-• Double clic fichier → ouvrir
-• ".." → remonter
+    text.insert(
+        "end",
+        "Lancer RBM.exe\n\n",
+        "code"
+    )
 
-Fonctions :
-• Refresh → rafraîchir
-• Copy to GridCodes
-• Download fichier
-• Print (PDF)
-• Edit fichier
+    # ======================================================
+    # SSH
+    # ======================================================
+    text.insert(
+        "end",
+        "3. ARCHITECTURE SSH\n",
+        "section"
+    )
 
------------------------------------------------------------
+    text.insert(
+        "end",
+        "RBM utilise désormais une architecture SSH centralisée robuste.\n\n",
+        "normal"
+    )
 
-✏️ 5. EDITEUR DE FICHIERS
--------------------------
-• ouverture d’un fichier distant
-• modification locale
-• sauvegarde → upload automatique
+    ssh_features = [
+        "SSHQueue centralisée",
+        "Exécution séquentielle des commandes",
+        "Protection anti-collision SSH",
+        "Protection SCP concurrente",
+        "Reconnexion automatique",
+        "Monitoring sécurisé",
+        "Callbacks Tkinter thread-safe",
+        "Fermeture propre des threads",
+        "Surveillance heartbeat"
+    ]
 
-Options :
-• Restart service après save
-• Recherche (Find)
+    for item in ssh_features:
 
-⚠️ Attention :
-les modifications sont envoyées directement sur la borne
+        text.insert(
+            "end",
+            f"• {item}\n",
+            "normal"
+        )
 
------------------------------------------------------------
+    # ======================================================
+    # FILE BROWSER
+    # ======================================================
+    text.insert(
+        "end",
+        "\n4. EXPLORATEUR DE FICHIERS\n",
+        "section"
+    )
 
-⚡ 6. ENERGY MANAGER
---------------------
+    browser_text = (
+        "Le navigateur GridCodes permet de gérer les fichiers distants "
+        "de manière sécurisée.\n\n"
+        "Actions disponibles :\n"
+        "• Double clic dossier → entrer\n"
+        "• Double clic fichier → ouvrir\n"
+        "• Upload SCP\n"
+        "• Download SCP\n"
+        "• Print PDF\n"
+        "• Edition distante\n"
+        "• Refresh sécurisé\n"
+        "• Copy GridCodes\n"
+    )
 
-Modes disponibles :
+    text.insert(
+        "end",
+        browser_text,
+        "normal"
+    )
 
-A. Mode P / Q
--------------
-• Active Power (P en W)
-• Reactive Power (Q en VAR)
+    # ======================================================
+    # SCP
+    # ======================================================
+    text.insert(
+        "end",
+        "\n5. SYSTEME SCP SECURISE\n",
+        "section"
+    )
 
-B. Mode CosPhi
---------------
-• calcul automatique de Q
-• formule utilisée :
+    scp_text = (
+        "RBM protège les transferts SCP afin d’éviter :\n"
+        "• corruption fichiers\n"
+        "• collisions réseau\n"
+        "• conflits SSH\n"
+        "• uploads simultanés\n\n"
+        "Fonctionnalités :\n"
+        "• SCP Lock global\n"
+        "• Retry automatique\n"
+        "• Vérification taille distante\n"
+        "• Pause monitoring pendant transfert\n"
+        "• Upload thread-safe\n"
+    )
 
-    Q = |P| × tan(acos(CosPhi))
+    text.insert(
+        "end",
+        scp_text,
+        "normal"
+    )
 
-Fonctions :
-• validation des valeurs
-• historique
-• export CSV
+    # ======================================================
+    # MONITORING
+    # ======================================================
+    text.insert(
+        "end",
+        "\n6. MONITORING INDUSTRIEL\n",
+        "section"
+    )
 
------------------------------------------------------------
+    monitor_text = (
+        "RBM intègre un monitoring temps réel :\n\n"
+        "• température PowerBoard\n"
+        "• température MainBoard\n"
+        "• SoC batterie\n"
+        "• état SSH\n"
+        "• reconnect automatique\n"
+        "• surveillance heartbeat\n\n"
+        "Le monitoring est automatiquement suspendu\n"
+        "pendant certaines opérations critiques.\n"
+    )
 
-🖥️ 7. TERMINAL SSH (IMPORTANT)
-------------------------------
-Terminal intégré dans l'application
+    text.insert(
+        "end",
+        monitor_text,
+        "normal"
+    )
 
-Permet :
-• exécuter des commandes Linux
-• naviguer dans le système
-• lancer scripts
-• debug avancé
+    # ======================================================
+    # ENERGY MANAGER
+    # ======================================================
+    text.insert(
+        "end",
+        "\n7. ENERGY MANAGER PRO\n",
+        "section"
+    )
 
-Exemples :
-    ls
-    cd /var/aux
-    cat fichier.txt
-    python script.py
+    energy_text = (
+        "Le module Energy Manager permet le pilotage énergétique.\n\n"
+        "Modes disponibles :\n\n"
+        "A. Mode P / Q\n"
+        "• Active Power\n"
+        "• Reactive Power\n\n"
+        "B. Mode CosPhi\n"
+        "• calcul automatique du Q\n"
+        "• validation automatique\n\n"
+        "Formule utilisée :\n"
+    )
 
-⚠️ Conseil :
-éviter les commandes critiques en production
+    text.insert(
+        "end",
+        energy_text,
+        "normal"
+    )
 
------------------------------------------------------------
+    text.insert(
+        "end",
+        "Q = |P| × tan(acos(CosPhi))\n",
+        "code"
+    )
 
-📜 8. DEBUG LOGS
-----------------
-Fonctionnalités :
-• lecture logs en temps réel (tail -f)
-• filtres :
-    ERROR
-    WARN
-    INFO
+    # ======================================================
+    # LOGS
+    # ======================================================
+    text.insert(
+        "end",
+        "\n8. DEBUG & LOGS\n",
+        "section"
+    )
 
-Options :
-• pause / reprise
-• sauvegarde locale
+    logs_text = (
+        "Fonctionnalités disponibles :\n\n"
+        "• logs SSH temps réel\n"
+        "• filtres ERROR/WARN/INFO\n"
+        "• sauvegarde locale\n"
+        "• monitoring live\n"
+        "• callbacks thread-safe\n"
+        "• fermeture sécurisée\n"
+    )
 
------------------------------------------------------------
+    text.insert(
+        "end",
+        logs_text,
+        "normal"
+    )
 
-🌐 9. CONFIGURATION RESEAU
---------------------------
-Menu Network :
+    # ======================================================
+    # SECURITY
+    # ======================================================
+    text.insert(
+        "end",
+        "\n9. SECURITE & STABILITE\n",
+        "section"
+    )
 
-Paramètres :
-• IP borne
-• utilisateur SSH
-• mot de passe
-• chemins système
+    sec_text = (
+        "RBM a été conçu pour un environnement industriel local.\n\n"
+        "Protections intégrées :\n"
+        "• protection anti-race-condition\n"
+        "• fermeture propre application\n"
+        "• widgets Tkinter protégés\n"
+        "• stale callbacks protection\n"
+        "• monitoring sécurisé\n"
+        "• reconnect intelligent\n"
+    )
 
-Fonction :
-• sauvegarde automatique
-• reconnexion après modification
+    text.insert(
+        "end",
+        sec_text,
+        "normal"
+    )
 
------------------------------------------------------------
+    text.insert(
+        "end",
+        "⚠️ Utilisation recommandée uniquement sur réseau industriel sécurisé.\n",
+        "warning"
+    )
 
-📁 10. STRUCTURE DU PROJET
---------------------------
-config/      → configuration
-tools/       → plink, outils SSH
-logs/        → logs locaux
-exports/     → fichiers exportés
-src/         → code source
+    # ======================================================
+    # ROADMAP
+    # ======================================================
+    text.insert(
+        "end",
+        "\n10. ROADMAP\n",
+        "section"
+    )
 
------------------------------------------------------------
+    roadmap = [
+        "Comparaison fichiers",
+        "Historique modifications",
+        "Download manager async",
+        "Packaging MSI",
+        "Gestion clés SSH",
+        "Logs structurés",
+        "Plugins industriels"
+    ]
 
-⚠️ 11. PROBLEMES COURANTS
--------------------------
+    for item in roadmap:
 
-❌ Impossible de se connecter
-→ vérifier IP / réseau / firewall
+        text.insert(
+            "end",
+            f"• {item}\n",
+            "normal"
+        )
 
-❌ plink.exe introuvable
-→ vérifier dossier tools/
+    # ======================================================
+    # VERSION
+    # ======================================================
+    text.insert(
+        "end",
+        "\n11. VERSION\n",
+        "section"
+    )
 
-❌ fichier non modifiable
-→ vérifier permissions
+    version_text = (
+        "RemoteBorneManager 3.1 PRO\n"
+        f"Date : {today}\n\n"
+        "Auteur : Nabil RAISSI\n"
+    )
 
-❌ logs vides
-→ vérifier chemin logs distant
+    text.insert(
+        "end",
+        version_text,
+        "normal"
+    )
 
------------------------------------------------------------
+    # ======================================================
+    # READ ONLY
+    # ======================================================
+    text.bind(
+        "<Key>",
+        lambda e: "break"
+    )
 
-🔒 12. BONNES PRATIQUES
------------------------
-• utiliser des clés SSH (recommandé)
-• éviter mot de passe en clair
-• sauvegarder avant modification
-• limiter accès réseau
+    # ======================================================
+    # SEARCH FUNCTION
+    # ======================================================
+    def find_text():
 
------------------------------------------------------------
+        text.tag_remove(
+            "highlight",
+            "1.0",
+            "end"
+        )
 
-📦 13. VERSION
---------------
-Version : 3.0 PRO
-Date : {datetime.date.today()}
+        query = search_var.get().strip()
 
-Auteur :
-Nabil RAISSI
+        if not query:
+            return
 
------------------------------------------------------------
-"""
+        start = "1.0"
 
-    text.insert("1.0", help_content)
+        while True:
+
+            pos = text.search(
+                query,
+                start,
+                stopindex="end",
+                nocase=True
+            )
+
+            if not pos:
+                break
+
+            end = f"{pos}+{len(query)}c"
+
+            text.tag_add(
+                "highlight",
+                pos,
+                end
+            )
+
+            start = end
+
+        ranges = text.tag_ranges("highlight")
+
+        if ranges:
+            text.see(ranges[0])
+
+    # ENTER SEARCH
+    search_entry.bind(
+        "<Return>",
+        lambda e: find_text()
+    )
+
+    # ======================================================
+    # BOTTOM BAR
+    # ======================================================
+    bottom = ttk.Frame(main)
+
+    bottom.pack(
+        fill="x",
+        pady=(10, 0)
+    )
+
+    find_btn = ttk.Button(
+        bottom,
+        text="Find",
+        command=find_text
+    )
+
+    find_btn.pack(
+        side="left"
+    )
+
+    close_btn = ttk.Button(
+        bottom,
+        text="Close",
+        command=_close
+    )
+
+    close_btn.pack(
+        side="right"
+    )
+
     text.configure(state="disabled")
-
-    btn = ttk.Button(win, text="Close", command=win.destroy)
-    btn.pack(pady=5)
+   

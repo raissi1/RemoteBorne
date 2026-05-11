@@ -397,28 +397,3 @@ class SSHManager:
         self.connected = False
         self._emit_ui("disconnected", None)
         self._log("[SSH] Manager closed.")
-    
-    # ------------------------------------------------------------------ #
-    #  Execute sync
-    # ------------------------------------------------------------------ #
-    
-    def execute_sync(self, cmd, timeout=None):
-        if not self.connected:
-            return {
-                "success": False,
-                "stdout": "",
-                "stderr": "SSH disconnected",
-                "returncode": 1,
-            }
-
-        rc, out, err = self.backend.exec(
-            cmd,
-            timeout=timeout or self.timeout,
-        )
-
-        return {
-            "success": rc == 0,
-            "stdout": out,
-            "stderr": err,
-            "returncode": rc,
-        }
