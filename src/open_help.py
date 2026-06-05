@@ -300,7 +300,12 @@ def open_help(parent=None):
         "Reconnexion automatique",
         "Edition fichiers distante",
         "Protection anti-race-condition",
-        "Architecture thread-safe"
+        "Architecture thread-safe",
+        "Terminal SSH intégré",
+        "Menu contextuel sécurisé",
+        "Suppression sécurisée fichiers/dossiers",
+        "Historique commandes terminal",
+        "Support terminal cd persistant"
     ]
 
     for item in features:
@@ -400,6 +405,8 @@ def open_help(parent=None):
         "• Edition distante\n"
         "• Refresh sécurisé\n"
         "• Copy GridCodes\n"
+        "• Menu contextuel sécurisé\n"
+        "• Suppression fichiers/dossiers\n"
     )
 
     text.insert(
@@ -465,11 +472,55 @@ def open_help(parent=None):
     )
 
     # ======================================================
+    # TERMINAL SSH
+    # ======================================================
+    text.insert(
+        "end",
+        "\n7. TERMINAL SSH PRO\n",
+        "section"
+    )
+
+    terminal_text = (
+        "RBM intègre un terminal SSH sécurisé.\n\n"
+        "Fonctionnalités :\n"
+        "• historique commandes\n"
+        "• navigation clavier ↑ ↓\n"
+        "• support cd persistant\n"
+        "• commandes Linux classiques\n"
+        "• clear intégré\n"
+        "• help intégré\n"
+        "• auto-scroll output\n\n"
+        "Commandes supportées :\n"
+        "• ls\n"
+        "• cd\n"
+        "• pwd\n"
+        "• cat\n"
+        "• grep\n"
+        "• rm\n"
+        "• mv\n"
+        "• cp\n"
+        "• python3\n"
+        "• sh\n"
+        "• journalctl\n\n"
+        "Commandes interactives non supportées :\n"
+        "• vim\n"
+        "• nano\n"
+        "• top\n"
+        "• htop\n"
+    )
+
+    text.insert(
+        "end",
+        terminal_text,
+        "normal"
+    )
+    
+    # ======================================================
     # ENERGY MANAGER
     # ======================================================
     text.insert(
         "end",
-        "\n7. ENERGY MANAGER PRO\n",
+        "\n8. ENERGY MANAGER PRO\n",
         "section"
     )
 
@@ -496,13 +547,13 @@ def open_help(parent=None):
         "Q = |P| × tan(acos(CosPhi))\n",
         "code"
     )
-
+    
     # ======================================================
     # LOGS
     # ======================================================
     text.insert(
         "end",
-        "\n8. DEBUG & LOGS\n",
+        "\n9. DEBUG & LOGS\n",
         "section"
     )
 
@@ -527,7 +578,7 @@ def open_help(parent=None):
     # ======================================================
     text.insert(
         "end",
-        "\n9. SECURITE & STABILITE\n",
+        "\n10. SECURITE & STABILITE\n",
         "section"
     )
 
@@ -559,7 +610,7 @@ def open_help(parent=None):
     # ======================================================
     text.insert(
         "end",
-        "\n10. ROADMAP\n",
+        "\n11. ROADMAP\n",
         "section"
     )
 
@@ -586,7 +637,7 @@ def open_help(parent=None):
     # ======================================================
     text.insert(
         "end",
-        "\n11. VERSION\n",
+        "\n12. VERSION\n",
         "section"
     )
 
