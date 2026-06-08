@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import subprocess
 import threading
@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from tkinter.scrolledtext import ScrolledText
 
-MAX_LINES = 10000  # max lignes conservées en mémoire ET dans la vue
+MAX_LINES = 10000  # max lignes conservÃ©es en mÃ©moire ET dans la vue
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 
@@ -32,7 +32,7 @@ def _center_on_parent(win, parent, width: int, height: int):
 
 def _detect_plink() -> str:
     """
-    Essaie d'utiliser plink.exe local (tools/ ou même dossier),
+    Essaie d'utiliser plink.exe local (tools/ ou mÃªme dossier),
     sinon 'plink' depuis le PATH Windows.
     """
     if getattr(sys, "frozen", False):
@@ -66,11 +66,11 @@ class DebugLogsWindow:
     """
     Ultimate debug tool :
       - tail -f distant via plink
-      - filtre type "grep -i" en temps réel
+      - filtre type "grep -i" en temps rÃ©el
       - filtres par niveau (ERROR / WARN / INFO)
-      - pause du flux temps réel
+      - pause du flux temps rÃ©el
       - auto-scroll optionnel
-      - sauvegarde de la vue filtrée
+      - sauvegarde de la vue filtrÃ©e
     """
 
     def __init__(self, parent, ssh_info):
@@ -86,9 +86,9 @@ class DebugLogsWindow:
             self.host, self.user, self.password = ssh_info
             self.port = 22
         else:
-            raise ValueError("ssh_info doit être (host, user, password[, port])")
+            raise ValueError("ssh_info doit Ãªtre (host, user, password[, port])")
 
-        # Processus & états
+        # Processus & Ã©tats
         self.processes = {}        # log_name -> subprocess.Popen
         self.running = {}          # log_name -> bool
 
@@ -106,16 +106,16 @@ class DebugLogsWindow:
         self.filter_warn = {}            # log_name -> BooleanVar
         self.filter_info = {}            # log_name -> BooleanVar
 
-        # Fenêtre modale
+        # FenÃªtre modale
         self.window = tk.Toplevel(parent)
-        self.window.title("Debug - Service Logs (Ultimate)")
-        self.window.geometry("1100x700")
+        self.window.title("Debug Logs - Service Monitor")
+        self.window.geometry("1180x760")
         self.window.transient(parent)
         self.window.grab_set()
-        self.window.minsize(800, 450)
+        self.window.minsize(980, 620)
 
-        # Centrage sur la fenêtre parente
-        _center_on_parent(self.window, parent, 1100, 700)
+        # Centrage sur la fenÃªtre parente
+        _center_on_parent(self.window, parent, 1180, 760)
 
         # Notebook
         self.notebook = ttk.Notebook(self.window)
@@ -132,10 +132,10 @@ class DebugLogsWindow:
             self._create_tab(name, path)
 
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
-        # Non-bloquant: la fenêtre reste modale via grab_set mais sans bloquer l'appelant
+        # Non-bloquant: la fenÃªtre reste modale via grab_set mais sans bloquer l'appelant
 
     # ------------------------------------------------------------------
-    # Création d'un onglet complet (zone texte + barre grep + boutons)
+    # CrÃ©ation d'un onglet complet (zone texte + barre grep + boutons)
     # ------------------------------------------------------------------
     def _create_tab(self, name: str, remote_path: str):
         frame = ttk.Frame(self.notebook)
@@ -148,8 +148,8 @@ class DebugLogsWindow:
         frame.columnconfigure(0, weight=1)
 
         # Zone de texte scrollable
-        text_area = ScrolledText(frame, wrap="word", height=30)
-        text_area.grid(row=0, column=0, sticky="nsew")
+        text_area = ScrolledText(frame, wrap="word", height=20)
+        text_area.grid(row=0, column=0, sticky="nsew", padx=2, pady=(2, 0))
         text_area.tag_configure("ERROR", foreground="red")
         text_area.tag_configure("WARN", foreground="orange")
         text_area.tag_configure("INFO", foreground="green")
@@ -219,10 +219,10 @@ class DebugLogsWindow:
         self.pause_live[name] = tk.BooleanVar(value=False)
 
         btn_frame = ttk.Frame(frame)
-        btn_frame.grid(row=2, column=0, sticky="ew")
+        btn_frame.grid(row=2, column=0, sticky="ew", padx=4, pady=(2, 4))
         for col in range(7):
             btn_frame.columnconfigure(col, weight=0)
-        btn_frame.columnconfigure(4, weight=1)  # espace élastique
+        btn_frame.columnconfigure(6, weight=1)
 
         ttk.Button(
             btn_frame, text="Start",
@@ -245,22 +245,22 @@ class DebugLogsWindow:
         ).grid(row=0, column=3, padx=5, pady=5, sticky="w")
 
         ttk.Button(
-            btn_frame, text="Exit",
+            btn_frame, text="Close",
             command=lambda n=name: self.exit_log(n)
-        ).grid(row=0, column=4, padx=5, pady=5, sticky="e")
+        ).grid(row=1, column=6, padx=5, pady=2, sticky="e")
 
         ttk.Checkbutton(
             btn_frame,
             text="Pause live",
             variable=self.pause_live[name],
             command=lambda n=name: self.on_pause_toggle(n),
-        ).grid(row=0, column=5, padx=5, pady=5, sticky="e")
+        ).grid(row=1, column=0, padx=5, pady=2, sticky="w")
 
         ttk.Checkbutton(
             btn_frame,
             text="Auto-scroll",
             variable=self.autoscroll[name],
-        ).grid(row=0, column=6, padx=5, pady=5, sticky="e")
+        ).grid(row=1, column=1, padx=5, pady=2, sticky="w")
 
     # ------------------------------------------------------------------
     # Construction de la commande plink
@@ -349,7 +349,7 @@ class DebugLogsWindow:
                     break
                 # MAJ UI (thread-safe) + buffer
                 self.parent.after(0, self.insert_line, log_name, line)
-                # Écrit dans le fichier local complet
+                # Ã‰crit dans le fichier local complet
                 log_file.write(line)
                 log_file.flush()
             try:
@@ -412,7 +412,7 @@ class DebugLogsWindow:
 
         text_widget.insert(tk.END, line + "\n", tag)
 
-        # Limiter le nombre de lignes affichées
+        # Limiter le nombre de lignes affichÃ©es
         try:
             lines = int(text_widget.index("end-1c").split(".")[0])
             if lines > MAX_LINES:
@@ -425,13 +425,13 @@ class DebugLogsWindow:
 
     def insert_line(self, log_name: str, line: str):
         """
-        Appelé à chaque nouvelle ligne reçue (comme tail -f).
-        On stocke dans le buffer + on affiche seulement si ça matche le filtre,
+        AppelÃ© Ã  chaque nouvelle ligne reÃ§ue (comme tail -f).
+        On stocke dans le buffer + on affiche seulement si Ã§a matche le filtre,
         et si le flux live n'est pas en pause.
         """
         line = line.rstrip("\n")
 
-        # buffer mémoire
+        # buffer mÃ©moire
         buf = self.log_buffers.get(log_name)
         if buf is not None:
             buf.append(line)
@@ -449,7 +449,7 @@ class DebugLogsWindow:
 
     def apply_filter(self, log_name: str):
         """
-        Réapplique le filtre sur le buffer complet (comme si on faisait
+        RÃ©applique le filtre sur le buffer complet (comme si on faisait
         tail -f | grep ... mais sur l'historique).
         """
         text_widget = self.text_widgets.get(log_name)
@@ -475,8 +475,8 @@ class DebugLogsWindow:
 
     def on_pause_toggle(self, log_name: str):
         """
-        Quand on enlève la pause, on réapplique le filtre pour afficher
-        l'historique complet à jour.
+        Quand on enlÃ¨ve la pause, on rÃ©applique le filtre pour afficher
+        l'historique complet Ã  jour.
         """
         if not self.pause_live[log_name].get():
             # on vient de REPRENDRE le flux => on resynchronise la vue
@@ -504,7 +504,7 @@ class DebugLogsWindow:
 
     def save_log(self, log_name: str):
         """
-        Sauvegarde la VUE COURANTE (filtrée), comme un grep redirigé
+        Sauvegarde la VUE COURANTE (filtrÃ©e), comme un grep redirigÃ©
         vers un fichier.
         """
         text_widget = self.text_widgets.get(log_name)
@@ -551,7 +551,7 @@ class DebugLogsWindow:
         self.window.destroy()
 
 
-# ---------- Wrapper utilisé par RemoteBorneManager.py ----------
+# ---------- Wrapper utilisÃ© par RemoteBorneManager.py ----------
 def open_debug_logs_window(parent, host: str, user: str, password: str, port: int = 22):
     """
     Appel simple depuis RemoteBorneManager:
@@ -559,3 +559,4 @@ def open_debug_logs_window(parent, host: str, user: str, password: str, port: in
     """
     ssh_info = (host, user, password, port)
     DebugLogsWindow(parent, ssh_info)
+
