@@ -1679,7 +1679,7 @@ class RemoteBorneApp:
         if self._closing:
             return
         if not self.connected:
-            self._popup_warning("Delete", "Not connected.")
+            self._popup_warning("Delete", "Please connect first.")
             return
 
         item = self._get_selected_item()
@@ -1731,7 +1731,7 @@ class RemoteBorneApp:
 
     def copy_selected_to_gridcodes(self):
         if not self.connected:
-            self._popup_warning("GridCodes", "Not connected.")
+            self._popup_warning("GridCodes", "Please connect first.")
             return
         src = self._selected_remote_file()
         if not src:
@@ -1782,7 +1782,7 @@ class RemoteBorneApp:
 
     def download_file(self, remote_path: str):
         if not self.connected:
-            self._popup_warning("Download", "Not connected.")
+            self._popup_warning("Download", "Please connect first.")
             return
 
         filename = posixpath.basename(remote_path)
@@ -1846,7 +1846,7 @@ class RemoteBorneApp:
             )
             return
         if not self.connected:
-            self._popup_warning("Print", "Not connected.")
+            self._popup_warning("Print", "Please connect first.")
             return
 
         remote_name = posixpath.basename(remote_path)
@@ -2423,14 +2423,14 @@ class RemoteBorneApp:
         self._safe_mark_user_command()
         if not self.connected:
             messagebox.showwarning(
-                "Warning", "Please connect before sending commands."
+                "Energy Manager", "Please connect before sending commands."
             )
             return
 
         # Si CosPhi mode actif, on bloque P/Q
         if self.use_cosphi_var.get():
             messagebox.showinfo(
-                "Mode",
+                "Energy Manager",
                 "CosPhi mode is active.\nDisable 'Use CosPhi mode' to send simple P/Q.",
             )
             return
@@ -2449,7 +2449,7 @@ class RemoteBorneApp:
             reactive_val = float(reactive)
         except ValueError:
             messagebox.showwarning(
-                "Warning", "Active and Reactive must be valid numeric values."
+                "Energy Manager", "Active and Reactive must be valid numeric values."
             )
             return
 
@@ -2457,7 +2457,7 @@ class RemoteBorneApp:
         for label, value in (("Active (P)", active_val), ("Reactive (Q)", reactive_val)):
             if value < -11000 or value > 11000:
                 messagebox.showwarning(
-                    "Warning",
+                    "Energy Manager",
                     f"{label} must be between -11000 and 11000.",
                 )
                 return
@@ -2501,12 +2501,12 @@ class RemoteBorneApp:
         self._safe_mark_user_command()
         if not self.connected:
             messagebox.showwarning(
-                "Warning", "Please connect before sending commands."
+                "Energy Manager", "Please connect before sending commands."
             )
             return
         if not self.use_cosphi_var.get():
             messagebox.showinfo(
-                "Info", "Enable 'Use CosPhi mode' to send this command."
+                "Energy Manager", "Enable 'Use CosPhi mode' to send this command."
             )
             return
 
@@ -2520,7 +2520,7 @@ class RemoteBorneApp:
         # CosPhi : obligatoire
         if cosphi == "":
             messagebox.showwarning(
-                "Warning",
+                "Energy Manager",
                 "CosPhi must not be empty.\nPlease enter a value in (-1, 0) or (0, 1].",
             )
             return
@@ -2530,7 +2530,7 @@ class RemoteBorneApp:
             cosphi_val = float(cosphi)
         except ValueError:
             messagebox.showwarning(
-                "Warning",
+                "Energy Manager",
                 "Active and CosPhi must be valid numeric values.",
             )
             return
@@ -2538,7 +2538,7 @@ class RemoteBorneApp:
         # P dans la plage [-11000 ; 11000]
         if active_val < -11000 or active_val > 11000:
             messagebox.showwarning(
-                "Warning",
+                "Energy Manager",
                 "Active (P) must be between -11000 and 11000.",
             )
             return
@@ -2546,7 +2546,7 @@ class RemoteBorneApp:
         # CosPhi dans (-1, 1] et ≠ 0
         if not (-1.0 < cosphi_val <= 1.0) or abs(cosphi_val) < 1e-9:
             messagebox.showwarning(
-                "Warning",
+                "Energy Manager",
                 "CosPhi must be in (-1, 0) or (0, 1].\n"
                 "Value 0 is not allowed.",
             )
@@ -2625,7 +2625,7 @@ class RemoteBorneApp:
     # ==================================================================
     def restart_initd_services(self):
         if not self.connected:
-            self._popup_warning("Services", "Not connected.")
+            self._popup_warning("Services", "Please connect first.")
             return
 
         services = ["S39ConfigManager", "S91energy-manager", "S95chargerapp"]
@@ -2662,7 +2662,7 @@ class RemoteBorneApp:
 
     def reboot_device(self):
         if not self.connected:
-            self._popup_warning("Reboot", "Not connected.")
+            self._popup_warning("Reboot", "Please connect first.")
             return
         if not messagebox.askyesno("Reboot", "Reboot the device now?"):
             return
@@ -2742,7 +2742,7 @@ class RemoteBorneApp:
 
         win = tk.Toplevel(self.root)
         self._terminal_window = win
-        win.title("Remote Terminal")
+        win.title("RBM SSH Terminal")
         self._center_toplevel(win, 1100, 700, parent=self.root)
         win.minsize(900, 500)
 
@@ -2947,7 +2947,7 @@ class RemoteBorneApp:
         entry.focus_force()
 
         append(
-            "Remote SSH Terminal Ready.\n"
+            "RBM SSH Terminal ready.\n"
             f"Connected to {self.host}\n"
             "Type 'help' for commands.\n"
         )
@@ -3010,7 +3010,7 @@ class RemoteBorneApp:
                     self.log("[NETWORK] SSH target changed, restarting application.")
                     self._popup_info(
                         "Network",
-                        "Network configuration updated.\nApplication will restart now."
+                        "Network configuration updated.\nThe application will restart now."
                     )
                     self.root.after(150, self._restart_application)
                     return
@@ -3021,7 +3021,7 @@ class RemoteBorneApp:
                 self.log("[NETWORK] config.ini reloaded.")
                 self._popup_info(
                     "Network",
-                    "Network configuration updated."
+                    "Network configuration updated successfully."
                 )
             except Exception as e:
                 self.log(f"[NETWORK ERROR] {e}")
