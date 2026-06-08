@@ -151,20 +151,18 @@ class EnergyManagerWindow:
         # ==========================================================
         main.columnconfigure(0, weight=4)
         main.columnconfigure(1, weight=3)
-
-        # zone historique/monitor extensible
+        main.rowconfigure(0, weight=0)
         main.rowconfigure(1, weight=1)
 
         top = ttk.Frame(main)
         top.grid(row=0, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
+        top.columnconfigure(0, weight=1)
 
         bottom_left = ttk.Frame(main)
         bottom_left.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
-        bottom_left.grid_propagate(False)
 
         bottom_right = ttk.Frame(main)
         bottom_right.grid(row=1, column=1, sticky="nsew")
-        bottom_right.grid_propagate(False)
 
         self._build_section_pq_cosphi(top)
         self._build_section_history(bottom_left)
@@ -331,6 +329,11 @@ class EnergyManagerWindow:
             height=12,
             font=("Consolas", 10),
             wrap="word",
+            background="#f8fafc",
+            foreground="#111827",
+            insertbackground="#111827",
+            relief="solid",
+            borderwidth=1,
         )
         self.monitor_text.pack(fill="both", expand=True, pady=(0, 10))
 

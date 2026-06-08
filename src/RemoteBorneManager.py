@@ -15,6 +15,7 @@ Interface Windows pour contrôle de borne IOTECHA :
 - Thèmes : flatly (clair) & darkly (sombre)
 """
 import sys, os
+import subprocess
 
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -283,6 +284,7 @@ class RemoteBorneApp:
         self.btn_reboot = None
         self.btn_copy_panel = None
         self.btn_refresh_panel = None
+        self.btn_monitor = None
 
         self.active_entry = None
         self.reactive_entry = None
@@ -899,6 +901,17 @@ class RemoteBorneApp:
         self.soc_label = ttk.Label(derate_frame, textvariable=self.soc_label_var)
         self.soc_label.grid(row=0, column=1, sticky="w", padx=2, pady=2)
 
+        style = ttk.Style()
+        style.configure("Small.TButton", padding=(3, 1))
+        self.btn_monitor = ttk.Button(
+            derate_frame,
+            text="↻",
+            style="Small.TButton",
+            width=3,
+            command=self.update_monitor,
+        )
+        self.btn_monitor.grid(row=1, column=0, sticky="w", padx=2, pady=(2, 2))
+
         # ----- BOTTOM : LOGS -----
         log_frame = ttk.Labelframe(main, text="Logs", padding=5)
         log_frame.grid(
@@ -1233,6 +1246,13 @@ class RemoteBorneApp:
             log_errors=False,
         )
 
+    def update_monitor(self):
+        """Manual refresh button for temperature and battery SoC."""
+        if not self.connected:
+            return
+        self.update_temperature()
+        self.update_soc()
+
     # ==================================================================
     # SSH EVENTS (connect / disconnect / reconnect)
     # ==================================================================
@@ -1311,6 +1331,7 @@ class RemoteBorneApp:
             self.btn_send_cosphi,
             self.btn_restart_services,
             self.btn_reboot,
+            self.btn_monitor,
         ]
 
         # ----- Bouton Connect -----
@@ -1344,7 +1365,7 @@ class RemoteBorneApp:
                 self.file_menu.entryconfig("Print", state=state_conn)
                 self.file_menu.entryconfig("Edit", state=state_conn)
                 self.file_menu.entryconfig("Restart services", state=state_conn)
-                self.file_menu.entryconfig("Reboot", state=state_conn)
+                self.file_menu.entryconfig("Reboot device", state=state_conn)
 
             state_conn = tk.NORMAL if self.connected else tk.DISABLED
             if hasattr(self, "debug_menu"):
@@ -2554,6 +2575,7 @@ class RemoteBorneApp:
         """
         def on_saved():
             try:
+                previous_ssh = (self.host, self.user, self.password, self.port)
                 self.config.read(CONFIG_PATH, encoding="utf-8")
                 ssh_cfg = self.config["SSH"]
                 paths_cfg = self.config["PATHS"]
@@ -2580,26 +2602,29 @@ class RemoteBorneApp:
                     self.path_entry.delete(0, "end")
                     self.path_entry.insert(0, self.current_path)
 
-                self.connected = False
-                self._set_led(False)
-                self.status_var.set("Reconnecting…")
-                self._clear_file_list_ui()
-                self._update_controls_state()
-                # Mise à jour de la cible SSH puis reconnexion unique
-                self.ssh.update_target(
+                ssh_changed = previous_ssh != (
                     self.host,
                     self.user,
                     self.password,
                     self.port,
-                    auto_reconnect=False,
                 )
-                self._manual_disconnect_mode = False
-                self.force_reconnect()
+
+                if ssh_changed:
+                    self.log("[NETWORK] SSH target changed, restarting application.")
+                    self._popup_info(
+                        "Network",
+                        "Network configuration updated.\nApplication will restart now."
+                    )
+                    self.root.after(150, self._restart_application)
+                    return
+
+                if self.connected:
+                    self.refresh_file_list()
 
                 self.log("[NETWORK] config.ini reloaded.")
                 self._popup_info(
                     "Network",
-                    "Network configuration updated.\nReconnecting..."
+                    "Network configuration updated."
                 )
             except Exception as e:
                 self.log(f"[NETWORK ERROR] {e}")
@@ -2610,6 +2635,25 @@ class RemoteBorneApp:
 
         # Appel explicite avec CONFIG_PATH + callback
         open_network_config(self.root, CONFIG_PATH, on_saved)
+
+    def _restart_application(self):
+        try:
+            if getattr(sys, "frozen", False):
+                cmd = [sys.executable]
+                cwd = os.path.dirname(sys.executable)
+            else:
+                cmd = [sys.executable, os.path.abspath(__file__)]
+                cwd = os.path.dirname(os.path.abspath(__file__))
+            subprocess.Popen(cmd, cwd=cwd)
+        except Exception as e:
+            self.log(f"[RESTART ERROR] {e}")
+            self._popup_error(
+                "Restart",
+                f"Unable to restart application automatically:\n{e}",
+            )
+            return
+
+        self.on_exit()
 
        
     def open_debug_logs(self):
