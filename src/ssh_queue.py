@@ -42,6 +42,8 @@ class SSHQueue:
                 self.q.task_done()
                 break
 
+            critical = False
+            callback = None
             try:
                 with self.lock:
                     self.busy = True
@@ -67,8 +69,6 @@ class SSHQueue:
                     result["stderr"] = result.get("err", "")
                     if not silent:
                         self.log(f"[SSH QUEUE] END -> {cmd}")
-                    self.busy = False
-                    self.current_command = None
 
                 if callback:
                     try:
@@ -76,9 +76,14 @@ class SSHQueue:
                             self.root.after(0, lambda r=result: callback(r))
                     except Exception as e:
                         self.log(f"[SSH QUEUE CALLBACK ERROR] {e}")
+                elif critical:
+                    self.pause_monitoring = False
 
             except Exception as e:
                 self.log(f"[SSH QUEUE ERROR] {e}")
+                if critical:
+                    self.pause_monitoring = False
+            finally:
                 self.busy = False
                 self.current_command = None
 
