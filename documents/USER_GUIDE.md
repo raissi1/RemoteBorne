@@ -1,37 +1,37 @@
-# Remote Borne Manager - Guide utilisateur
+# Remote Borne Manager - User Guide
 
-## 1. Démarrage
+## 1. Startup
 
-Lancer l’application :
+Launch the application:
 
 ```bash
 python src/RemoteBorneManager.py
 ```
 
-Ou utiliser l’exécutable packagé s’il est déjà généré.
+Or use the packaged executable if it has already been built.
 
-## 2. Connexion SSH
+## 2. SSH connection
 
-- `Connect` : ouvre la session SSH et initialise l’interface distante
-- `Disconnect` : coupe la session et bloque la reconnexion automatique immédiate
-- les états principaux sont visibles dans les logs et via l’indicateur de connexion
+- `Connect`: opens the SSH session and initializes the remote UI
+- `Disconnect`: closes the session and prevents an immediate automatic reconnect
+- connection state is visible in the logs and through the status indicator
 
-En cas de perte réseau, l’application peut tenter une reconnexion automatique. En cas de changement d’IP ou de paramètres SSH depuis `Network config`, l’application redémarre proprement.
+If the network drops, the application may attempt an automatic reconnect. If the IP address or SSH settings are changed from `Network config`, the application restarts cleanly.
 
-## 3. Navigateur GridCodes
+## 3. GridCodes browser
 
-Le navigateur principal permet de parcourir le dossier distant configuré dans `PATHS.remote_path`.
+The main browser displays the remote directory configured in `PATHS.remote_path`.
 
-Navigation :
+Navigation:
 
-- double-clic sur un dossier : entrer dans le dossier
-- double-clic sur `[.] (Parent)` : revenir au parent
-- champ `Path` : reflète le chemin courant
-- `Refresh` : recharge la liste distante
+- double-click a folder to enter it
+- double-click `[.] (Parent)` to go back up
+- the `Path` field shows the current remote directory
+- `Refresh` reloads the remote listing
 
-## 4. Menu contextuel GridCodes
+## 4. GridCodes context menu
 
-Le clic droit sur un fichier propose :
+Right-click on a file:
 
 - `Edit`
 - `Download`
@@ -39,77 +39,77 @@ Le clic droit sur un fichier propose :
 - `Copy to GridCodes.properties`
 - `Delete`
 
-Le clic droit sur un dossier propose :
+Right-click on a folder:
 
 - `Delete`
 
-Remarques :
+Notes:
 
-- la suppression demande toujours confirmation
-- `Copy to GridCodes.properties` peut proposer un `Restart services` ensuite
+- deletion always asks for confirmation
+- `Copy to GridCodes.properties` may offer to restart services afterward
 
-## 5. Édition de fichier distant
+## 5. Remote file editing
 
-Depuis `Edit` :
+From `Edit`:
 
-- `Find` ouvre une recherche locale dans l’éditeur
-- `Save` envoie le contenu vers un nom distant
-- `Save As` passe par le même flux avec saisie du nom distant
-- les fins de lignes sont normalisées en `LF`
+- `Find` opens local search inside the editor
+- `Save` uploads the current content
+- `Save As` uses the same remote naming flow with a different target name
+- line endings are normalized to `LF`
 
-Raccourcis utiles :
+Useful shortcuts:
 
-- `Ctrl+F` : rechercher
-- `Escape` : retirer le surlignage
-- `Ctrl+W` : fermer l’éditeur
+- `Ctrl+F`: search
+- `Escape`: clear highlight
+- `Ctrl+W`: close the editor
 
-## 6. Download, Upload, Print
+## 6. Download, upload, print
 
 ### Download
 
-- récupère le fichier distant vers un emplacement local
-- le transfert est lancé en arrière-plan
+- copies the remote file to a local destination
+- runs in the background to avoid UI freezing
 
 ### Upload
 
-- permet d’envoyer un fichier local vers le dossier courant
-- une vérification finale de taille distante est effectuée
+- sends a local file to the current remote folder
+- performs a final remote size check
 
 ### Print
 
-- récupère le fichier distant
-- génère un PDF local lisible
-- le nom proposé reprend celui du fichier source
+- downloads the remote file
+- generates a readable local PDF
+- proposes a default name derived from the source file
 
 ## 7. Energy Manager PRO
 
-Ouvrir :
+Open:
 
-- `Energy Manager` -> `Energy Manager PRO`
+- `Energy` -> `Energy Manager PRO`
 
-Fonctions :
+Features:
 
-- mode `P/Q`
-- mode `CosPhi`
-- historique des commandes
-- zone `Monitor Energy Manager`
+- `P/Q` mode
+- `CosPhi` mode
+- command history
+- `Monitor Energy Manager` panel
 
-### Mode P/Q
+### P/Q mode
 
-- renseigner `Active Power P`
-- renseigner `Reactive Power Q`
-- cliquer `Send P/Q`
+- enter `Active Power P`
+- enter `Reactive Power Q`
+- click `Send P/Q`
 
-### Mode CosPhi
+### CosPhi mode
 
-- renseigner `Active Power P`
-- renseigner `CosPhi`
-- utiliser `Calculate Q` si besoin
-- cliquer `Send CosPhi`
+- enter `Active Power P`
+- enter `CosPhi`
+- use `Calculate Q` if needed
+- click `Send CosPhi`
 
 ## 8. Maintenance
 
-Depuis le menu ou les boutons :
+Available from the menu or buttons:
 
 - `Restart services`
 - `Reboot device`
@@ -117,31 +117,31 @@ Depuis le menu ou les boutons :
 
 ### Restart services
 
-- relance les services cibles côté borne
-- utilise un timeout plus large côté SSH
+- restarts the target services on the charger
+- uses a longer SSH timeout
 
 ### Reboot device
 
-- demande confirmation
-- envoie la commande de reboot distante
+- asks for confirmation
+- sends the remote reboot command
 
 ### Debug logs
 
-- ouvre la fenêtre de logs distante
-- permet de suivre les sorties sans popup bloquante inutile
+- opens the remote log window
+- follows logs without unnecessary blocking popups
 
-## 9. Monitoring température / SoC
+## 9. Temperature / Battery SoC monitoring
 
-Le panneau `Temperature / Derating` affiche :
+The `Temperature / Derating` panel shows:
 
-- température carte
-- SoC batterie
+- board temperature
+- Battery SoC
 
-Le bouton `↻` force un rafraîchissement manuel immédiat.
+The `↻` button triggers an immediate manual refresh.
 
 ## 10. Network config
 
-Le menu `Network config` permet de modifier :
+The `Network config` window lets you change:
 
 - host / IP
 - username
@@ -151,38 +151,38 @@ Le menu `Network config` permet de modifier :
 - `remote_file`
 - `local_path`
 
-Comportement actuel :
+Current behavior:
 
-- si seuls les chemins changent, ils sont rechargés
-- si l’IP, le port ou les identifiants changent, l’application redémarre après sauvegarde
+- if only paths change, they are reloaded
+- if IP, port, or credentials change, the application restarts after saving
 
-## 11. Terminal SSH intégré
+## 11. Integrated SSH terminal
 
-Ouvrir :
+Open:
 
 - `Terminal` -> `Open Terminal`
 
-Fonctions :
+Features:
 
-- historique `Up/Down`
-- `cd` persistant
+- history with `Up/Down`
+- persistent `cd`
 - `clear`
 - `help`
-- exécution de commandes simples
-- exécution de scripts shell et Python
+- execution of simple shell commands
+- execution of Python and shell scripts
 
-Commandes typiques :
+Typical commands:
 
 ```bash
 ls
 pwd
 cd /var/aux/EnergyManager
-cat fichier.txt
+cat file.txt
 python3 script.py
 sh restart.sh
 ```
 
-Commandes interactives non supportées :
+Unsupported interactive commands:
 
 - `vim`
 - `vi`
@@ -192,37 +192,37 @@ Commandes interactives non supportées :
 - `less`
 - `more`
 
-Pour sécurité et cohérence UI :
+For safety and UI consistency:
 
-- `rm`, `mv` et `cp` sont forcées avec `-f`
+- `rm`, `mv`, and `cp` are forced with `-f`
 
-## 12. Dépannage rapide
+## 12. Quick troubleshooting
 
 ### Host key / Plink
 
-Si `plink` affiche une erreur de host key en batch mode :
+If `plink` reports a host key error in batch mode:
 
-- vérifier que la borne visée est bien la bonne
-- nettoyer au besoin la clé PuTTY en cache pour l’IP concernée
+- make sure you are targeting the correct charger
+- clear the cached PuTTY key for that IP if required
 
-### Température ou SoC non mis à jour
+### Temperature or Battery SoC not updating
 
-- vérifier que la session SSH est active
-- utiliser le bouton `↻`
-- contrôler les logs applicatifs
+- confirm the SSH session is still active
+- use the `↻` button
+- check the application logs
 
-### Changement IP
+### IP address change
 
-- enregistrer dans `Network config`
-- laisser l’application redémarrer
-- relancer la connexion sur la nouvelle IP
+- save the new values in `Network config`
+- let the application restart
+- reconnect to the new target
 
 ### Energy Manager PRO
 
-- si un bouton semble masqué, vérifier que la version courante du code inclut le correctif de taille de fenêtre
+- if a button still appears hidden, make sure you are running a version that includes the latest window sizing fixes
 
-## 13. Points connus
+## 13. Known points
 
-- `Save` et `Save As` ne sont pas encore séparés fonctionnellement
-- le `SoC` doit encore être revalidé face à la valeur réellement lue sur le véhicule
-- certains tests longue durée restent à rejouer sur borne réelle
+- `Save` and `Save As` are not yet fully separated functionally
+- Battery `SoC` still needs to be revalidated against the actual vehicle value
+- some long-duration tests still need to be rerun on real hardware

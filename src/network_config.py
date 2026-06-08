@@ -159,26 +159,26 @@ def open_network_config(parent, config_path, on_saved=None):
         local_path = lpath_entry.get().strip()
 
         if not _is_valid_host(host):
-            messagebox.showerror("Validation", "IP/hostname invalide.")
+            messagebox.showerror("Validation", "Invalid IP address or hostname.")
             return
         if not username:
-            messagebox.showerror("Validation", "Username obligatoire.")
+            messagebox.showerror("Validation", "Username is required.")
             return
         try:
             port = int(port_raw)
             if not (1 <= port <= 65535):
                 raise ValueError
         except ValueError:
-            messagebox.showerror("Validation", "Port invalide (1-65535).")
+            messagebox.showerror("Validation", "Invalid port (1-65535).")
             return
         if not remote_path:
-            messagebox.showerror("Validation", "Remote path obligatoire.")
+            messagebox.showerror("Validation", "Remote path is required.")
             return
         if not remote_file:
-            messagebox.showerror("Validation", "Remote file obligatoire.")
+            messagebox.showerror("Validation", "Remote file is required.")
             return
         if not local_path:
-            messagebox.showerror("Validation", "Local path obligatoire.")
+            messagebox.showerror("Validation", "Local path is required.")
             return
 
         try:

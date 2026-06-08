@@ -186,7 +186,7 @@ class EnergyManagerWindow:
 
         title = ttk.Label(
             frm,
-            text="Mode P/Q et CosPhi",
+            text="P/Q and CosPhi Mode",
             font=("Segoe UI", 18, "bold"),
             anchor="center",
         )
@@ -286,7 +286,7 @@ class EnergyManagerWindow:
     # SECTION HISTORIQUE
     # ------------------------------------------------------------
     def _build_section_history(self, parent):
-        frm = ttk.Labelframe(parent, text="Historique des commandes", padding=10)
+        frm = ttk.Labelframe(parent, text="Command History", padding=10)
         frm.pack(fill="both", expand=True)
         
         
@@ -296,8 +296,8 @@ class EnergyManagerWindow:
         )
         self.table.heading("timestamp", text="Timestamp")
         self.table.heading("mode", text="Mode")
-        self.table.heading("cmd", text="Commande")
-        self.table.heading("status", text="Statut")
+        self.table.heading("cmd", text="Command")
+        self.table.heading("status", text="Status")
 
         self.table.column("timestamp", width=150, anchor="w")
         self.table.column("mode", width=80, anchor="center")
@@ -311,7 +311,7 @@ class EnergyManagerWindow:
 
         ttk.Button(
             btns,
-            text="Exporter CSV",
+            text="Export CSV",
             bootstyle="secondary",
             command=self.export_csv,
         ).pack(side="left", padx=5, pady=5)
@@ -365,7 +365,7 @@ class EnergyManagerWindow:
             p_val = int(float(p_str))
             q_val = int(float(q_str))
         except ValueError:
-            self._popup_warning("Valeurs invalides", "P et Q doivent être numériques.")
+            self._popup_warning("Invalid values", "P and Q must be numeric.")
             return
 
         cmd = (
@@ -392,11 +392,11 @@ class EnergyManagerWindow:
             p_val = float(p_str)
             cosphi_val = float(cosphi_str)
             if not (-1.0 < cosphi_val <= 1.0):
-                raise ValueError("CosPhi hors plage")
+                raise ValueError("CosPhi out of range")
         except ValueError:
             self._popup_warning(
-                "Valeurs invalides",
-                "P doit être numérique et CosPhi dans l'intervalle (-1, 1].",
+                "Invalid values",
+                "P must be numeric and CosPhi must be in the range (-1, 1].",
             )
             return
 
@@ -416,9 +416,9 @@ class EnergyManagerWindow:
             q_val = int(float(q_str))
         except ValueError:
             self._popup_warning(
-                "Valeurs invalides",
-                "P, CosPhi et Q auto doivent être remplis et numériques "
-                "(pensez à cliquer sur 'Calculate Q').",
+                "Invalid values",
+                "P, CosPhi, and auto Q must be filled in with numeric values "
+                "(make sure to click 'Calculate Q').",
             )
             return
 
@@ -458,8 +458,8 @@ class EnergyManagerWindow:
         if not self.ssh or not getattr(self.ssh, "connected", False):
 
             self._popup_error(
-                "Erreur SSH",
-                "Non connecté à la borne."
+                "SSH Error",
+                "Not connected to the charger."
             )
 
             return
@@ -498,10 +498,7 @@ class EnergyManagerWindow:
 
                 self._popup_info(
                     "Energy Manager",
-                    (
-                        "Commande envoyée avec succès.\n\n"
-                        f"{pretty_cmd}"
-                    )
+                    ("Command sent successfully.\n\n" f"{pretty_cmd}")
                 )
 
             # ----------------------------------------------------
@@ -512,13 +509,10 @@ class EnergyManagerWindow:
                 err = (
                     res["err"]
                     or res["out"]
-                    or "Erreur inconnue"
+                    or "Unknown error"
                 )
 
-                self._popup_error(
-                    "Erreur Energy Manager",
-                    err
-                )
+                self._popup_error("Energy Manager Error", err)
 
         self.ssh.execute(
             cmd,
@@ -537,7 +531,7 @@ class EnergyManagerWindow:
 
     def export_csv(self):
         if not self.history:
-            self._popup_warning("Vide", "Aucune entrée dans l’historique.")
+            self._popup_warning("Empty", "No history entries available.")
             return
 
         path = filedialog.asksaveasfilename(
@@ -557,7 +551,7 @@ class EnergyManagerWindow:
             self._popup_error("Export", f"Erreur lors de l'export CSV :\n{e}")
             return
 
-        self._popup_info("Export", "Export CSV effectué.")
+        self._popup_info("Export", "CSV export completed.")
 
     # ------------------------------------------------------------
     # MONITOR (version sans systemctl, adaptée à /etc/init.d)
@@ -565,7 +559,7 @@ class EnergyManagerWindow:
     def refresh_status(self):
         """Affiche le status du service energy manager (init.d + ps)."""
         if not self.ssh or not getattr(self.ssh, "connected", False):
-            self._popup_error("Erreur SSH", "Non connecté à la borne.")
+            self._popup_error("SSH Error", "Not connected to the charger.")
             return
 
         # Ici on évite systemctl, on utilise /etc/init.d + ps
@@ -583,7 +577,7 @@ class EnergyManagerWindow:
             if res["success"]:
                 self.monitor_text.insert("end", res["out"])
             else:
-                err = res["err"] or res["out"] or "Erreur inconnue"
+                err = res["err"] or res["out"] or "Unknown error"
                 # On écrit quand même le message dans la zone
                 self.monitor_text.insert("end", f"ERROR: {err}")
 
@@ -591,16 +585,16 @@ class EnergyManagerWindow:
 
     def restart_energy_service(self):
         if not self.ssh or not getattr(self.ssh, "connected", False):
-            self._popup_error("Erreur SSH", "Non connecté à la borne.")
+            self._popup_error("SSH Error", "Not connected to the charger.")
             return
 
         cmd = "/etc/init.d/S91energy-manager restart"
 
         def callback(res):
             if res["success"]:
-                self._popup_info("OK", "Service S91energy-manager redémarré.")
+                self._popup_info("Success", "Service S91energy-manager restarted.")
             else:
-                err = res["err"] or res["out"] or "Erreur inconnue"
-                self._popup_error("Erreur", err)
+                err = res["err"] or res["out"] or "Unknown error"
+                self._popup_error("Error", err)
 
         self.ssh.execute(cmd, callback=callback)

@@ -300,7 +300,7 @@ class RemoteBorneApp:
         self._editor_remote_path = None
         # --- ADDED ---
         self.temp_label_var = tk.StringVar(value="Temp: --")
-        self.soc_label_var = tk.StringVar(value="SoC Batterie: --")
+        self.soc_label_var = tk.StringVar(value="Battery SoC: --")
         self._monitor_stop = False
         self._monitor_thread_started = False
         self._temp_update_inflight = False
@@ -1239,7 +1239,7 @@ class RemoteBorneApp:
 
                 def apply_ui():
                     self.soc_label_var.set(
-                        f"SoC Batterie: {match.group(1)}" if match else "SoC Batterie: --"
+                        f"Battery SoC: {match.group(1)}" if match else "Battery SoC: --"
                     )
 
                 try:
@@ -3071,7 +3071,7 @@ class RemoteBorneApp:
                 self.ssh.port         # ← correct
             )
         except Exception as e:
-            self._popup_error("Debug logs", f"Impossible d’ouvrir la fenêtre de debug :\n{e}")
+            self._popup_error("Debug logs", f"Unable to open the Debug logs window:\n{e}")
 
     def _show_about(self):
         self._popup_info(

@@ -1,24 +1,23 @@
 # Remote Borne Manager (RBM)
 
-Remote Borne Manager est une application Windows en Python pour piloter à distance des bornes IOTECHA via SSH et SCP avec `plink.exe` et `pscp.exe`.
+Remote Borne Manager is a Windows Python application used to control IOTECHA chargers remotely over SSH and SCP through `plink.exe` and `pscp.exe`.
 
-## Fonctions principales
+## Main features
 
-- Connexion SSH avec surveillance et tentative de reconnexion
-- Navigateur `GridCodes` avec navigation dossiers/fichiers
-- Édition distante avec `Find`, `Save` et `Save As`
-- Upload / Download SCP durcis avec timeout explicite
-- Impression PDF depuis un fichier distant
-- Copie vers `GridCodes.properties` avec confirmation
-- Energy Manager PRO : mode `P/Q` et mode `CosPhi`
-- `Restart services` et `Reboot device`
-- Fenêtre `Debug logs`
-- Fenêtre `Network config`
-- Terminal SSH intégré avec historique et `cd` persistant
-- Monitoring `Température / SoC`
-- Menu contextuel complet sur les fichiers GridCodes
+- SSH connection management with reconnect handling
+- `GridCodes` remote browser with file and folder navigation
+- Remote editing with `Find`, `Save`, and `Save As`
+- Hardened SCP upload and download flows
+- PDF export from remote text files
+- Copy to `GridCodes.properties` with optional service restart
+- `Energy Manager PRO` with `P/Q` and `CosPhi` modes
+- `Restart services`, `Reboot device`, and `Debug logs`
+- `Network config` window
+- Integrated SSH terminal with history and persistent `cd`
+- Temperature and Battery SoC monitoring
+- Full right-click context menu in the `GridCodes` browser
 
-## Arborescence utile
+## Useful structure
 
 ```text
 RemoteBorne/
@@ -40,13 +39,13 @@ RemoteBorne/
 └── imgs/
 ```
 
-## Prérequis
+## Requirements
 
-- Windows 10 ou 11
+- Windows 10 or 11
 - Python 3.10+
-- `plink.exe` et `pscp.exe` présents dans `tools/`
+- `plink.exe` and `pscp.exe` available in `tools/`
 
-Installation :
+Install dependencies:
 
 ```bash
 pip install -r documents/requirements.txt
@@ -54,17 +53,17 @@ pip install -r documents/requirements.txt
 
 ## Configuration
 
-Le fichier `config/config.ini` contient notamment :
+The main SSH configuration is stored in `config/config.ini`:
 
 ```ini
 [SSH]
 host = 192.168.1.100
 username = root
-password = monPass
+password = myPassword
 port = 22
 ```
 
-Et les chemins applicatifs :
+And the app paths:
 
 ```ini
 [PATHS]
@@ -73,32 +72,32 @@ remote_file = GridCodes.properties
 local_path = exports/GridCodes.properties
 ```
 
-Modification possible depuis l’application :
+You can edit these values from the application:
 
 - `Network` -> `Network config`
 
-Note importante :
+Important behavior:
 
-- si l’IP ou les paramètres SSH changent, l’application enregistre la config puis redémarre proprement pour repartir sur une base saine
+- if the IP address or SSH credentials change, the application saves the config and restarts cleanly instead of trying a hot reconnect
 
-## Lancement
+## Launch
 
 ```bash
 python src/RemoteBorneManager.py
 ```
 
-## Comportement actuel important
+## Current behavior highlights
 
-### SSH et stabilité
+### SSH and stability
 
-- `SSHQueue` sérialise les commandes critiques
-- les transferts SCP utilisent un verrou dédié
-- les logs `SSH QUEUE` sont raccourcis avec des labels lisibles
-- les pertes de transport marquent correctement la session comme déconnectée
+- `SSHQueue` serializes critical remote commands
+- SCP transfers use a dedicated lock
+- queue logs use short readable labels
+- transport failures correctly mark the session as disconnected
 
-### GridCodes
+### GridCodes browser
 
-Le clic droit sur un fichier propose :
+Right-click on a file:
 
 - `Edit`
 - `Download`
@@ -106,34 +105,34 @@ Le clic droit sur un fichier propose :
 - `Copy to GridCodes.properties`
 - `Delete`
 
-Sur un dossier :
+Right-click on a folder:
 
 - `Delete`
 
 ### Monitoring
 
-Le bloc `Temperature / Derating` affiche :
+The `Temperature / Derating` panel shows:
 
-- température
-- SoC batterie
+- temperature
+- Battery SoC
 
-Le bouton `↻` force un rafraîchissement manuel de ces deux valeurs.
+The `↻` button triggers a manual refresh of both values.
 
-### Terminal intégré
+### Integrated terminal
 
-Disponible dans :
+Available from:
 
 - `Terminal` -> `Open Terminal`
 
-Fonctions :
+Features:
 
-- historique `Up/Down`
-- `cd` persistant
+- history with `Up/Down`
+- persistent `cd`
 - `clear`
 - `help`
-- `rm`, `mv`, `cp` forcés avec `-f`
+- `rm`, `mv`, and `cp` forced with `-f`
 
-Commandes interactives volontairement bloquées :
+Interactive commands intentionally blocked:
 
 - `vim`
 - `vi`
@@ -143,13 +142,13 @@ Commandes interactives volontairement bloquées :
 - `less`
 - `more`
 
-## Limites connues
+## Known limits
 
-- `Save` et `Save As` partagent encore le même flux de saisie de nom distant
-- la précision exacte du `SoC` reste à revalider sur borne
-- le changement IP à chaud ne tente plus une simple reconnexion : il redémarre l’application
+- `Save` and `Save As` still share a very similar remote naming flow
+- exact Battery SoC accuracy still needs to be revalidated on real hardware
+- changing IP at runtime now restarts the application instead of attempting a direct hot reconnect
 
-## Documentation associée
+## Related documentation
 
 - `documents/USER_GUIDE.md`
 - `documents/PVAL_TEST_PLAN.md`
@@ -157,4 +156,4 @@ Commandes interactives volontairement bloquées :
 
 ## Usage
 
-Usage interne professionnel.
+Internal professional use.

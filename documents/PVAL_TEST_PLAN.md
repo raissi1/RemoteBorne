@@ -1,124 +1,124 @@
-# PVAL - Plan de revalidation post-correctifs
+# PVAL - Post-fix Revalidation Plan
 
-## Objectif
+## Goal
 
-Ce document sert de guide rapide pour rejouer les points sensibles après les correctifs majeurs apportés à RBM.
+This document is a short guide for replaying the most sensitive scenarios after the major RBM fixes.
 
-## 1. Points déjà traités côté code
+## 1. Items already addressed in code
 
-- blocages UI sur `refresh`, `download`, `print`, `upload`, `editor`
-- sérialisation des commandes critiques via `SSHQueue`
-- timeouts SCP explicites
-- restauration du terminal SSH intégré
-- restauration du menu contextuel GridCodes complet
-- correction de la fenêtre `Energy Manager PRO`
-- redémarrage propre après modification IP / SSH dans `Network config`
+- UI freezes around `refresh`, `download`, `print`, `upload`, and editor flows
+- serialization of critical remote commands through `SSHQueue`
+- explicit SCP timeouts
+- restoration of the integrated SSH terminal
+- restoration of the full `GridCodes` context menu
+- fix for the `Energy Manager PRO` window sizing
+- clean application restart after IP / SSH changes in `Network config`
 
-## 2. Priorités de revalidation
+## 2. Revalidation priorities
 
-1. stabilité SSH / reconnexion
-2. édition / upload / print
-3. Energy Manager PRO
-4. terminal SSH intégré
-5. monitoring température / SoC
+1. SSH stability and reconnect behavior
+2. editing, upload, and print flows
+3. `Energy Manager PRO`
+4. integrated SSH terminal
+5. temperature and Battery SoC monitoring
 
-## 3. Cas à rejouer en priorité
+## 3. High-priority test cases
 
-### T13 - Reconnexion automatique
+### T13 - Automatic reconnect
 
-- Préconditions : session SSH active
-- Étapes :
-  1. provoquer une coupure réseau
-  2. rétablir le réseau
-- Attendu :
-  - tentatives de reconnexion visibles
-  - retour en état connecté si la cible redevient accessible
+- Preconditions: active SSH session
+- Steps:
+  1. simulate a network interruption
+  2. restore the network
+- Expected:
+  - reconnect attempts are visible
+  - the app returns to `Connected` if the target becomes reachable again
 
-### T14 - Changement IP runtime
+### T14 - Runtime IP change
 
-- Étapes :
-  1. ouvrir `Network config`
-  2. modifier l’IP ou les paramètres SSH
-  3. enregistrer
-- Attendu :
-  - sauvegarde de la configuration
-  - redémarrage propre de l’application
-  - reconnexion possible sur la nouvelle cible après relance
+- Steps:
+  1. open `Network config`
+  2. modify the IP address or SSH settings
+  3. save
+- Expected:
+  - configuration is saved
+  - the application restarts cleanly
+  - reconnect is possible to the new target after relaunch
 
-### T30 - Édition et sauvegarde
+### T30 - Editing and save
 
-- Étapes :
-  1. ouvrir un fichier distant
-  2. modifier son contenu
-  3. lancer `Save`
-- Attendu :
-  - contenu uploadé sans blocage UI
-  - fins de lignes normalisées
+- Steps:
+  1. open a remote file
+  2. modify the content
+  3. trigger `Save`
+- Expected:
+  - content uploads without UI blocking
+  - line endings are normalized
 
 ### T31 / T31B - Download / Upload
 
-- Attendu :
-  - transfert sans freeze UI
-  - réussite du transfert
-  - vérification taille distante pour l’upload
+- Expected:
+  - no UI freeze during transfer
+  - transfer completes successfully
+  - upload path performs a final remote size check
 
-### T32 - Impression PDF
+### T32 - PDF print
 
-- Attendu :
-  - PDF généré localement
-  - texte lisible
-  - nom proposé cohérent avec le fichier source
+- Expected:
+  - local PDF is generated
+  - text remains readable
+  - proposed file name matches the source file
 
 ### T40 / T42 - Energy Manager
 
-- Attendu :
-  - envoi P/Q fonctionnel
-  - envoi CosPhi fonctionnel
-  - logs courts et lisibles
+- Expected:
+  - `P/Q` send works
+  - `CosPhi` send works
+  - logs remain short and readable
 
 ### T60 - Debug logs
 
-- Attendu :
-  - ouverture de la fenêtre
-  - suivi sans popup bloquante inutile
+- Expected:
+  - the window opens successfully
+  - logs are followed without blocking popups
 
-### T61 / T62 - Température / SoC
+### T61 / T62 - Temperature / Battery SoC
 
-- Attendu :
-  - rafraîchissement manuel via `↻`
-  - température visible
-  - SoC visible
+- Expected:
+  - manual refresh works through `↻`
+  - temperature is displayed
+  - Battery SoC is displayed
 
-### T79 - Terminal SSH GUI
+### T79 - SSH terminal GUI
 
-- Étapes :
-  1. ouvrir `Terminal -> Open Terminal`
-  2. tester `ls`, `pwd`, `cd`
-  3. tester l’historique `↑/↓`
-- Attendu :
-  - exécution correcte
-  - `cd` persistant
-  - pas de freeze UI
+- Steps:
+  1. open `Terminal -> Open Terminal`
+  2. test `ls`, `pwd`, and `cd`
+  3. test `Up/Down` history
+- Expected:
+  - commands execute correctly
+  - `cd` remains persistent
+  - no UI freeze
 
-### T89 - Commandes interactives interdites
+### T89 - Blocked interactive commands
 
-- Étapes :
-  1. ouvrir le terminal
-  2. taper `vim`
-  3. taper `nano`
-- Attendu :
-  - message d’erreur propre
-  - aucune ouverture interactive
-  - pas de blocage de l’application
+- Steps:
+  1. open the terminal
+  2. type `vim`
+  3. type `nano`
+- Expected:
+  - clean error message
+  - no interactive program starts
+  - the application remains responsive
 
-## 4. Points encore à surveiller
+## 4. Remaining points to watch
 
-- précision fonctionnelle du `SoC` par rapport à la valeur véhicule
-- comportement longue durée sur plusieurs heures
-- cas multi-actions rapides avec éditeur déjà ouvert
+- Battery `SoC` accuracy versus the real vehicle value
+- long-duration behavior over several hours
+- rapid multi-action scenarios when an editor is already open
 
-## 5. Critères de sortie
+## 5. Exit criteria
 
-- aucun blocage UI sur les scénarios critiques
-- terminal et help cohérents avec les fonctions visibles
-- trois runs consécutifs sans régression majeure sur les cas prioritaires
+- no UI blocking on critical workflows
+- terminal and help stay consistent with the visible features
+- three consecutive runs without major regression on the priority cases

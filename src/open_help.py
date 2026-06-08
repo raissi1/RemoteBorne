@@ -38,7 +38,7 @@ def open_help(parent=None):
             pass
 
     win = tk.Toplevel(parent)
-    win.title("RemoteBorneManager - Professional Help")
+    win.title("RBM Help")
     win.geometry("1000x800")
     win.minsize(850, 600)
 
@@ -69,12 +69,11 @@ def open_help(parent=None):
     top = ttk.Frame(main)
     top.pack(fill="x", pady=(0, 10))
 
-    title_lbl = ttk.Label(
+    ttk.Label(
         top,
-        text="RemoteBorneManager - User Guide",
+        text="Remote Borne Manager - User Guide",
         font=("Segoe UI", 16, "bold"),
-    )
-    title_lbl.pack(side="left")
+    ).pack(side="left")
 
     search_var = tk.StringVar()
     search_entry = ttk.Entry(top, textvariable=search_var, width=35)
@@ -100,132 +99,102 @@ def open_help(parent=None):
     text.pack(side="left", fill="both", expand=True)
     scroll.pack(side="right", fill="y")
 
-    text.tag_configure(
-        "title",
-        font=("Segoe UI", 18, "bold"),
-        foreground="#0F172A",
-        spacing3=20,
-    )
-    text.tag_configure(
-        "section",
-        font=("Segoe UI", 13, "bold"),
-        foreground="#1D4ED8",
-        spacing1=20,
-        spacing3=10,
-    )
-    text.tag_configure(
-        "subtitle",
-        font=("Segoe UI", 11, "bold"),
-        foreground="#0F766E",
-        spacing1=10,
-        spacing3=5,
-    )
+    text.tag_configure("title", font=("Segoe UI", 18, "bold"), foreground="#0F172A", spacing3=20)
+    text.tag_configure("section", font=("Segoe UI", 13, "bold"), foreground="#1D4ED8", spacing1=20, spacing3=10)
+    text.tag_configure("subtitle", font=("Segoe UI", 11, "bold"), foreground="#0F766E", spacing1=10, spacing3=5)
     text.tag_configure("normal", font=("Segoe UI", 10), spacing3=4)
-    text.tag_configure(
-        "code",
-        font=("Consolas", 10),
-        foreground="#7C2D12",
-        background="#F8FAFC",
-    )
-    text.tag_configure(
-        "warning",
-        foreground="#B91C1C",
-        font=("Segoe UI", 10, "bold"),
-    )
-    text.tag_configure(
-        "highlight",
-        background="#FFF59D",
-        foreground="#000000",
-    )
+    text.tag_configure("code", font=("Consolas", 10), foreground="#7C2D12", background="#F8FAFC")
+    text.tag_configure("warning", foreground="#B91C1C", font=("Segoe UI", 10, "bold"))
+    text.tag_configure("highlight", background="#FFF59D", foreground="#000000")
 
     script_name = os.path.basename(sys.argv[0])
     today = datetime.date.today()
 
-    def add_block(title, body, tag="normal"):
+    def add_subtitle(title, body, tag="normal"):
         text.insert("end", title, "subtitle")
         text.insert("end", body + "\n", tag)
 
-    text.insert("end", "RemoteBorneManager - Professional Guide\n", "title")
+    text.insert("end", "Remote Borne Manager - Help\n", "title")
 
-    text.insert("end", "\n1. PRESENTATION\n", "section")
+    text.insert("end", "\n1. OVERVIEW\n", "section")
     text.insert(
         "end",
-        "RemoteBorneManager (RBM) est une application desktop industrielle pour la gestion distante de bornes via SSH et SCP.\n\n",
+        "Remote Borne Manager (RBM) is an industrial desktop application used to manage chargers remotely through SSH and SCP.\n\n",
         "normal",
     )
-    text.insert("end", "Fonctions principales :\n", "subtitle")
+    text.insert("end", "Main capabilities:\n", "subtitle")
     for item in [
-        "connexion SSH et surveillance de session",
-        "navigateur GridCodes avec menu contextuel complet",
-        "édition distante, upload, download et impression PDF",
-        "Energy Manager PRO en modes P/Q et CosPhi",
-        "Restart services, Reboot device et Debug logs",
-        "Network config avec redémarrage propre si paramètres SSH changent",
-        "monitoring Température / SoC",
-        "terminal SSH intégré avec historique et cd persistant",
+        "SSH connection and session monitoring",
+        "GridCodes browser with full right-click menu",
+        "remote editing, upload, download, and PDF print",
+        "Energy Manager PRO in P/Q and CosPhi modes",
+        "Restart services, Reboot device, and Debug logs",
+        "Network config with clean restart when SSH settings change",
+        "temperature and Battery SoC monitoring",
+        "integrated SSH terminal with history and persistent cd",
     ]:
         text.insert("end", f"- {item}\n", "normal")
 
-    text.insert("end", "\n2. DEMARRAGE\n", "section")
-    add_block("Mode Python\n", f"python {script_name}\n", "code")
-    add_block("Mode exécutable\n", "Lancer RBM.exe\n", "code")
+    text.insert("end", "\n2. STARTUP\n", "section")
+    add_subtitle("Python mode\n", f"python {script_name}\n", "code")
+    add_subtitle("Executable mode\n", "Launch RBM.exe\n", "code")
 
-    text.insert("end", "\n3. CONNEXION ET RESEAU\n", "section")
+    text.insert("end", "\n3. CONNECTION AND NETWORK\n", "section")
     text.insert(
         "end",
-        "Le bouton Connect ouvre la session SSH et initialise l’interface distante. Disconnect coupe la session et évite une reconnexion automatique immédiate.\n\n"
-        "Quand l’IP, le port ou les identifiants sont modifiés dans Network config, l’application enregistre les paramètres puis redémarre proprement. Ce comportement remplace l’ancienne reconnexion à chaud.\n",
+        "The Connect button opens the SSH session and initializes the remote interface. Disconnect closes the session and prevents an immediate auto reconnect.\n\n"
+        "When the IP address, port, or credentials are changed from Network config, the application saves the new settings and restarts cleanly. This replaces the older hot reconnect approach.\n",
         "normal",
     )
 
     text.insert("end", "\n4. GRIDCODES BROWSER\n", "section")
     text.insert(
         "end",
-        "Le navigateur distant permet :\n"
-        "- double-clic dossier : entrer\n"
-        "- double-clic [.] (Parent) : revenir au parent\n"
-        "- rafraîchissement de la liste distante\n"
-        "- mise à jour du champ Path\n\n"
-        "Menu contextuel fichier :\n"
+        "The remote browser supports:\n"
+        "- double-click a folder to enter it\n"
+        "- double-click [.] (Parent) to go up\n"
+        "- remote list refresh\n"
+        "- current path update\n\n"
+        "File context menu:\n"
         "- Edit\n"
         "- Download\n"
         "- Print\n"
         "- Copy to GridCodes.properties\n"
         "- Delete\n\n"
-        "Menu contextuel dossier :\n"
+        "Folder context menu:\n"
         "- Delete\n",
         "normal",
     )
 
-    text.insert("end", "\n5. EDITION, UPLOAD, DOWNLOAD, PRINT\n", "section")
+    text.insert("end", "\n5. EDIT, UPLOAD, DOWNLOAD, PRINT\n", "section")
     text.insert(
         "end",
-        "Edition distante :\n"
-        "- Find dans l’éditeur\n"
-        "- Save et Save As disponibles\n"
-        "- normalisation LF des fins de lignes\n\n"
-        "Download / Print / ouverture d’éditeur utilisent des traitements de fond pour éviter les gels d’interface.\n\n"
-        "Upload : vérification de taille distante après transfert.\n",
+        "Remote editor features:\n"
+        "- local Find in the editor\n"
+        "- Save and Save As\n"
+        "- LF line ending normalization\n\n"
+        "Download, Print, and editor file loading run in background workers to avoid UI freezes.\n\n"
+        "Upload includes a remote file size verification step.\n",
         "normal",
     )
 
-    text.insert("end", "\n6. MONITORING TEMPERATURE / SOC\n", "section")
+    text.insert("end", "\n6. TEMPERATURE / BATTERY SOC MONITORING\n", "section")
     text.insert(
         "end",
-        "Le panneau Temperature / Derating affiche la température et le SoC batterie.\n"
-        "Le bouton ↻ déclenche un rafraîchissement manuel immédiat de ces deux valeurs.\n",
+        "The Temperature / Derating panel shows charger temperature and Battery SoC.\n"
+        "The ↻ button performs an immediate manual refresh of both values.\n",
         "normal",
     )
 
     text.insert("end", "\n7. ENERGY MANAGER PRO\n", "section")
     text.insert(
         "end",
-        "Le module Energy Manager PRO permet le pilotage énergétique via une fenêtre dédiée.\n\n"
-        "Mode P/Q :\n"
+        "Energy Manager PRO is used for energy control through a dedicated window.\n\n"
+        "P/Q mode:\n"
         "- Active Power P\n"
         "- Reactive Power Q\n"
         "- Send P/Q\n\n"
-        "Mode CosPhi :\n"
+        "CosPhi mode:\n"
         "- Active Power P\n"
         "- CosPhi\n"
         "- Calculate Q\n"
@@ -234,18 +203,18 @@ def open_help(parent=None):
     )
     text.insert("end", "Q = |P| * tan(acos(CosPhi))\n", "code")
 
-    text.insert("end", "\n8. TERMINAL SSH INTEGRE\n", "section")
+    text.insert("end", "\n8. INTEGRATED SSH TERMINAL\n", "section")
     text.insert(
         "end",
-        "Ouvrir via Terminal -> Open Terminal.\n\n"
-        "Fonctions :\n"
-        "- historique Up / Down\n"
-        "- cd persistant\n"
+        "Open it from Terminal -> Open Terminal.\n\n"
+        "Features:\n"
+        "- Up / Down history\n"
+        "- persistent cd\n"
         "- clear\n"
         "- help\n"
-        "- exécution de commandes shell simples\n"
-        "- exécution de scripts Python et shell\n\n"
-        "Commandes interactives bloquées :\n"
+        "- simple shell commands\n"
+        "- Python and shell script execution\n\n"
+        "Blocked interactive commands:\n"
         "- vim\n"
         "- vi\n"
         "- nano\n"
@@ -253,48 +222,40 @@ def open_help(parent=None):
         "- htop\n"
         "- less\n"
         "- more\n\n"
-        "Pour sécurité et cohérence UI, rm / mv / cp sont forcées avec -f.\n",
+        "For UI safety and consistency, rm / mv / cp are forced with -f.\n",
         "normal",
     )
 
-    text.insert("end", "\n9. DEBUG LOGS ET MAINTENANCE\n", "section")
+    text.insert("end", "\n9. DEBUG LOGS AND MAINTENANCE\n", "section")
     text.insert(
         "end",
-        "Le menu Debug logs ouvre la fenêtre de suivi des logs distants.\n\n"
-        "Maintenance disponible :\n"
+        "The Debug logs menu opens the remote log follow window.\n\n"
+        "Available maintenance actions:\n"
         "- Restart services\n"
         "- Reboot device\n"
         "- Debug logs\n",
         "normal",
     )
 
-    text.insert("end", "\n10. ARCHITECTURE ET STABILITE\n", "section")
+    text.insert("end", "\n10. ARCHITECTURE AND STABILITY\n", "section")
     text.insert(
         "end",
-        "RBM s’appuie sur une architecture centralisée avec SSHQueue pour les commandes critiques, des timeouts SCP explicites, des callbacks Tkinter protégés et une gestion plus propre des pertes de transport.\n",
+        "RBM relies on a centralized architecture with SSHQueue for critical commands, explicit SCP timeouts, protected Tkinter callbacks, and cleaner transport failure handling.\n",
         "normal",
     )
-    text.insert(
-        "end",
-        "Utilisation recommandée sur réseau industriel local maîtrisé.\n",
-        "warning",
-    )
+    text.insert("end", "Recommended for controlled local industrial networks.\n", "warning")
 
-    text.insert("end", "\n11. LIMITES CONNUES\n", "section")
+    text.insert("end", "\n11. KNOWN LIMITS\n", "section")
     text.insert(
         "end",
-        "- Save et Save As passent encore par un flux de nommage distant proche\n"
-        "- la précision exacte du SoC reste à revalider sur borne\n"
-        "- certains scénarios longue durée et multi-actions doivent encore être rejoués terrain\n",
+        "- Save and Save As still share a very similar remote naming flow\n"
+        "- exact Battery SoC accuracy still needs hardware revalidation\n"
+        "- some long-duration and rapid multi-action scenarios still need field retesting\n",
         "normal",
     )
 
     text.insert("end", "\n12. VERSION\n", "section")
-    text.insert(
-        "end",
-        f"RemoteBorneManager 3.x PRO\nDate : {today}\n\nAuteur : Nabil RAISSI\n",
-        "normal",
-    )
+    text.insert("end", f"Remote Borne Manager 3.x PRO\nDate: {today}\n\nAuthor: Nabil RAISSI\n", "normal")
 
     text.bind("<Key>", lambda _e: "break")
 
@@ -319,11 +280,7 @@ def open_help(parent=None):
 
     bottom = ttk.Frame(main)
     bottom.pack(fill="x", pady=(10, 0))
-
-    find_btn = ttk.Button(bottom, text="Find", command=find_text)
-    find_btn.pack(side="left")
-
-    close_btn = ttk.Button(bottom, text="Close", command=_close)
-    close_btn.pack(side="right")
+    ttk.Button(bottom, text="Find", command=find_text).pack(side="left")
+    ttk.Button(bottom, text="Close", command=_close).pack(side="right")
 
     text.configure(state="disabled")

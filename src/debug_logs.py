@@ -325,9 +325,9 @@ class DebugLogsWindow:
         except FileNotFoundError:
             messagebox.showerror(
                 "Error",
-                "Impossible de lancer plink.\n"
-                "Vérifie que plink.exe est dans le dossier du projet\n"
-                "ou dans le PATH Windows."
+                "Unable to start plink.\n"
+                "Check that plink.exe is available in the project folder\n"
+                "or in the Windows PATH."
             )
             log_file.close()
             return
