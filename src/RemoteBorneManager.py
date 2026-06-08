@@ -285,6 +285,7 @@ class RemoteBorneApp:
         self.btn_copy_panel = None
         self.btn_refresh_panel = None
         self.btn_monitor = None
+        self.terminal_menu = None
 
         self.active_entry = None
         self.reactive_entry = None
@@ -530,6 +531,13 @@ class RemoteBorneApp:
         net_menu = tk.Menu(menubar, tearoff=0)
         net_menu.add_command(label="Network config", command=self.open_network_config)
         menubar.add_cascade(label="Network", menu=net_menu)
+
+        # TERMINAL
+        self.terminal_menu = tk.Menu(menubar, tearoff=0)
+        self.terminal_menu.add_command(
+            label="Open Terminal", command=self.open_terminal
+        )
+        menubar.add_cascade(label="Terminal", menu=self.terminal_menu)
 
 
         # HELP
@@ -1375,6 +1383,8 @@ class RemoteBorneApp:
                 self.debug_menu.entryconfig("Debug logs", state=state_conn)
             if hasattr(self, "energy_menu") and self.energy_menu:
                 self.energy_menu.entryconfig("Energy Manager PRO", state=state_conn)
+            if hasattr(self, "terminal_menu") and self.terminal_menu:
+                self.terminal_menu.entryconfig("Open Terminal", state=state_conn)
 
         except Exception:
             pass
@@ -2704,6 +2714,255 @@ class RemoteBorneApp:
                 "Energy Manager",
                 f"Unable to open Energy Manager:\n{e}",
             )
+
+    # ==================================================================
+    # TERMINAL SSH
+    # ==================================================================
+    def open_terminal(self):
+        if self._closing:
+            return
+        if not self.connected:
+            self._popup_warning("Terminal", "Please connect first.")
+            return
+
+        if hasattr(self, "_terminal_window"):
+            try:
+                if (
+                    self._terminal_window is not None
+                    and self._terminal_window.winfo_exists()
+                ):
+                    self._terminal_window.deiconify()
+                    self._terminal_window.lift()
+                    self._terminal_window.focus_force()
+                    return
+            except Exception:
+                pass
+
+        current_dir = self.current_path or self.default_path
+
+        win = tk.Toplevel(self.root)
+        self._terminal_window = win
+        win.title("Remote Terminal")
+        self._center_toplevel(win, 1100, 700, parent=self.root)
+        win.minsize(900, 500)
+
+        try:
+            win.transient(self.root)
+            win.lift()
+            win.focus_force()
+        except Exception:
+            pass
+
+        frame = ttk.Frame(win, padding=5)
+        frame.pack(fill="both", expand=True)
+        frame.grid_rowconfigure(0, weight=1)
+        frame.grid_columnconfigure(0, weight=1)
+
+        output = tk.Text(
+            frame,
+            bg="#0d1117",
+            fg="#c9d1d9",
+            insertbackground="white",
+            font=("Consolas", 10),
+            wrap="word",
+            state="disabled",
+        )
+        output.grid(row=0, column=0, sticky="nsew")
+
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=output.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        output.configure(yscrollcommand=scrollbar.set)
+
+        entry = ttk.Entry(frame, font=("Consolas", 10))
+        entry.grid(
+            row=1,
+            column=0,
+            columnspan=2,
+            sticky="ew",
+            padx=5,
+            pady=5,
+        )
+
+        btn_frame = ttk.Frame(frame)
+        btn_frame.grid(row=2, column=0, columnspan=2, sticky="ew")
+
+        def append(text):
+            try:
+                output.configure(state="normal")
+                output.insert("end", text)
+                output.see("end")
+                output.configure(state="disabled")
+            except Exception:
+                pass
+
+        def clear():
+            output.configure(state="normal")
+            output.delete("1.0", "end")
+            output.configure(state="disabled")
+
+        ttk.Button(btn_frame, text="Clear", command=clear).pack(
+            side="left", padx=5, pady=5
+        )
+        ttk.Button(
+            btn_frame,
+            text="Close",
+            style="Danger.TButton",
+            command=win.destroy,
+        ).pack(side="right", padx=5, pady=5)
+
+        history = []
+        history_index = [-1]
+
+        def show_help():
+            append(
+                "\n"
+                "Available commands:\n\n"
+                "Navigation:\n"
+                "  ls\n"
+                "  cd <dir>\n"
+                "  pwd\n\n"
+                "Files:\n"
+                "  cat <file>\n"
+                "  cp <src> <dst>\n"
+                "  mv <src> <dst>\n"
+                "  rm <file>\n\n"
+                "Scripts:\n"
+                "  python3 script.py\n"
+                "  sh script.sh\n\n"
+                "Logs:\n"
+                "  grep\n"
+                "  tail\n"
+                "  journalctl\n\n"
+                "Built-in:\n"
+                "  clear\n"
+                "  help\n\n"
+                "Unsupported interactive commands:\n"
+                "  vim, nano, top, htop\n\n"
+            )
+
+        def run_command(cmd):
+            nonlocal current_dir
+
+            if cmd.startswith("cd"):
+                parts = cmd.split(maxsplit=1)
+                if len(parts) == 1:
+                    new_dir = self.default_path
+                else:
+                    new_dir = parts[1].strip()
+
+                if not new_dir.startswith("/"):
+                    new_dir = current_dir.rstrip("/") + "/" + new_dir
+
+                test_cmd = f'test -d "{new_dir}"'
+
+                def cb(res):
+                    nonlocal current_dir
+                    if res["success"]:
+                        current_dir = new_dir
+                        append(f"[DIR] {current_dir}\n")
+                    else:
+                        append("[ERROR] Directory not found\n")
+
+                self.ssh.execute(
+                    test_cmd,
+                    callback=cb,
+                    timeout=self.ssh_timeout,
+                    auto_retry=False,
+                    log_errors=False,
+                )
+                return
+
+            if cmd.startswith("rm "):
+                cmd = "rm -f " + cmd[3:]
+            elif cmd.startswith("mv "):
+                cmd = "mv -f " + cmd[3:]
+            elif cmd.startswith("cp "):
+                cmd = "cp -f " + cmd[3:]
+
+            interactive_cmds = ["vim", "vi", "nano", "top", "htop", "less", "more"]
+            base_cmd = cmd.split()[0] if cmd.split() else ""
+            if base_cmd in interactive_cmds:
+                append(f"[ERROR] '{base_cmd}' is not supported in GUI terminal.\n")
+                return
+
+            full_cmd = f'cd "{current_dir}" && {cmd}'
+            append(f"\n{current_dir} $ {cmd}\n")
+
+            def cb(res):
+                try:
+                    stdout = (res.get("out") or "").strip()
+                    stderr = (res.get("err") or "").strip()
+                    success = res.get("success", False)
+                    if stdout:
+                        append(stdout + "\n")
+                    if stderr:
+                        append("[ERROR] " + stderr + "\n")
+                    if success and not stdout and not stderr:
+                        append("[OK]\n")
+                except Exception as e:
+                    append(f"[ERROR] {e}\n")
+
+            self.ssh.execute(
+                full_cmd,
+                callback=cb,
+                timeout=self.ssh_timeout,
+                auto_retry=False,
+                log_errors=False,
+            )
+
+        def on_enter(event=None):
+            cmd = entry.get().strip()
+            if not cmd:
+                return
+            if cmd == "clear":
+                clear()
+                entry.delete(0, "end")
+                return
+            if cmd == "help":
+                show_help()
+                entry.delete(0, "end")
+                return
+
+            history.append(cmd)
+            history_index[0] = len(history)
+            run_command(cmd)
+            entry.delete(0, "end")
+
+        def history_up(event):
+            if history:
+                history_index[0] = max(0, history_index[0] - 1)
+                entry.delete(0, "end")
+                entry.insert(0, history[history_index[0]])
+
+        def history_down(event):
+            if history:
+                history_index[0] = min(len(history), history_index[0] + 1)
+                entry.delete(0, "end")
+                if history_index[0] < len(history):
+                    entry.insert(0, history[history_index[0]])
+
+        entry.bind("<Return>", on_enter)
+        entry.bind("<Up>", history_up)
+        entry.bind("<Down>", history_down)
+        entry.focus_force()
+
+        append(
+            "Remote SSH Terminal Ready.\n"
+            f"Connected to {self.host}\n"
+            "Type 'help' for commands.\n"
+        )
+
+        def _on_close():
+            try:
+                self._terminal_window = None
+            except Exception:
+                pass
+            try:
+                win.destroy()
+            except Exception:
+                pass
+
+        win.protocol("WM_DELETE_WINDOW", _on_close)
 
     
     def open_network_config(self):
