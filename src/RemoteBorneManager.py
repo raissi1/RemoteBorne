@@ -1177,6 +1177,8 @@ class RemoteBorneApp:
     def update_temperature(self):
         if self._temp_update_inflight:
             return
+        if getattr(self.ssh_queue, "pause_monitoring", False):
+            return
         self._temp_update_inflight = True
         cmd = 'grep -E "PowerBoard T1|MainBoard T1" /var/aux/ChargerApp/derate.log | tail -1'
 
@@ -1184,11 +1186,10 @@ class RemoteBorneApp:
             try:
                 if not res.get("success"):
                     return
-                output = (res.get("out") or "") + "\n" + (res.get("err") or "")
+                output = (res.get("stdout") or res.get("out") or "")
                 match = re.search(
                     r"(PowerBoard|MainBoard)\s*T1[^0-9-]*(-?\d+)",
-                    output,
-                    flags=re.IGNORECASE,
+                    output, flags=re.IGNORECASE,
                 )
                 temp = int(match.group(2)) if match else None
 
@@ -1198,8 +1199,7 @@ class RemoteBorneApp:
                         self.temp_label.configure(foreground="")
                     else:
                         self.temp_label_var.set(f"Temp: {temp}")
-                        self.temp_label.configure(foreground=("red" if temp > 80 else "green"))
-
+                        self.temp_label.configure(foreground="red" if temp > 80 else "green")
                 try:
                     self.root.after(0, apply_ui)
                 except Exception:
@@ -1207,10 +1207,12 @@ class RemoteBorneApp:
             finally:
                 self._temp_update_inflight = False
 
-        self.ssh.execute(
+        self.ssh_queue.execute(
             cmd,
             callback=cb,
             timeout=self.ssh_timeout,
+            command_type="monitor_temp",
+            silent=True,
             auto_retry=False,
             log_errors=False,
         )
