@@ -428,30 +428,42 @@ class SSHManager:
     # ------------------------------------------------------------------ #
     #  SCP
     # ------------------------------------------------------------------ #
-    def scp_get(self, remote_path: str, local_path: str) -> dict:
+    def scp_get(
+        self,
+        remote_path: str,
+        local_path: str,
+        timeout: Optional[int] = None,
+    ) -> dict:
         if not self.connected:
             self._try_reconnect()
         if not self.connected:
             err = "SSH not connected"
             self._log(f"[SCP GET ERROR] {err}")
             return {"success": False, "out": "", "err": err}
+        scp_timeout = timeout if timeout is not None else max(30, self.timeout)
         success, out, err = self.backend.scp_get(
-            remote_path, local_path, timeout=self.timeout
+            remote_path, local_path, timeout=scp_timeout
         )
         if not success:
             self._log(f"[SCP GET ERROR] {err or out or 'unknown error'}")
             self._mark_transport_failure(err or out or "")
         return {"success": success, "out": out, "err": err}
 
-    def scp_put(self, local_path: str, remote_path: str) -> dict:
+    def scp_put(
+        self,
+        local_path: str,
+        remote_path: str,
+        timeout: Optional[int] = None,
+    ) -> dict:
         if not self.connected:
             self._try_reconnect()
         if not self.connected:
             err = "SSH not connected"
             self._log(f"[SCP PUT ERROR] {err}")
             return {"success": False, "out": "", "err": err}
+        scp_timeout = timeout if timeout is not None else max(30, self.timeout)
         success, out, err = self.backend.scp_put(
-            local_path, remote_path, timeout=self.timeout
+            local_path, remote_path, timeout=scp_timeout
         )
         if not success:
             self._log(f"[SCP PUT ERROR] {err or out or 'unknown error'}")

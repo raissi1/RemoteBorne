@@ -98,5 +98,7 @@ class SSHQueue:
             finally:
                 self.busy = False
                 self.current_command = None
+                if critical and not callback:
+                    self.pause_monitoring = False
 
             self.q.task_done()

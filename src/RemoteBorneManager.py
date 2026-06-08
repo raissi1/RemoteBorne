@@ -1125,12 +1125,15 @@ class RemoteBorneApp:
                         heartbeat_failures = 0
 
                 # IMPORTANT : pas d’auto_retry ici, sinon double gestion
-                self.ssh.execute(
+                self.ssh_queue.execute(
                     "echo alive",
                     callback=cb,
                     timeout=self.ssh_timeout,
                     auto_retry=False,
                     log_errors=False,
+                    command_type="heartbeat",
+                    silent=True,
+                    label="Heartbeat",
                 )
 
         t = threading.Thread(target=worker, daemon=True)
@@ -1174,6 +1177,8 @@ class RemoteBorneApp:
     def update_temperature(self):
         if self._temp_update_inflight:
             return
+        if getattr(self.ssh_queue, "pause_monitoring", False):
+            return
         self._temp_update_inflight = True
         cmd = 'grep -E "PowerBoard T1|MainBoard T1" /var/aux/ChargerApp/derate.log | tail -1'
 
@@ -1204,17 +1209,22 @@ class RemoteBorneApp:
             finally:
                 self._temp_update_inflight = False
 
-        self.ssh.execute(
+        self.ssh_queue.execute(
             cmd,
             callback=cb,
             timeout=self.ssh_timeout,
             auto_retry=False,
             log_errors=False,
+            command_type="monitor_temp",
+            silent=True,
+            label="Monitor temperature",
         )
 
     # --- ADDED ---
     def update_soc(self):
         if self._soc_update_inflight:
+            return
+        if getattr(self.ssh_queue, "pause_monitoring", False):
             return
         self._soc_update_inflight = True
         cmd = 'grep -oiE "evPresentSoC: [0-9]+" /var/aux/ChargerApp/ChargerApp.log | tail -1'
@@ -1238,12 +1248,15 @@ class RemoteBorneApp:
             finally:
                 self._soc_update_inflight = False
 
-        self.ssh.execute(
+        self.ssh_queue.execute(
             cmd,
             callback=cb,
             timeout=self.ssh_timeout,
             auto_retry=False,
             log_errors=False,
+            command_type="monitor_soc",
+            silent=True,
+            label="Monitor battery SoC",
         )
 
     def update_monitor(self):
@@ -1494,7 +1507,16 @@ class RemoteBorneApp:
             else:
                 self._popup_error("Path", f"Remote folder not found:\n{target}")
 
-        self.ssh.execute(f'test -d "{target}"', callback=cb)
+        self.ssh_queue.execute(
+            f'test -d "{target}"',
+            callback=cb,
+            timeout=self.ssh_timeout,
+            auto_retry=False,
+            log_errors=False,
+            command_type="path_check",
+            silent=True,
+            label="Validate remote path",
+        )
 
     def _go_parent(self):
         if self.current_path.rstrip("/") == self.default_path.rstrip("/"):
@@ -1708,7 +1730,11 @@ class RemoteBorneApp:
         def worker():
             try:
                 with self._scp_lock:
-                    res = self.ssh.scp_get(remote_path, local)
+                    res = self.ssh.scp_get(
+                        remote_path,
+                        local,
+                        timeout=self.ssh_timeout,
+                    )
             except Exception as e:
                 res = {"success": False, "out": "", "err": str(e)}
 
@@ -1773,7 +1799,11 @@ class RemoteBorneApp:
                 tmp_local = tmp.name
             try:
                 with self._scp_lock:
-                    res = self.ssh.scp_get(remote_path, tmp_local)
+                    res = self.ssh.scp_get(
+                        remote_path,
+                        tmp_local,
+                        timeout=self.ssh_timeout,
+                    )
                 if not res["success"]:
                     raise RuntimeError((res["err"] or res["out"] or "").strip())
 
@@ -1910,7 +1940,11 @@ class RemoteBorneApp:
                 last_err = ""
                 for attempt in range(1, 4):
                     self.log(f"[UPLOAD] {filename} attempt {attempt}/3...")
-                    res = self.ssh.scp_put(local_path, remote_path)
+                    res = self.ssh.scp_put(
+                        local_path,
+                        remote_path,
+                        timeout=self.ssh_timeout,
+                    )
                     if res["success"]:
                         attempt_success = True
                         ok_count += 1
@@ -1984,11 +2018,43 @@ class RemoteBorneApp:
         def worker():
             with tempfile.NamedTemporaryFile(delete=False, suffix=".conf") as tmp:
                 tmp_local = tmp.name
-            with self._scp_lock:
-                res = self.ssh.scp_get(remote_path, tmp_local)
-            if not res["success"]:
-                err = (res["err"] or res["out"] or "").strip()
-                self.log(f"[EDIT ERROR] Download failed: {err}")
+            try:
+                with self._scp_lock:
+                    res = self.ssh.scp_get(
+                        remote_path,
+                        tmp_local,
+                        timeout=self.ssh_timeout,
+                    )
+                if not res["success"]:
+                    err = (res["err"] or res["out"] or "").strip()
+                    self.log(f"[EDIT ERROR] Download failed: {err}")
+                    try:
+                        os.remove(tmp_local)
+                    except Exception:
+                        pass
+                    try:
+                        if not self._closing and self.root.winfo_exists():
+                            self.root.after(
+                                0,
+                                lambda: self._popup_error("Edit", f"Download failed:\n{err}"),
+                            )
+                    except Exception:
+                        pass
+                    return
+                try:
+                    if not self._closing and self.root.winfo_exists():
+                        self.root.after(
+                            0,
+                            lambda: self._show_file_editor(remote_path, tmp_local),
+                        )
+                except Exception:
+                    try:
+                        os.remove(tmp_local)
+                    except Exception:
+                        pass
+            except Exception as e:
+                err = str(e)
+                self.log(f"[EDIT ERROR] {err}")
                 try:
                     os.remove(tmp_local)
                 except Exception:
@@ -1997,23 +2063,22 @@ class RemoteBorneApp:
                     if not self._closing and self.root.winfo_exists():
                         self.root.after(
                             0,
+                            lambda: self._popup_error("Edit", f"Download failed:\n{err}"),
+                        )
+                except Exception:
+                    pass
+            finally:
+                try:
+                    if not self._closing and self.root.winfo_exists():
+                        self.root.after(
+                            0,
                             lambda: (
                                 self.btn_edit.configure(
                                     state=("normal" if self.connected else "disabled"),
                                     text="Edit",
-                                ) if self.btn_edit else None,
-                                self._popup_error("Edit", f"Download failed:\n{err}"),
+                                ) if self.btn_edit else None
                             ),
                         )
-                except Exception:
-                    pass
-                return
-            try:
-                if not self._closing and self.root.winfo_exists():
-                    self.root.after(0, lambda: self._show_file_editor(remote_path, tmp_local))
-            except Exception:
-                try:
-                    os.remove(tmp_local)
                 except Exception:
                     pass
 
@@ -2206,7 +2271,11 @@ class RemoteBorneApp:
 
                 def upload_worker():
                     with self._scp_lock:
-                        res2 = self.ssh.scp_put(tmp_local, target_remote)
+                        res2 = self.ssh.scp_put(
+                            tmp_local,
+                            target_remote,
+                            timeout=self.ssh_timeout,
+                        )
 
                     def done():
                         if not res2["success"]:
@@ -2245,12 +2314,15 @@ class RemoteBorneApp:
                         return
                 do_upload()
 
-            self.ssh.execute(
+            self.ssh_queue.execute(
                 f'test -e "{target_remote}"',
                 callback=on_exists_check,
                 timeout=self.ssh_timeout,
                 auto_retry=False,
                 log_errors=False,
+                command_type="remote_exists_check",
+                silent=True,
+                label="Check remote file",
             )
 
         # Compat safety: older UI variants may still reference save_as_upload
