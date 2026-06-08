@@ -1902,21 +1902,12 @@ class RemoteBorneApp:
                     self.log(f"[UPLOAD ERROR] {filename}: failed after 3 attempts ({last_err})")
                 else:
                     check_cmd = f'test -f "{remote_path}" && wc -c < "{remote_path}"'
-                    size_evt = threading.Event()
-                    size_res = {"success": False, "out": "", "err": "timeout"}
-
-                    def _size_cb(r):
-                        size_res.update(r)
-                        size_evt.set()
-
-                    self.ssh.execute(
+                    size_res = self.ssh.execute_sync(
                         check_cmd,
-                        callback=_size_cb,
                         timeout=self.ssh_timeout,
                         auto_retry=False,
                         log_errors=False,
                     )
-                    size_evt.wait(self.ssh_timeout + 2)
                     local_size = os.path.getsize(local_path)
                     remote_size = (
                         int((size_res.get("out") or "0").strip() or 0)
