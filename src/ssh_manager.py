@@ -49,6 +49,31 @@ class SSHManager:
         self._connect_generation = 0
         self._cancel_reconnect_event = threading.Event()
 
+    def _is_transport_error(self, message: str) -> bool:
+        msg = (message or "").lower()
+        transport_markers = (
+            "network error",
+            "fatal error",
+            "connection timed out",
+            "timeout after",
+            "software caused connection abort",
+            "connection refused",
+            "connection reset",
+            "unable to open connection",
+            "host does not exist",
+            "server unexpectedly closed network connection",
+        )
+        return any(marker in msg for marker in transport_markers)
+
+    def _mark_transport_failure(self, message: str):
+        if not self._is_transport_error(message):
+            return
+        was_connected = self.connected
+        self.connected = False
+        if was_connected:
+            self._emit_ui("disconnected", None)
+        self._log(f"[SSH] Transport failure detected: {message}")
+
     # ------------------------------------------------------------------ #
     #  Callbacks
     # ------------------------------------------------------------------ #
@@ -256,6 +281,8 @@ class SSHManager:
         if self.connected and not force_if_connected:
             self._log("[SSH] Already connected, skip force_reconnect.")
             return
+        self._stop = False
+        self._cancel_reconnect_event.clear()
         with self._reconnect_lock:
             if self._reconnect_in_progress:
                 self._reconnect_requested = True
@@ -290,6 +317,7 @@ class SSHManager:
         self.user = user
         self.password = password
         self.port = port
+        self._stop = False
         self._connect_generation += 1
         self._cancel_reconnect_event.set()
         self.backend = PlinkBackend(host, user, password, port)
@@ -336,6 +364,8 @@ class SSHManager:
 
             if not success and log_errors:
                 self._log(f"[SSH CMD ERROR] {err or out or 'unknown error'}")
+            if not success:
+                self._mark_transport_failure(err or out or "")
 
             if callback:
                 try:
@@ -344,6 +374,35 @@ class SSHManager:
                     pass
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def execute_sync(
+        self,
+        cmd: str,
+        timeout: Optional[int] = None,
+        auto_retry: bool = True,
+        log_errors: bool = True,
+    ) -> dict:
+        """
+        Exécute une commande SSH de manière bloquante.
+
+        À utiliser uniquement depuis un thread de travail.
+        """
+        if not self.connected and auto_retry:
+            self._try_reconnect()
+        if not self.connected:
+            err_msg = "SSH not connected"
+            if log_errors:
+                self._log(f"[SSH CMD ERROR] {err_msg}")
+            return {"success": False, "out": "", "err": err_msg}
+
+        exec_timeout = timeout if timeout is not None else self.timeout
+        rc, out, err = self.backend.exec(cmd, timeout=exec_timeout)
+        success = (rc == 0)
+        if not success and log_errors:
+            self._log(f"[SSH CMD ERROR] {err or out or 'unknown error'}")
+        if not success:
+            self._mark_transport_failure(err or out or "")
+        return {"success": success, "out": out, "err": err}
 
     def ensure_remote_dir(self, remote_dir: str) -> dict:
         if not self.connected:
@@ -356,6 +415,7 @@ class SSHManager:
         success = (rc == 0)
         if not success:
             self._log(f"[SSH CMD ERROR] {err or out or 'unknown error'}")
+            self._mark_transport_failure(err or out or "")
         return {"success": success, "out": out, "err": err}
 
     # ------------------------------------------------------------------ #
@@ -373,6 +433,7 @@ class SSHManager:
         )
         if not success:
             self._log(f"[SCP GET ERROR] {err or out or 'unknown error'}")
+            self._mark_transport_failure(err or out or "")
         return {"success": success, "out": out, "err": err}
 
     def scp_put(self, local_path: str, remote_path: str) -> dict:
@@ -387,6 +448,7 @@ class SSHManager:
         )
         if not success:
             self._log(f"[SCP PUT ERROR] {err or out or 'unknown error'}")
+            self._mark_transport_failure(err or out or "")
         return {"success": success, "out": out, "err": err}
 
     # ------------------------------------------------------------------ #
@@ -394,6 +456,7 @@ class SSHManager:
     # ------------------------------------------------------------------ #
     def close(self):
         self._stop = True
+        self._cancel_reconnect_event.set()
         self.connected = False
         self._emit_ui("disconnected", None)
         self._log("[SSH] Manager closed.")

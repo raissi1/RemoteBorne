@@ -1,4 +1,4 @@
-import queue
+﻿import queue
 import threading
 
 
@@ -9,138 +9,77 @@ class SSHQueue:
         self.log = log or (lambda x: None)
 
         self.q = queue.Queue()
-
         self.running = True
-
+        self.lock = threading.Lock()
         self.busy = False
+        self.pause_monitoring = False
         self.current_command = None
 
-        self.pause_monitoring = False
-        self.reboot_in_progress = False
-
-        self.lock = threading.Lock()
-
-        self.worker = threading.Thread(
-            target=self._worker,
-            daemon=True
-        )
+        self.worker = threading.Thread(target=self._worker, daemon=True)
         self.worker.start()
 
-    # ==========================================================
-    # PUBLIC
-    # ==========================================================
-    def stop(self):
-        self.running = False
-
-        try:
-            self.q.put_nowait(None)
-        except Exception:
-            pass
-
-    def execute(
-        self,
-        cmd,
-        callback=None,
-        timeout=30,
-        command_type=None,
-        critical=False,
-        silent=True,
-    ):
-        self.q.put({
+    def execute(self, cmd, callback=None, **kwargs):
+        item = {
             "cmd": cmd,
             "callback": callback,
-            "timeout": timeout,
-            "critical": critical,
-            "type": command_type,
-            "silent": silent,
-        })
+            "timeout": kwargs.get("timeout"),
+            "critical": kwargs.get("critical", False),
+            "silent": kwargs.get("silent", False),
+            "command_type": kwargs.get("command_type"),
+            "auto_retry": kwargs.get("auto_retry", False),
+            "log_errors": kwargs.get("log_errors", False),
+        }
+        self.q.put(item)
 
-    # ==========================================================
-    # WORKER
-    # ==========================================================
+    def stop(self):
+        self.running = False
+        self.q.put(None)
+
     def _worker(self):
-
         while self.running:
+            item = self.q.get()
+            if item is None:
+                self.q.task_done()
+                break
 
             try:
-
-                item = self.q.get(timeout=0.5)
-                if item is None:
-                    break
-
-            except queue.Empty:
-                continue
-
-            try:
-
                 with self.lock:
-
                     self.busy = True
-
                     cmd = item["cmd"]
                     callback = item["callback"]
                     timeout = item["timeout"]
                     critical = item["critical"]
-                    silent = item.get("silent", False)
-
+                    silent = item["silent"]
+                    auto_retry = item["auto_retry"]
+                    log_errors = item["log_errors"]
                     self.current_command = cmd
-
                     if critical:
                         self.pause_monitoring = True
-
-                    # ==========================================
-                    # LOG START
-                    # ==========================================
                     if not silent:
                         self.log(f"[SSH QUEUE] START -> {cmd}")
-
-                    # ==========================================
-                    # EXECUTION SYNCHRONE
-                    # ==========================================
                     result = self.ssh.execute_sync(
                         cmd,
-                        timeout=timeout
+                        timeout=timeout,
+                        auto_retry=auto_retry,
+                        log_errors=log_errors,
                     )
-
-                    # ==========================================
-                    # LOG END
-                    # ==========================================
+                    result["stdout"] = result.get("out", "")
+                    result["stderr"] = result.get("err", "")
                     if not silent:
                         self.log(f"[SSH QUEUE] END -> {cmd}")
+                    self.busy = False
+                    self.current_command = None
 
-                    # ==========================================
-                    # CALLBACK UI SAFE
-                    # ==========================================
-                    if callback:
-
-                        try:
-
-                            if (
-                                self.root is not None
-                                and self.root.winfo_exists()
-                            ):
-
-                                self.root.after(
-                                    0,
-                                    lambda r=result: callback(r)
-                                )
-
-                        except Exception as e:
-
-                            self.log(
-                                f"[SSH QUEUE CALLBACK ERROR] {e}"
-                            )
+                if callback:
+                    try:
+                        if self.root is not None and self.root.winfo_exists():
+                            self.root.after(0, lambda r=result: callback(r))
+                    except Exception as e:
+                        self.log(f"[SSH QUEUE CALLBACK ERROR] {e}")
 
             except Exception as e:
-
                 self.log(f"[SSH QUEUE ERROR] {e}")
-
-            finally:
-
                 self.busy = False
                 self.current_command = None
 
-                try:
-                    self.q.task_done()
-                except Exception:
-                    pass
+            self.q.task_done()
