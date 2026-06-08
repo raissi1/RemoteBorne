@@ -44,9 +44,27 @@ class EnergyManagerWindow:
             self.win.focus_force()
         except Exception:
             pass
-        self.win.geometry("1000x680")
-        self.win.minsize(900, 580)
-        self._center_on_parent(1000, 680)
+        # ------------------------------------------------------------
+        # Taille fenêtre principale
+        # ------------------------------------------------------------
+        window_width = 1280
+        window_height = 820
+
+        self.win.geometry(
+            f"{window_width}x{window_height}"
+        )
+
+        # taille minimale
+        self.win.minsize(1100, 720)
+
+        # centrage
+        self._center_on_parent(
+            window_width,
+            window_height
+        )
+
+        # autorise resize
+        self.win.resizable(True, True)
 
         # Champs P/Q & CosPhi
         self.p_var = tk.StringVar()
@@ -128,18 +146,25 @@ class EnergyManagerWindow:
         main.pack(fill="both", expand=True, padx=14, pady=14)
 
         # Layout général : zone top + zone bas (history/monitor) + footer
+        # ==========================================================
+        # GRID RESPONSIVE
+        # ==========================================================
+        main.columnconfigure(0, weight=4)
+        main.columnconfigure(1, weight=3)
+
+        # zone historique/monitor extensible
         main.rowconfigure(1, weight=1)
-        main.columnconfigure(0, weight=3)
-        main.columnconfigure(1, weight=2)
 
         top = ttk.Frame(main)
         top.grid(row=0, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
 
         bottom_left = ttk.Frame(main)
         bottom_left.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
+        bottom_left.grid_propagate(False)
 
         bottom_right = ttk.Frame(main)
         bottom_right.grid(row=1, column=1, sticky="nsew")
+        bottom_right.grid_propagate(False)
 
         self._build_section_pq_cosphi(top)
         self._build_section_history(bottom_left)
@@ -164,7 +189,7 @@ class EnergyManagerWindow:
         title = ttk.Label(
             frm,
             text="Mode P/Q et CosPhi",
-            font=("Segoe UI", 22, "bold"),
+            font=("Segoe UI", 18, "bold"),
             anchor="center",
         )
         title.pack(pady=10)
@@ -265,7 +290,8 @@ class EnergyManagerWindow:
     def _build_section_history(self, parent):
         frm = ttk.Labelframe(parent, text="Historique des commandes", padding=10)
         frm.pack(fill="both", expand=True)
-
+        
+        
         columns = ("timestamp", "mode", "cmd", "status")
         self.table = ttk.Treeview(
             frm, columns=columns, show="headings", bootstyle="info"
@@ -277,7 +303,7 @@ class EnergyManagerWindow:
 
         self.table.column("timestamp", width=150, anchor="w")
         self.table.column("mode", width=80, anchor="center")
-        self.table.column("cmd", width=400, anchor="w")
+        self.table.column("cmd", width=520, anchor="w")
         self.table.column("status", width=120, anchor="center")
 
         self.table.pack(fill="both", expand=True, pady=(0, 10))
@@ -298,8 +324,14 @@ class EnergyManagerWindow:
     def _build_section_monitor(self, parent):
         frm = ttk.Labelframe(parent, text="Monitor Energy Manager", padding=10)
         frm.pack(fill="both", expand=True)
+        
 
-        self.monitor_text = tk.Text(frm, height=12, font=("Consolas", 10))
+        self.monitor_text = tk.Text(
+            frm,
+            height=12,
+            font=("Consolas", 10),
+            wrap="word",
+        )
         self.monitor_text.pack(fill="both", expand=True, pady=(0, 10))
 
         btns = ttk.Frame(frm)
@@ -340,7 +372,14 @@ class EnergyManagerWindow:
             f"\"$EM_TOOL\" -S -s ocpp -a "
             f"--power {p_val} --reactive-power {q_val} -m CentralSetpoint"
         )
-        self.execute_energy_cmd("P/Q", cmd)
+        self.execute_energy_cmd(
+            "P/Q",
+            cmd,
+            display_text=(
+                f"Active Power : {p_val} W\n"
+                f"Reactive Power : {q_val} VAR"
+            )
+        )
 
     def calculate_q_from_cosphi(self):
         p_str = self.p_cosphi_var.get().strip()
@@ -363,6 +402,7 @@ class EnergyManagerWindow:
         self.q_auto_var.set(str(q_val_rounded))
 
     def send_cosphi(self):
+        self.calculate_q_from_cosphi()
         p_str = self.p_cosphi_var.get().strip()
         cosphi_str = self.cosphi_var.get().strip()
         q_str = self.q_auto_var.get().strip()
@@ -388,30 +428,99 @@ class EnergyManagerWindow:
             f"\"$EM_TOOL\" -S -s ocpp -a "
             f"--power {p_val} -m CentralSetpoint) >/dev/null 2>&1 &"
         )
-        self.execute_energy_cmd("CosPhi", cmd)
+        self.execute_energy_cmd(
+            "CosPhi",
+            cmd,
+            display_text=(
+                f"Active Power : {p_val} W\n"
+                f"CosPhi : {cosphi_val}\n"
+                f"Reactive Power : {q_val} VAR"
+            )
+        )
 
     # ------------------------------------------------------------
     # FONCTION COMMUNE D’ENVOI
     # ------------------------------------------------------------
-    def execute_energy_cmd(self, mode, cmd):
+  
+    def execute_energy_cmd(
+        self,
+        mode,
+        cmd,
+        display_text=None,
+    ):
+        """
+        Envoi commande Energy Manager.
+        """
+
         if not self.ssh or not getattr(self.ssh, "connected", False):
-            self._popup_error("Erreur SSH", "Non connecté à la borne.")
+
+            self._popup_error(
+                "Erreur SSH",
+                "Non connecté à la borne."
+            )
+
             return
 
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
 
+        # texte affiché utilisateur
+        pretty_cmd = display_text or mode
+
         def callback(res):
-            status = "OK" if res["success"] else f"ERR: {res['err']}"
-            self.history.append((timestamp, mode, cmd, status))
+
+            status = (
+                "OK"
+                if res["success"]
+                else f"ERR"
+            )
+
+            # ----------------------------------------------------
+            # HISTORIQUE
+            # ----------------------------------------------------
+            self.history.append(
+                (
+                    timestamp,
+                    mode,
+                    pretty_cmd,
+                    status,
+                )
+            )
+
             self.update_history_table()
+
+            # ----------------------------------------------------
+            # SUCCESS
+            # ----------------------------------------------------
             if res["success"]:
-                self._popup_info("Succès", f"Commande envoyée :\n{cmd}")
+
+                self._popup_info(
+                    "Energy Manager",
+                    (
+                        "Commande envoyée avec succès.\n\n"
+                        f"{pretty_cmd}"
+                    )
+                )
+
+            # ----------------------------------------------------
+            # ERROR
+            # ----------------------------------------------------
             else:
-                err = res["err"] or res["out"] or "Erreur inconnue"
-                self._popup_error("Erreur", f"Erreur lors de l’envoi.\n{err}")
 
-        self.ssh.execute(cmd, callback=callback)
+                err = (
+                    res["err"]
+                    or res["out"]
+                    or "Erreur inconnue"
+                )
 
+                self._popup_error(
+                    "Erreur Energy Manager",
+                    err
+                )
+
+        self.ssh.execute(
+            cmd,
+            callback=callback,
+        )
     # ------------------------------------------------------------
     # HISTORIQUE
     # ------------------------------------------------------------

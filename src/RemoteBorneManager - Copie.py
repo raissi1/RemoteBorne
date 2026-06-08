@@ -891,83 +891,35 @@ class RemoteBorneApp:
         )
         self.btn_reboot.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
 
-        # --- TEMPERATURE / DERATING ------------------------------------
+        # --- ADDED ---
         derate_frame = ttk.Labelframe(
-            em_frame,
-            text="Temperature / Derating",
-            padding=5,
+            em_frame, text="Temperature / Derating", padding=5
         )
         derate_frame.grid(
-            row=1,
-            column=1,
-            sticky="nsew",
-            padx=(4, 0),
-            pady=(4, 0),
+            row=1, column=1, sticky="nsew", padx=(4, 0), pady=(4, 0)
         )
-
         derate_frame.grid_columnconfigure(0, weight=1)
+        derate_frame.grid_columnconfigure(1, weight=1)
 
-        # ==============================================================
-        # TEMPERATURE LABEL
-        # ==============================================================
-        self.temp_label = ttk.Label(
-            derate_frame,
-            textvariable=self.temp_label_var,
-            justify="left",
-            anchor="w",
-        )
+        # Labels
+        self.temp_label = ttk.Label(derate_frame, textvariable=self.temp_label_var)
+        self.temp_label.grid(row=0, column=0, sticky="w", padx=2, pady=2)
 
-        self.temp_label.grid(
-            row=0,
-            column=0,
-            sticky="w",
-            padx=2,
-            pady=(2, 0),
-        )
+        self.soc_label = ttk.Label(derate_frame, textvariable=self.soc_label_var)
+        self.soc_label.grid(row=0, column=1, sticky="w", padx=2, pady=2)
 
-        # ==============================================================
-        # SOC LABEL
-        # ==============================================================
-        self.soc_label = ttk.Label(
-            derate_frame,
-            textvariable=self.soc_label_var,
-            justify="left",
-            anchor="w",
-        )
-
-        self.soc_label.grid(
-            row=1,
-            column=0,
-            sticky="w",
-            padx=2,
-            pady=(4, 0),
-        )
-
-        # ==============================================================
-        # SMALL REFRESH BUTTON
-        # ==============================================================
+        # 🔥 PETIT BOUTON SOUS TEMP (colonne 0 uniquement)
         style = ttk.Style()
-
-        style.configure(
-            "Small.TButton",
-            padding=(3, 1),
-        )
+        style.configure("Small.TButton", padding=(3, 1))
 
         self.btn_monitor = ttk.Button(
             derate_frame,
             text="↻",
             style="Small.TButton",
             width=3,
-            command=self.update_monitor,
+            command=self.update_monitor
         )
-
-        self.btn_monitor.grid(
-            row=2,
-            column=0,
-            sticky="w",
-            padx=2,
-            pady=(6, 2),
-        )
+        self.btn_monitor.grid(row=1, column=0, sticky="w", padx=2, pady=(2, 2))
         # ----- BOTTOM : LOGS -----
         log_frame = ttk.Labelframe(main, text="Logs", padding=5)
         log_frame.grid(
@@ -1331,17 +1283,16 @@ class RemoteBorneApp:
 
         self._temp_update_inflight = True
 
-        # ==========================================================
-        # READ LAST DERATE LINE
-        # ==========================================================
-        cmd = 'tail -1 /var/aux/ChargerApp/derate.log'
+        cmd = (
+            'grep -E "PowerBoard T1|MainBoard T1" '
+            '/var/aux/ChargerApp/derate.log | tail -1'
+        )
 
         def cb(res):
 
             try:
 
                 if not res.get("success"):
-
                     self._temp_update_inflight = False
                     return
 
@@ -1351,111 +1302,33 @@ class RemoteBorneApp:
                     + (res.get("err") or "")
                 )
 
-                # ======================================================
-                # PARSE RELAY TEMPERATURES
-                # ======================================================
-                relay_t1 = re.search(
-                    r"Relay T1:\s*(\d+)",
-                    output
+                match = re.search(
+                    r"(PowerBoard|MainBoard)\s*T1[^0-9-]*(-?\d+)",
+                    output,
+                    flags=re.IGNORECASE,
                 )
 
-                relay_t2 = re.search(
-                    r"Relay T2:\s*(\d+)",
-                    output
-                )
-
-                relay_t3 = re.search(
-                    r"Relay T3:\s*(\d+)",
-                    output
-                )
-
-                relay_t4 = re.search(
-                    r"Relay T4:\s*(\d+)",
-                    output
-                )
-
-                # ======================================================
-                # BUILD DISPLAY TEXT
-                # ======================================================
-                temps = []
-
-                values = []
-
-                if relay_t1:
-
-                    val = int(relay_t1.group(1))
-
-                    temps.append(f"T1 {val}°")
-
-                    values.append(val)
-
-                if relay_t2:
-
-                    val = int(relay_t2.group(1))
-
-                    temps.append(f"T2:{val}")
-
-                    values.append(val)
-
-                if relay_t3:
-
-                    val = int(relay_t3.group(1))
-
-                    temps.append(f"T3:{val}")
-
-                    values.append(val)
-
-                if relay_t4:
-
-                    val = int(relay_t4.group(1))
-
-                    temps.append(f"T4:{val}")
-
-                    values.append(val)
-
-                max_temp = max(values) if values else None
+                temp = int(match.group(2)) if match else None
 
                 def apply_ui():
 
                     try:
 
-                        if not temps:
+                        if temp is None:
 
-                            self.temp_label_var.set(
-                                "Temp: --"
-                            )
-
-                            self.temp_label.configure(
-                                foreground=""
-                            )
+                            self.temp_label_var.set("Temp: --")
+                            self.temp_label.configure(foreground="")
 
                         else:
 
-                            txt = (
-                                "Relay: "
-                                + " | ".join(temps)
-                            )
-
-                            self.temp_label_var.set(txt)
-
-                            if max_temp is None:
-
-                                color = ""
-
-                            elif max_temp >= 60:
-
-                                color = "red"
-
-                            elif max_temp >= 50:
-
-                                color = "orange"
-
-                            else:
-
-                                color = "green"
+                            self.temp_label_var.set(f"Temp: {temp}")
 
                             self.temp_label.configure(
-                                foreground=color
+                                foreground=(
+                                    "red"
+                                    if temp > 80
+                                    else "green"
+                                )
                             )
 
                     finally:
@@ -1464,15 +1337,8 @@ class RemoteBorneApp:
 
                 try:
 
-                    if (
-                        not self._closing
-                        and self.root.winfo_exists()
-                    ):
-
-                        self.root.after(
-                            0,
-                            apply_ui
-                        )
+                    if (not self._closing and self.root.winfo_exists()):
+                        self.root.after(0, apply_ui)
 
                 except Exception:
 
@@ -1481,7 +1347,6 @@ class RemoteBorneApp:
             except Exception as e:
 
                 self._temp_update_inflight = False
-
                 self.log(f"[TEMP ERROR] {e}")
 
         self.ssh.execute(
