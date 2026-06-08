@@ -1584,15 +1584,32 @@ class RemoteBorneApp:
         except Exception:
             return
 
+        item = self._get_selected_item()
+        if not item or item.startswith("[.]"):
+            return
+        is_dir = item.endswith("/")
+
         menu = tk.Menu(self.root, tearoff=0)
+        if not is_dir:
+            menu.add_command(
+                label="Edit", command=lambda: self._edit_file_from_context()
+            )
+            menu.add_command(
+                label="Download", command=lambda: self._download_from_context()
+            )
+            menu.add_command(
+                label="Print", command=lambda: self._print_from_context()
+            )
+            menu.add_separator()
+            menu.add_command(
+                label="Copy to GridCodes.properties",
+                command=lambda: self.copy_selected_to_gridcodes(),
+            )
+            menu.add_separator()
+
         menu.add_command(
-            label="Edit", command=lambda: self._edit_file_from_context()
-        )
-        menu.add_command(
-            label="Download", command=lambda: self._download_from_context()
-        )
-        menu.add_command(
-            label="Print", command=lambda: self._print_from_context()
+            label="Delete",
+            command=lambda: self.delete_selected_remote()
         )
         menu.post(event.x_root, event.y_root)
 
@@ -1647,6 +1664,60 @@ class RemoteBorneApp:
             self._popup_warning("GridCodes", "Please select a file.")
             return None
         return posixpath.join(self.current_path, item)
+
+    def delete_selected_remote(self):
+        if self._closing:
+            return
+        if not self.connected:
+            self._popup_warning("Delete", "Not connected.")
+            return
+
+        item = self._get_selected_item()
+        if not item or item.startswith("[.]"):
+            return
+
+        remote_path = self._join_remote(self.current_path, item.rstrip("/"))
+        is_dir = item.endswith("/")
+        target_type = "directory" if is_dir else "file"
+
+        confirm = messagebox.askyesno(
+            "Confirm Delete",
+            (
+                f"Delete this {target_type}?\n\n"
+                f"{remote_path}\n\n"
+                "This action cannot be undone."
+            ),
+            parent=self.root,
+        )
+        if not confirm:
+            return
+
+        cmd = f'rm -rf "{remote_path}"' if is_dir else f'rm -f "{remote_path}"'
+        self.log(f"[DELETE] {remote_path}")
+
+        def cb(res):
+            if self._closing:
+                return
+            if res.get("success"):
+                self.log(f"[DELETE] Success: {remote_path}")
+                try:
+                    self.root.after(0, self.refresh_file_list)
+                except Exception:
+                    pass
+                return
+
+            err = res.get("err") or res.get("out") or "Unknown error"
+            self.log(f"[DELETE ERROR] {err}")
+            self._popup_error("Delete Error", err)
+
+        self.ssh_queue.execute(
+            cmd,
+            callback=cb,
+            timeout=self.ssh_timeout,
+            command_type="delete",
+            label="Delete remote item",
+            silent=False,
+        )
 
     def copy_selected_to_gridcodes(self):
         if not self.connected:
