@@ -1177,8 +1177,6 @@ class RemoteBorneApp:
     def update_temperature(self):
         if self._temp_update_inflight:
             return
-        if getattr(self.ssh_queue, "pause_monitoring", False):
-            return
         self._temp_update_inflight = True
         cmd = 'grep -E "PowerBoard T1|MainBoard T1" /var/aux/ChargerApp/derate.log | tail -1'
 
@@ -1209,22 +1207,17 @@ class RemoteBorneApp:
             finally:
                 self._temp_update_inflight = False
 
-        self.ssh_queue.execute(
+        self.ssh.execute(
             cmd,
             callback=cb,
             timeout=self.ssh_timeout,
             auto_retry=False,
             log_errors=False,
-            command_type="monitor_temp",
-            silent=True,
-            label="Monitor temperature",
         )
 
     # --- ADDED ---
     def update_soc(self):
         if self._soc_update_inflight:
-            return
-        if getattr(self.ssh_queue, "pause_monitoring", False):
             return
         self._soc_update_inflight = True
         cmd = 'grep -oiE "evPresentSoC: [0-9]+" /var/aux/ChargerApp/ChargerApp.log | tail -1'
@@ -1248,15 +1241,12 @@ class RemoteBorneApp:
             finally:
                 self._soc_update_inflight = False
 
-        self.ssh_queue.execute(
+        self.ssh.execute(
             cmd,
             callback=cb,
             timeout=self.ssh_timeout,
             auto_retry=False,
             log_errors=False,
-            command_type="monitor_soc",
-            silent=True,
-            label="Monitor battery SoC",
         )
 
     def update_monitor(self):
