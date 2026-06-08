@@ -2624,7 +2624,7 @@ class RemoteBorneApp:
                 win.transient(self.root)
                 win.grab_set()
                 win.focus_force()
-                self._center_toplevel(win, 900, 600, parent=self.root)
+                win.update_idletasks()
             except Exception:
                 pass
         except Exception as e:
