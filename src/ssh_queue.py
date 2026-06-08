@@ -25,11 +25,22 @@ class SSHQueue:
             "timeout": kwargs.get("timeout"),
             "critical": kwargs.get("critical", False),
             "silent": kwargs.get("silent", False),
+            "label": kwargs.get("label"),
             "command_type": kwargs.get("command_type"),
             "auto_retry": kwargs.get("auto_retry", False),
             "log_errors": kwargs.get("log_errors", False),
         }
         self.q.put(item)
+
+    def _display_label(self, item):
+        label = (item.get("label") or "").strip()
+        if label:
+            return label
+        command_type = (item.get("command_type") or "").strip()
+        if command_type:
+            return command_type.replace("_", " ").title()
+        cmd = (item.get("cmd") or "").strip()
+        return cmd if len(cmd) <= 80 else f"{cmd[:77]}..."
 
     def stop(self):
         self.running = False
@@ -52,13 +63,14 @@ class SSHQueue:
                     timeout = item["timeout"]
                     critical = item["critical"]
                     silent = item["silent"]
+                    label = self._display_label(item)
                     auto_retry = item["auto_retry"]
                     log_errors = item["log_errors"]
                     self.current_command = cmd
                     if critical:
                         self.pause_monitoring = True
                     if not silent:
-                        self.log(f"[SSH QUEUE] START -> {cmd}")
+                        self.log(f"[SSH QUEUE] START -> {label}")
                     result = self.ssh.execute_sync(
                         cmd,
                         timeout=timeout,
@@ -68,7 +80,7 @@ class SSHQueue:
                     result["stdout"] = result.get("out", "")
                     result["stderr"] = result.get("err", "")
                     if not silent:
-                        self.log(f"[SSH QUEUE] END -> {cmd}")
+                        self.log(f"[SSH QUEUE] END -> {label}")
 
                 if callback:
                     try:

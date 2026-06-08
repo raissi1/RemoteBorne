@@ -1675,6 +1675,7 @@ class RemoteBorneApp:
             callback=_copy_cb,
             timeout=self.ssh_timeout,
             critical=True,
+            label="Copy GridCodes.properties",
             silent=False,
         )
 
@@ -2346,6 +2347,7 @@ class RemoteBorneApp:
             remote_cmd,
             callback=cb,
             timeout=self.ssh_timeout,
+            label="Power setpoint",
             silent=False,
         )
 
@@ -2449,6 +2451,7 @@ class RemoteBorneApp:
             remote_cmd,
             callback=cb,
             timeout=self.ssh_timeout,
+            label="CosPhi setpoint",
             silent=False,
         )
 
@@ -2510,6 +2513,7 @@ class RemoteBorneApp:
             cmd,
             callback=cb,
             timeout=max(60, self.ssh_timeout),
+            label="Restart services",
             silent=False,
         )
 
@@ -2536,6 +2540,7 @@ class RemoteBorneApp:
             callback=cb,
             timeout=15,
             auto_retry=False,
+            label="Reboot device",
             silent=False,
         )
 
