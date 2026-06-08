@@ -237,7 +237,7 @@ class RemoteBorneApp:
         # ---------- ROOT / STYLE ----------
         # Fenêtre ttkbootstrap, thème "flatly" comme V7
         self.root = ttk.Window(themename=self.current_theme)
-        self.root.title("Remote Borne Control Interface - RNA")
+        self.root.title("Remote Borne Manager - RBM")
         self._set_app_icon()
 
         try:
@@ -600,13 +600,13 @@ class RemoteBorneApp:
         center_fr.grid(row=0, column=1, sticky="nsew")
         ttk.Label(
             center_fr,
-            text="Remote Borne Control Interface",
+            text="Remote Borne Manager",
             font=("Segoe UI", 16, "bold"),
             anchor="center",
         ).pack(fill="x")
         ttk.Label(
             center_fr,
-            text="RNA",
+            text="RBM",
             font=("Segoe UI", 8, "italic"),
             anchor="center",
         ).pack(fill="x")
@@ -618,7 +618,7 @@ class RemoteBorneApp:
 
         # ----- LEFT : FILE BROWSER -----
         left = ttk.Labelframe(
-            main, text=f"GridCodes browser ({self.default_path})", padding=5
+            main, text=f"GridCodes Browser ({self.default_path})", padding=5
         )
         left.grid(row=1, column=0, rowspan=2, sticky="nsew", padx=(10, 5), pady=5)
 
@@ -3057,8 +3057,8 @@ class RemoteBorneApp:
         """Ouvre la fenêtre Debug Logs seulement si SSH connecté."""
         if not self.connected:
             self._popup_warning(
-                "SSH non connecté",
-                "Veuillez vous connecter à la borne avant d’ouvrir les logs de debug."
+                "Debug logs",
+                "Please connect before opening Debug logs.",
             )
             return
 
@@ -3076,10 +3076,10 @@ class RemoteBorneApp:
     def _show_about(self):
         self._popup_info(
             "About",
-            "Remote Borne Control Interface\n"
-            "Author: Nabil (RNA)\n"
+            "Remote Borne Manager (RBM)\n"
+            "Author: Nabil RAISSI\n"
             "Backend: plink.exe / pscp.exe\n"
-            "No WSL, no paramiko.",
+            "SSH queue, SCP protection and integrated terminal included.",
         )
 
     # ==================================================================
