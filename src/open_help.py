@@ -4,29 +4,13 @@ import sys
 import tkinter as tk
 from tkinter import ttk
 
-
-def _center_over_parent(parent, win, w=980, h=760):
-    if parent is not None:
-        try:
-            parent.update_idletasks()
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-            if pw > 1 and ph > 1:
-                x = px + (pw - w) // 2
-                y = py + (ph - h) // 2
-                win.geometry(f"{w}x{h}+{max(x, 0)}+{max(y, 0)}")
-                return
-        except Exception:
-            pass
-
-    win.update_idletasks()
-    sw = win.winfo_screenwidth()
-    sh = win.winfo_screenheight()
-    x = (sw - w) // 2
-    y = (sh - h) // 2
-    win.geometry(f"{w}x{h}+{max(x, 0)}+{max(y, 0)}")
+try:
+    from .utils_ui import center_window
+except ImportError:
+    try:
+        from utils_ui import center_window
+    except ImportError:
+        from src.utils_ui import center_window
 
 
 def open_help(parent=None):
@@ -51,8 +35,8 @@ def open_help(parent=None):
     except Exception:
         pass
 
-    _center_over_parent(parent, win, 980, 760)
-    win.after(30, lambda: _center_over_parent(parent, win, 980, 760))
+    center_window(parent, win, 980, 760)
+    win.after(30, lambda: center_window(parent, win, 980, 760))
 
     def _close():
         try:
@@ -79,6 +63,7 @@ def open_help(parent=None):
     search_entry = ttk.Entry(top, textvariable=search_var, width=35)
     search_entry.pack(side="right", padx=(5, 0))
     search_entry.focus_set()
+    ttk.Label(top, text="Find:").pack(side="right")
 
     text_frame = ttk.Frame(main)
     text_frame.pack(fill="both", expand=True)
@@ -143,7 +128,11 @@ def open_help(parent=None):
     text.insert(
         "end",
         "The Connect button opens the SSH session and initializes the remote interface. Disconnect closes the session and prevents an immediate auto reconnect.\n\n"
-        "When the IP address, port, or credentials are changed from Network config, the application saves the new settings and restarts cleanly. This replaces the older hot reconnect approach.\n",
+        "When the IP address, port, or credentials are changed from Network config, the application saves the new settings and restarts cleanly. This replaces the older hot reconnect approach.\n\n"
+        "Practical notes:\n"
+        "- if PuTTY / Plink reports a host key mismatch, verify the charger identity before accepting the new key\n"
+        "- Network config also stores the default GridCodes paths used by the browser and editor\n"
+        "- after an application restart, reconnect normally from the main window\n",
         "normal",
     )
 
@@ -174,7 +163,8 @@ def open_help(parent=None):
         "- Save and Save As\n"
         "- LF line ending normalization\n\n"
         "Download, Print, and editor file loading run in background workers to avoid UI freezes.\n\n"
-        "Upload includes a remote file size verification step.\n",
+        "Upload includes a remote file size verification step.\n"
+        "If a file already exists remotely, RBM asks for confirmation before overwrite.\n",
         "normal",
     )
 
@@ -182,7 +172,8 @@ def open_help(parent=None):
     text.insert(
         "end",
         "The Temperature / Derating panel shows charger temperature and Battery SoC.\n"
-        "The ↻ button performs an immediate manual refresh of both values.\n",
+        "The manual refresh button performs an immediate refresh of both values.\n"
+        "Automatic updates continue while the SSH session remains healthy.\n",
         "normal",
     )
 
@@ -198,7 +189,8 @@ def open_help(parent=None):
         "- Active Power P\n"
         "- CosPhi\n"
         "- Calculate Q\n"
-        "- Send CosPhi\n\n",
+        "- Send CosPhi\n\n"
+        "The lower area provides command history export and a service monitor / restart panel.\n\n",
         "normal",
     )
     text.insert("end", "Q = |P| * tan(acos(CosPhi))\n", "code")
@@ -214,6 +206,11 @@ def open_help(parent=None):
         "- help\n"
         "- simple shell commands\n"
         "- Python and shell script execution\n\n"
+        "Typical safe examples:\n"
+        "- pwd\n"
+        "- ls\n"
+        "- cd /etc/iotecha/configs/GridCodes\n"
+        "- python FR_cosphi_to_Q.py\n\n"
         "Blocked interactive commands:\n"
         "- vim\n"
         "- vi\n"
@@ -230,6 +227,10 @@ def open_help(parent=None):
     text.insert(
         "end",
         "The Debug logs menu opens the remote log follow window.\n\n"
+        "Debug log window features:\n"
+        "- live follow of the main remote logs\n"
+        "- local save of the captured output\n"
+        "- safer close behavior while readers are still stopping\n\n"
         "Available maintenance actions:\n"
         "- Restart services\n"
         "- Reboot device\n"
@@ -280,6 +281,10 @@ def open_help(parent=None):
 
     bottom = ttk.Frame(main)
     bottom.pack(fill="x", pady=(10, 0))
+    ttk.Label(
+        bottom,
+        text="Tip: press Enter in the search box to highlight matching text.",
+    ).pack(side="left", padx=(0, 12))
     ttk.Button(bottom, text="Find", command=find_text).pack(side="left")
     ttk.Button(bottom, text="Close", command=_close).pack(side="right")
 
