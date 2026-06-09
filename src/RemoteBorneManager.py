@@ -1188,12 +1188,10 @@ class RemoteBorneApp:
         if getattr(self.ssh_queue, "pause_monitoring", False):
             return
         self._temp_update_inflight = True
-        cmd = 'grep -E "PowerBoard T1|MainBoard T1" /var/aux/ChargerApp/derate.log | tail -1'
+        cmd = 'grep -E "PowerBoard T1|MainBoard T1" /var/aux/ChargerApp/derate.log | tail -1 || true'
 
         def cb(res):
             try:
-                if not res.get("success"):
-                    return
                 output = (
                     (res.get("stdout") or res.get("out") or "")
                     + "\n"
@@ -1238,12 +1236,10 @@ class RemoteBorneApp:
         if getattr(self.ssh_queue, "pause_monitoring", False):
             return
         self._soc_update_inflight = True
-        cmd = 'grep -oiE "evPresentSoC: [0-9]+" /var/aux/ChargerApp/ChargerApp.log | tail -1'
+        cmd = 'grep -oiE "evPresentSoC: [0-9]+" /var/aux/ChargerApp/ChargerApp.log | tail -1 || true'
 
         def cb(res):
             try:
-                if not res.get("success"):
-                    return
                 output = (
                     (res.get("stdout") or res.get("out") or "")
                     + "\n"

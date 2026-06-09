@@ -55,6 +55,7 @@ class SSHQueue:
 
             critical = False
             callback = None
+            result = None
             try:
                 with self.lock:
                     self.busy = True
@@ -82,7 +83,20 @@ class SSHQueue:
                     if not silent:
                         self.log(f"[SSH QUEUE] END -> {label}")
 
-                if callback:
+            except Exception as e:
+                self.log(f"[SSH QUEUE ERROR] {e}")
+                result = {
+                    "success": False,
+                    "out": "",
+                    "err": str(e),
+                    "stdout": "",
+                    "stderr": str(e),
+                    "returncode": None,
+                }
+                if critical:
+                    self.pause_monitoring = False
+            finally:
+                if callback and result is not None:
                     try:
                         if self.root is not None and self.root.winfo_exists():
                             self.root.after(0, lambda r=result: callback(r))
@@ -90,12 +104,6 @@ class SSHQueue:
                         self.log(f"[SSH QUEUE CALLBACK ERROR] {e}")
                 elif critical:
                     self.pause_monitoring = False
-
-            except Exception as e:
-                self.log(f"[SSH QUEUE ERROR] {e}")
-                if critical:
-                    self.pause_monitoring = False
-            finally:
                 self.busy = False
                 self.current_command = None
                 if critical and not callback:
