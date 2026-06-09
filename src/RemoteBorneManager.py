@@ -1083,7 +1083,7 @@ class RemoteBorneApp:
         self._alive_thread_started = True
 
         def worker():
-            last_reconnect_try = time.time()
+            last_reconnect_try = 0.0
             heartbeat_failures = 0
             monitor_interval = max(10, self.alive_interval)
             while not self._alive_stop:
