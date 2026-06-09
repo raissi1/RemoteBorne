@@ -303,8 +303,6 @@ class RemoteBorneApp:
         self.soc_label_var = tk.StringVar(value="Battery SoC: --")
         self._monitor_stop = False
         self._monitor_thread_started = False
-        self._temp_update_inflight = False
-        self._soc_update_inflight = False
         self._last_user_command_ts = time.time()
         self._last_monitor_poll_ts = 0.0
         self._refresh_running = False
@@ -1165,7 +1163,6 @@ class RemoteBorneApp:
                     and (time.time() - self._last_monitor_poll_ts) >= 180
                 ):
                     self.update_temperature()
-                    time.sleep(1)
                     self.update_soc()
                     self._last_monitor_poll_ts = time.time()
                 time.sleep(5)
@@ -1183,41 +1180,36 @@ class RemoteBorneApp:
 
     # --- ADDED ---
     def update_temperature(self):
-        if self._temp_update_inflight:
-            return
         if getattr(self.ssh_queue, "pause_monitoring", False):
             return
-        self._temp_update_inflight = True
         cmd = 'grep -E "PowerBoard T1|MainBoard T1" /var/aux/ChargerApp/derate.log | tail -1 || true'
 
         def cb(res):
+            output = (
+                (res.get("stdout") or res.get("out") or "")
+                + "\n"
+                + (res.get("stderr") or res.get("err") or "")
+            )
+            match = re.search(
+                r"(PowerBoard|MainBoard)\s*T1[^0-9-]*(-?\d+)",
+                output,
+                flags=re.IGNORECASE,
+            )
+            temp = int(match.group(2)) if match else None
+
+            def apply_ui():
+                if temp is None:
+                    self.temp_label_var.set("Temp: --")
+                    self.temp_label.configure(foreground="")
+                else:
+                    self.temp_label_var.set(f"Temp: {temp}")
+                    self.temp_label.configure(foreground=("red" if temp > 80 else "green"))
+
             try:
-                output = (
-                    (res.get("stdout") or res.get("out") or "")
-                    + "\n"
-                    + (res.get("stderr") or res.get("err") or "")
-                )
-                match = re.search(
-                    r"(PowerBoard|MainBoard)\s*T1[^0-9-]*(-?\d+)",
-                    output,
-                    flags=re.IGNORECASE,
-                )
-                temp = int(match.group(2)) if match else None
-
-                def apply_ui():
-                    if temp is None:
-                        self.temp_label_var.set("Temp: --")
-                        self.temp_label.configure(foreground="")
-                    else:
-                        self.temp_label_var.set(f"Temp: {temp}")
-                        self.temp_label.configure(foreground=("red" if temp > 80 else "green"))
-
-                try:
+                if not self._closing and self.root.winfo_exists():
                     self.root.after(0, apply_ui)
-                except Exception:
-                    pass
-            finally:
-                self._temp_update_inflight = False
+            except Exception:
+                pass
 
         self.ssh_queue.execute(
             cmd,
@@ -1231,33 +1223,28 @@ class RemoteBorneApp:
 
     # --- ADDED ---
     def update_soc(self):
-        if self._soc_update_inflight:
-            return
         if getattr(self.ssh_queue, "pause_monitoring", False):
             return
-        self._soc_update_inflight = True
         cmd = 'grep -oiE "evPresentSoC: [0-9]+" /var/aux/ChargerApp/ChargerApp.log | tail -1 || true'
 
         def cb(res):
-            try:
-                output = (
-                    (res.get("stdout") or res.get("out") or "")
-                    + "\n"
-                    + (res.get("stderr") or res.get("err") or "")
+            output = (
+                (res.get("stdout") or res.get("out") or "")
+                + "\n"
+                + (res.get("stderr") or res.get("err") or "")
+            )
+            match = re.search(r"evPresentSoC\s*[:=]\s*(\d+)", output, flags=re.IGNORECASE)
+
+            def apply_ui():
+                self.soc_label_var.set(
+                    f"Battery SoC: {match.group(1)}" if match else "Battery SoC: --"
                 )
-                match = re.search(r"evPresentSoC\s*[:=]\s*(\d+)", output, flags=re.IGNORECASE)
 
-                def apply_ui():
-                    self.soc_label_var.set(
-                        f"Battery SoC: {match.group(1)}" if match else "Battery SoC: --"
-                    )
-
-                try:
+            try:
+                if not self._closing and self.root.winfo_exists():
                     self.root.after(0, apply_ui)
-                except Exception:
-                    pass
-            finally:
-                self._soc_update_inflight = False
+            except Exception:
+                pass
 
         self.ssh_queue.execute(
             cmd,
