@@ -2886,12 +2886,15 @@ class RemoteBorneApp:
                     except Exception:
                         pass
 
-                self.ssh.execute(
+                self.ssh_queue.execute(
                     test_cmd,
                     callback=cb,
                     timeout=self.ssh_timeout,
                     auto_retry=False,
                     log_errors=False,
+                    command_type="terminal_cd",
+                    silent=True,
+                    label="Terminal cd",
                 )
                 return
 
@@ -2936,12 +2939,15 @@ class RemoteBorneApp:
                     except Exception:
                         pass
 
-            self.ssh.execute(
+            self.ssh_queue.execute(
                 full_cmd,
                 callback=cb,
                 timeout=self.ssh_timeout,
                 auto_retry=False,
                 log_errors=False,
+                command_type="terminal_cmd",
+                silent=False,
+                label=f"Terminal: {cmd[:60]}",
             )
 
         def on_enter(event=None):

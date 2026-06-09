@@ -11,27 +11,28 @@ def resource_path(path):
     return os.path.join(base, path)
     
 def center_window(parent, win, width=900, height=600):
-    win.update_idletasks()
-
     try:
         if parent and parent.winfo_exists():
+            parent.update_idletasks()
             px = parent.winfo_rootx()
             py = parent.winfo_rooty()
             pw = parent.winfo_width()
             ph = parent.winfo_height()
-
-            x = px + (pw // 2) - (width // 2)
-            y = py + (ph // 2) - (height // 2)
-        else:
-            raise Exception
+            if pw > 1 and ph > 1:
+                x = px + max(0, (pw - width) // 2)
+                y = py + max(0, (ph - height) // 2)
+                win.geometry(f"{width}x{height}+{x}+{y}")
+                return
     except Exception:
-        x = (win.winfo_screenwidth() // 2) - (width // 2)
-        y = (win.winfo_screenheight() // 2) - (height // 2)
-
+        pass
+    win.update_idletasks()
+    x = max(0, (win.winfo_screenwidth() - width) // 2)
+    y = max(0, (win.winfo_screenheight() - height) // 2)
     win.geometry(f"{width}x{height}+{x}+{y}")
 
     try:
-        win.transient(parent)
+        if parent:
+            win.transient(parent)
         win.lift()
         win.focus_force()
     except Exception:

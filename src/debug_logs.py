@@ -8,26 +8,17 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from tkinter.scrolledtext import ScrolledText
 
+try:
+    from .utils_ui import center_window
+except ImportError:
+    try:
+        from utils_ui import center_window
+    except ImportError:
+        from src.utils_ui import center_window
+
 MAX_LINES = 10000  # max lignes conservÃ©es en mÃ©moire ET dans la vue
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
-
-def _center_on_parent(win, parent, width: int, height: int):
-    try:
-        parent.update_idletasks()
-        px, py = parent.winfo_rootx(), parent.winfo_rooty()
-        pw, ph = parent.winfo_width(), parent.winfo_height()
-        if pw > 1 and ph > 1:
-            x = px + max(0, (pw - width) // 2)
-            y = py + max(0, (ph - height) // 2)
-            win.geometry(f"{width}x{height}+{x}+{y}")
-            return
-    except Exception:
-        pass
-    win.update_idletasks()
-    x = (win.winfo_screenwidth() - width) // 2
-    y = (win.winfo_screenheight() - height) // 2
-    win.geometry(f"{width}x{height}+{x}+{y}")
 
 
 def _detect_plink() -> str:
@@ -115,7 +106,7 @@ class DebugLogsWindow:
         self.window.minsize(980, 620)
 
         # Centrage sur la fenÃªtre parente
-        _center_on_parent(self.window, parent, 1180, 760)
+        center_window(parent, self.window, 1180, 760)
 
         # Notebook
         self.notebook = ttk.Notebook(self.window)

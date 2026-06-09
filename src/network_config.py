@@ -4,24 +4,13 @@ import configparser
 import os
 import ipaddress
 
-
-def _center_on_parent(win, parent, width: int, height: int):
-    """Centre la fenêtre sur la parent (fallback centre écran)."""
+try:
+    from .utils_ui import center_window
+except ImportError:
     try:
-        parent.update_idletasks()
-        px, py = parent.winfo_rootx(), parent.winfo_rooty()
-        pw, ph = parent.winfo_width(), parent.winfo_height()
-        if pw > 1 and ph > 1:
-            x = px + max(0, (pw - width) // 2)
-            y = py + max(0, (ph - height) // 2)
-            win.geometry(f"{width}x{height}+{x}+{y}")
-            return
-    except Exception:
-        pass
-    win.update_idletasks()
-    x = (win.winfo_screenwidth() - width) // 2
-    y = (win.winfo_screenheight() - height) // 2
-    win.geometry(f"{width}x{height}+{x}+{y}")
+        from utils_ui import center_window
+    except ImportError:
+        from src.utils_ui import center_window
 
 
 def open_network_config(parent, config_path, on_saved=None):
@@ -62,7 +51,7 @@ def open_network_config(parent, config_path, on_saved=None):
     win.transient(parent)
     win.grab_set()
 
-    _center_on_parent(win, parent, 640, 430)
+    center_window(parent, win, 640, 430)
 
     main_frame = ttk.Frame(win, padding=20)
     main_frame.pack(expand=True, fill="both")

@@ -11,6 +11,14 @@ import math
 import csv
 import re
 
+try:
+    from .utils_ui import center_window
+except ImportError:
+    try:
+        from utils_ui import center_window
+    except ImportError:
+        from src.utils_ui import center_window
+
 ENERGY_TOOL_RESOLVE = (
     'EM_TOOL="$(command -v EnergyManagerTestingTool 2>/dev/null || true)"; '
     'if [ -z "$EM_TOOL" ]; then '
@@ -58,10 +66,7 @@ class EnergyManagerWindow:
         self.win.minsize(1180, 800)
 
         # centrage
-        self._center_on_parent(
-            window_width,
-            window_height
-        )
+        center_window(self.master, self.win, window_width, window_height)
 
         # autorise resize
         self.win.resizable(True, True)
@@ -78,23 +83,6 @@ class EnergyManagerWindow:
         self.monitor_text = None
 
         self.build_ui()
-
-    def _center_on_parent(self, width: int, height: int):
-        try:
-            self.master.update_idletasks()
-            px, py = self.master.winfo_rootx(), self.master.winfo_rooty()
-            pw, ph = self.master.winfo_width(), self.master.winfo_height()
-            if pw > 1 and ph > 1:
-                x = px + max(0, (pw - width) // 2)
-                y = py + max(0, (ph - height) // 2)
-                self.win.geometry(f"{width}x{height}+{x}+{y}")
-                return
-        except Exception:
-            pass
-        self.win.update_idletasks()
-        x = (self.win.winfo_screenwidth() - width) // 2
-        y = (self.win.winfo_screenheight() - height) // 2
-        self.win.geometry(f"{width}x{height}+{max(0, x)}+{max(0, y)}")
 
     # ------------------------------------------------------------
     # Helpers popups : toujours devant et modales
