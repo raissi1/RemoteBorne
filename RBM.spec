@@ -1,12 +1,21 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_all
+
+datas = [('BorneCommander.ico', '.')]
+binaries = []
+hiddenimports = ['debug_logs', 'energy_manager', 'network_config', 'plink_backend', 'ssh_manager']
+tmp_ret = collect_all('ttkbootstrap')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('reportlab')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
     ['src\\RemoteBorneManager.py'],
-    pathex=['src'],
-    binaries=[],
-    datas=[('BorneCommander.ico', '.'), ('tools', 'tools')],
-    hiddenimports=['debug_logs', 'energy_manager', 'network_config', 'plink_backend', 'ssh_manager'],
+    pathex=[],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
