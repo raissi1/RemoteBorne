@@ -471,49 +471,37 @@ class EnergyManagerWindow:
         pretty_cmd = display_text or mode
 
         def callback(res):
-
-            status = (
-                "OK"
-                if res["success"]
-                else f"ERR"
-            )
-
-            # ----------------------------------------------------
-            # HISTORIQUE
-            # ----------------------------------------------------
-            self.history.append(
-                (
-                    timestamp,
-                    mode,
-                    pretty_cmd,
-                    status,
-                )
-            )
-
-            self.update_history_table()
-
-            # ----------------------------------------------------
-            # SUCCESS
-            # ----------------------------------------------------
-            if res["success"]:
-
-                self._popup_info(
-                    "Energy Manager",
-                    ("Command sent successfully.\n\n" f"{pretty_cmd}")
+            def _ui():
+                status = "OK" if res["success"] else "ERR"
+                self.history.append(
+                    (
+                        timestamp,
+                        mode,
+                        pretty_cmd,
+                        status,
+                    )
                 )
 
-            # ----------------------------------------------------
-            # ERROR
-            # ----------------------------------------------------
-            else:
+                self.update_history_table()
 
-                err = (
-                    res["err"]
-                    or res["out"]
-                    or "Unknown error"
-                )
+                if res["success"]:
+                    self._popup_info(
+                        "Energy Manager",
+                        (f"Command sent successfully.\n\n{pretty_cmd}")
+                    )
+                else:
+                    err = (
+                        res["err"]
+                        or res["out"]
+                        or "Unknown error"
+                    )
+                    self._popup_error("Energy Manager Error", err)
 
-                self._popup_error("Energy Manager Error", err)
+            try:
+                if self.win.winfo_exists():
+                    self.win.after(0, _ui)
+            except Exception:
+                pass
 
         self.ssh.execute(
             cmd,
@@ -574,13 +562,19 @@ class EnergyManagerWindow:
         )
 
         def callback(res):
-            self.monitor_text.delete("1.0", "end")
-            if res["success"]:
-                self.monitor_text.insert("end", res["out"])
-            else:
-                err = res["err"] or res["out"] or "Unknown error"
-                # On écrit quand même le message dans la zone
-                self.monitor_text.insert("end", f"ERROR: {err}")
+            def _ui():
+                self.monitor_text.delete("1.0", "end")
+                if res["success"]:
+                    self.monitor_text.insert("end", res["out"])
+                else:
+                    err = res["err"] or res["out"] or "Unknown error"
+                    self.monitor_text.insert("end", f"ERROR: {err}")
+
+            try:
+                if self.win.winfo_exists():
+                    self.win.after(0, _ui)
+            except Exception:
+                pass
 
         self.ssh.execute(cmd, callback=callback)
 
@@ -592,10 +586,17 @@ class EnergyManagerWindow:
         cmd = "/etc/init.d/S91energy-manager restart"
 
         def callback(res):
-            if res["success"]:
-                self._popup_info("Success", "Service S91energy-manager restarted.")
-            else:
-                err = res["err"] or res["out"] or "Unknown error"
-                self._popup_error("Error", err)
+            def _ui():
+                if res["success"]:
+                    self._popup_info("Success", "Service S91energy-manager restarted.")
+                else:
+                    err = res["err"] or res["out"] or "Unknown error"
+                    self._popup_error("Error", err)
+
+            try:
+                if self.win.winfo_exists():
+                    self.win.after(0, _ui)
+            except Exception:
+                pass
 
         self.ssh.execute(cmd, callback=callback)

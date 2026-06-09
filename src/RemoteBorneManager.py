@@ -1185,6 +1185,8 @@ class RemoteBorneApp:
     def update_temperature(self):
         if self._temp_update_inflight:
             return
+        if getattr(self.ssh_queue, "pause_monitoring", False):
+            return
         self._temp_update_inflight = True
         cmd = 'grep -E "PowerBoard T1|MainBoard T1" /var/aux/ChargerApp/derate.log | tail -1'
 
@@ -1192,7 +1194,11 @@ class RemoteBorneApp:
             try:
                 if not res.get("success"):
                     return
-                output = (res.get("out") or "") + "\n" + (res.get("err") or "")
+                output = (
+                    (res.get("stdout") or res.get("out") or "")
+                    + "\n"
+                    + (res.get("stderr") or res.get("err") or "")
+                )
                 match = re.search(
                     r"(PowerBoard|MainBoard)\s*T1[^0-9-]*(-?\d+)",
                     output,
@@ -1215,10 +1221,12 @@ class RemoteBorneApp:
             finally:
                 self._temp_update_inflight = False
 
-        self.ssh.execute(
+        self.ssh_queue.execute(
             cmd,
             callback=cb,
             timeout=self.ssh_timeout,
+            command_type="monitor_temp",
+            silent=True,
             auto_retry=False,
             log_errors=False,
         )
@@ -1227,6 +1235,8 @@ class RemoteBorneApp:
     def update_soc(self):
         if self._soc_update_inflight:
             return
+        if getattr(self.ssh_queue, "pause_monitoring", False):
+            return
         self._soc_update_inflight = True
         cmd = 'grep -oiE "evPresentSoC: [0-9]+" /var/aux/ChargerApp/ChargerApp.log | tail -1'
 
@@ -1234,7 +1244,11 @@ class RemoteBorneApp:
             try:
                 if not res.get("success"):
                     return
-                output = (res.get("out") or "") + "\n" + (res.get("err") or "")
+                output = (
+                    (res.get("stdout") or res.get("out") or "")
+                    + "\n"
+                    + (res.get("stderr") or res.get("err") or "")
+                )
                 match = re.search(r"evPresentSoC\s*[:=]\s*(\d+)", output, flags=re.IGNORECASE)
 
                 def apply_ui():
@@ -1249,10 +1263,12 @@ class RemoteBorneApp:
             finally:
                 self._soc_update_inflight = False
 
-        self.ssh.execute(
+        self.ssh_queue.execute(
             cmd,
             callback=cb,
             timeout=self.ssh_timeout,
+            command_type="monitor_soc",
+            silent=True,
             auto_retry=False,
             log_errors=False,
         )
@@ -2856,12 +2872,19 @@ class RemoteBorneApp:
                 test_cmd = f'test -d "{new_dir}"'
 
                 def cb(res):
-                    nonlocal current_dir
-                    if res["success"]:
-                        current_dir = new_dir
-                        append(f"[DIR] {current_dir}\n")
-                    else:
-                        append("[ERROR] Directory not found\n")
+                    def _ui():
+                        nonlocal current_dir
+                        if res["success"]:
+                            current_dir = new_dir
+                            append(f"[DIR] {current_dir}\n")
+                        else:
+                            append("[ERROR] Directory not found\n")
+
+                    try:
+                        if not self._closing and self.root.winfo_exists():
+                            self.root.after(0, _ui)
+                    except Exception:
+                        pass
 
                 self.ssh.execute(
                     test_cmd,
@@ -2893,14 +2916,25 @@ class RemoteBorneApp:
                     stdout = (res.get("out") or "").strip()
                     stderr = (res.get("err") or "").strip()
                     success = res.get("success", False)
-                    if stdout:
-                        append(stdout + "\n")
-                    if stderr:
-                        append("[ERROR] " + stderr + "\n")
-                    if success and not stdout and not stderr:
-                        append("[OK]\n")
+
+                    def _ui():
+                        if stdout:
+                            append(stdout + "\n")
+                        if stderr:
+                            append("[ERROR] " + stderr + "\n")
+                        if success and not stdout and not stderr:
+                            append("[OK]\n")
+
+                    try:
+                        if not self._closing and self.root.winfo_exists():
+                            self.root.after(0, _ui)
+                    except Exception:
+                        pass
                 except Exception as e:
-                    append(f"[ERROR] {e}\n")
+                    try:
+                        self.root.after(0, lambda: append(f"[ERROR] {e}\n"))
+                    except Exception:
+                        pass
 
             self.ssh.execute(
                 full_cmd,
@@ -3097,7 +3131,7 @@ class RemoteBorneApp:
             self.ssh.close()
         except Exception:
             pass
-        self.root.destroy()
+        self.root.after(150, self.root.destroy)
 
     # --------------------------------------------------------------
     # Helpers pour popups MODALES et toujours au premier plan

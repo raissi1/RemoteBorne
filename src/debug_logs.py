@@ -347,8 +347,13 @@ class DebugLogsWindow:
                 line = proc.stdout.readline()
                 if not line:
                     break
-                # MAJ UI (thread-safe) + buffer
-                self.parent.after(0, self.insert_line, log_name, line)
+                try:
+                    if self.parent.winfo_exists():
+                        self.parent.after(0, self.insert_line, log_name, line)
+                    else:
+                        break
+                except Exception:
+                    break
                 # Ã‰crit dans le fichier local complet
                 log_file.write(line)
                 log_file.flush()
