@@ -1,0 +1,7 @@
+# Runtime UI dependencies
+ttkbootstrap>=1.10.1
+Pillow>=10.0.0
+reportlab>=3.6.0
+
+# Packaging dependency
+pyinstaller>=6.0
