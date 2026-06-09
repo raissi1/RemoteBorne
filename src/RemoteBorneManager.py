@@ -225,6 +225,15 @@ class RemoteBorneApp:
         self.local_default_path = paths_cfg.get(
             "local_path", os.path.join(EXPORTS_DIR, "GridCodes.properties")
         )
+        _local_dir = os.path.dirname(self.local_default_path) or self.local_default_path
+        if not self.local_default_path or not os.path.exists(_local_dir):
+            self.local_default_path = os.path.join(
+                os.path.expanduser("~"),
+                "Documents",
+                "remote_borne_manager",
+                self.remote_file,
+            )
+            os.makedirs(os.path.dirname(self.local_default_path), exist_ok=True)
 
         self.current_path = self.default_path
 
@@ -1134,7 +1143,7 @@ class RemoteBorneApp:
                 self.ssh_queue.execute(
                     "echo alive",
                     callback=cb,
-                    timeout=self.ssh_timeout,
+                    timeout=8,
                     auto_retry=False,
                     log_errors=False,
                     command_type="heartbeat",
@@ -2071,10 +2080,13 @@ class RemoteBorneApp:
                     self._editor_window.deiconify()
                     self._editor_window.lift()
                     self._editor_window.focus_force()
-                    if self._editor_remote_path:
-                        self.log(f"[INFO] Editor already open ({self._editor_remote_path})")
-                    else:
-                        self.log("[INFO] Editor already open")
+                    already_open = self._editor_remote_path or "unknown"
+                    self.log(f"[INFO] Editor already open ({already_open})")
+                    self._popup_info(
+                        "Editor already open",
+                        f"An editor is already open:\n{already_open}\n\n"
+                        "Close it first to open another file.",
+                    )
                     return
             except Exception:
                 # Référence stale (fenêtre détruite côté Tk/OS) -> reset et ouverture propre
@@ -2304,26 +2316,7 @@ class RemoteBorneApp:
                 lambda _e: (setattr(self, "_find_dialog", None), dialog.destroy()),
             )
 
-        def save_and_upload():
-            user_name = simpledialog.askstring(
-                "Save",
-                "Remote filename (or full remote path):",
-                initialvalue=posixpath.basename(remote_path),
-                parent=win,
-            )
-            if user_name is None:
-                return
-
-            user_name = user_name.strip()
-            if not user_name:
-                self._popup_warning("Save", "Filename cannot be empty.")
-                return
-
-            if "/" in user_name:
-                target_remote = user_name
-            else:
-                target_remote = self._join_remote(posixpath.dirname(remote_path), user_name)
-
+        def _write_local_and_upload(target_remote: str):
             content = txt.get("1.0", "end-1c")
             content = content.replace("\r\n", "\n").replace("\r", "\n")
             try:
@@ -2395,6 +2388,30 @@ class RemoteBorneApp:
                 label="Check remote file",
             )
 
+        def save_direct():
+            _write_local_and_upload(remote_path)
+
+        def save_and_upload():
+            user_name = simpledialog.askstring(
+                "Save As",
+                "Remote filename (or full remote path):",
+                initialvalue=posixpath.basename(remote_path),
+                parent=win,
+            )
+            if user_name is None:
+                return
+
+            user_name = user_name.strip()
+            if not user_name:
+                self._popup_warning("Save", "Filename cannot be empty.")
+                return
+
+            if "/" in user_name:
+                target_remote = user_name
+            else:
+                target_remote = self._join_remote(posixpath.dirname(remote_path), user_name)
+            _write_local_and_upload(target_remote)
+
         # Compat safety: older UI variants may still reference save_as_upload
         # during local merges/conflicts. Keep alias to avoid runtime NameError.
         save_as_upload = save_and_upload
@@ -2402,7 +2419,7 @@ class RemoteBorneApp:
         ttk.Button(btn_bar, text="Find", command=open_find_dialog).pack(
             side="left", padx=5, pady=5
         )
-        ttk.Button(btn_bar, text="Save", command=save_and_upload).pack(
+        ttk.Button(btn_bar, text="Save", command=save_direct).pack(
             side="right", padx=5, pady=5
         )
         ttk.Button(btn_bar, text="Save As", command=save_as_upload).pack(
