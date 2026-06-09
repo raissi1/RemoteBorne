@@ -48,14 +48,14 @@ class EnergyManagerWindow:
         # Taille fenêtre principale
         # ------------------------------------------------------------
         window_width = 1280
-        window_height = 820
+        window_height = 900
 
         self.win.geometry(
             f"{window_width}x{window_height}"
         )
 
         # taille minimale
-        self.win.minsize(1100, 720)
+        self.win.minsize(1180, 800)
 
         # centrage
         self._center_on_parent(
@@ -153,6 +153,7 @@ class EnergyManagerWindow:
         main.columnconfigure(1, weight=3)
         main.rowconfigure(0, weight=0)
         main.rowconfigure(1, weight=1)
+        main.rowconfigure(2, weight=0)
 
         top = ttk.Frame(main)
         top.grid(row=0, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
@@ -292,7 +293,7 @@ class EnergyManagerWindow:
         
         columns = ("timestamp", "mode", "cmd", "status")
         self.table = ttk.Treeview(
-            frm, columns=columns, show="headings", bootstyle="info"
+            frm, columns=columns, show="headings", height=8, bootstyle="info"
         )
         self.table.heading("timestamp", text="Timestamp")
         self.table.heading("mode", text="Mode")
@@ -307,7 +308,7 @@ class EnergyManagerWindow:
         self.table.pack(fill="both", expand=True, pady=(0, 10))
 
         btns = ttk.Frame(frm)
-        btns.pack(anchor="w")
+        btns.pack(fill="x")
 
         ttk.Button(
             btns,
@@ -326,7 +327,7 @@ class EnergyManagerWindow:
 
         self.monitor_text = tk.Text(
             frm,
-            height=12,
+            height=10,
             font=("Consolas", 10),
             wrap="word",
             background="#f8fafc",
@@ -338,7 +339,7 @@ class EnergyManagerWindow:
         self.monitor_text.pack(fill="both", expand=True, pady=(0, 10))
 
         btns = ttk.Frame(frm)
-        btns.pack(anchor="w")
+        btns.pack(fill="x")
 
         ttk.Button(
             btns,
