@@ -2908,7 +2908,11 @@ class RemoteBorneApp:
             interactive_cmds = ["vim", "vi", "nano", "top", "htop", "less", "more"]
             base_cmd = cmd.split()[0] if cmd.split() else ""
             if base_cmd in interactive_cmds:
-                append(f"[ERROR] '{base_cmd}' is not supported in GUI terminal.\n")
+                append(
+                    f"[INFO] '{base_cmd}' is an interactive command and cannot run "
+                    f"in this terminal.\n"
+                    f"       Use a system terminal for interactive editors or tools.\n"
+                )
                 return
 
             full_cmd = f'cd "{current_dir}" && {cmd}'
