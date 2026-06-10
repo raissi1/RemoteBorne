@@ -1297,6 +1297,7 @@ class RemoteBorneApp:
                 # démarre le heartbeat
                 self._start_alive_monitor()
                 self._start_monitor()
+                self.root.after(300, self.update_monitor)
 
             elif ev_type == "disconnected":
                 self.connected = False
@@ -1304,6 +1305,9 @@ class RemoteBorneApp:
                 self.log("[SSH] Disconnected")
                 self._set_led(False)
                 self._clear_file_list_ui()
+                self.temp_label_var.set("Temp: --")
+                self.temp_label.configure(foreground="")
+                self.soc_label_var.set("Battery SoC: --")
                 self._update_controls_state()
 
             elif ev_type == "reconnecting":
@@ -1311,6 +1315,9 @@ class RemoteBorneApp:
                 self.status_var.set("Reconnecting…")
                 self.log("[SSH] Reconnecting…")
                 self._set_led(False)
+                self.temp_label_var.set("Temp: --")
+                self.temp_label.configure(foreground="")
+                self.soc_label_var.set("Battery SoC: --")
                 self._update_controls_state()
 
             elif ev_type == "reconnected":
@@ -1321,6 +1328,7 @@ class RemoteBorneApp:
                 self._set_led(True)
                 self._update_controls_state()
                 self.refresh_file_list()
+                self.root.after(300, self.update_monitor)
 
         # On reposte dans le thread principal Tk
         try:
