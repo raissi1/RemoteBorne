@@ -55,16 +55,15 @@ class EnergyManagerWindow:
         # ------------------------------------------------------------
         # Taille fenêtre principale
         # ------------------------------------------------------------
-        # Adapter la taille à la résolution de l'écran
-        screen_h = self.win.winfo_screenheight()
-        screen_w = self.win.winfo_screenwidth()
-        window_height = min(900, int(screen_h * 0.88))
-        window_width  = min(1280, int(screen_w * 0.90))
+        window_width = 1280
+        window_height = 900
 
-        self.win.geometry(f"{window_width}x{window_height}")
+        self.win.geometry(
+            f"{window_width}x{window_height}"
+        )
 
-        # taille minimale raisonnable
-        self.win.minsize(860, 600)
+        # taille minimale
+        self.win.minsize(1180, 800)
 
         # centrage
         center_window(self.master, self.win, window_width, window_height)
@@ -131,40 +130,10 @@ class EnergyManagerWindow:
     # UI principale : une seule vue structurée
     # ------------------------------------------------------------
     def build_ui(self):
-        # Footer Close toujours ancré en bas — packé EN PREMIER
-        footer = ttk.Frame(self.win, padding=(14, 6, 14, 10))
-        footer.pack(side="bottom", fill="x")
-        ttk.Button(
-            footer,
-            text="Close",
-            bootstyle="danger",
-            command=self.win.destroy,
-        ).pack(side="right")
+        main = ttk.Frame(self.win)
+        main.pack(fill="both", expand=True, padx=14, pady=14)
 
-        # Zone principale scrollable via Canvas
-        canvas = tk.Canvas(self.win, borderwidth=0, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(self.win, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
-
-        main = ttk.Frame(canvas, padding=(14, 14, 14, 6))
-        canvas_window = canvas.create_window((0, 0), window=main, anchor="nw")
-
-        def _on_frame_configure(event):
-            canvas.configure(scrollregion=canvas.bbox("all"))
-
-        def _on_canvas_configure(event):
-            canvas.itemconfig(canvas_window, width=event.width)
-
-        main.bind("<Configure>", _on_frame_configure)
-        canvas.bind("<Configure>", _on_canvas_configure)
-
-        # Molette souris
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-        canvas.bind_all("<MouseWheel>", _on_mousewheel)
-
+        # Layout général : zone top + zone bas (history/monitor) + footer
         # ==========================================================
         # GRID RESPONSIVE
         # ==========================================================
@@ -172,6 +141,7 @@ class EnergyManagerWindow:
         main.columnconfigure(1, weight=3)
         main.rowconfigure(0, weight=0)
         main.rowconfigure(1, weight=1)
+        main.rowconfigure(2, weight=0)
 
         top = ttk.Frame(main)
         top.grid(row=0, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
@@ -187,8 +157,17 @@ class EnergyManagerWindow:
         self._build_section_history(bottom_left)
         self._build_section_monitor(bottom_right)
 
+        footer = ttk.Frame(main)
+        footer.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        ttk.Button(
+            footer,
+            text="Close",
+            bootstyle="danger",
+            command=self.win.destroy,
+        ).pack(side="right")
+
     # ------------------------------------------------------------
-    # SECTION P/Q & COSPHI  — cote a cote, adaptatif
+    # SECTION P/Q & COSPHI
     # ------------------------------------------------------------
     def _build_section_pq_cosphi(self, parent):
         frm = ttk.Frame(parent)
@@ -197,23 +176,16 @@ class EnergyManagerWindow:
         title = ttk.Label(
             frm,
             text="P/Q and CosPhi Mode",
-            font=("Segoe UI", 16, "bold"),
+            font=("Segoe UI", 18, "bold"),
             anchor="center",
         )
-        title.pack(pady=(8, 4))
+        title.pack(pady=10)
 
         vcmd = (self.win.register(self._validate_numeric), "%P")
 
-        # Conteneur cote a cote — s’adapte si la fenetre est trop etroite
-        side_frame = ttk.Frame(frm)
-        side_frame.pack(fill="x", expand=True, pady=(0, 6))
-        side_frame.columnconfigure(0, weight=1, minsize=280)
-        side_frame.columnconfigure(1, weight=1, minsize=280)
-
-        # --- Mode P/Q (colonne gauche)
-        pq_frame = ttk.Labelframe(side_frame, text="Mode P/Q", padding=14)
-        pq_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 6), pady=4)
-        pq_frame.columnconfigure(1, weight=1)
+        # --- Mode P/Q
+        pq_frame = ttk.Labelframe(frm, text="Mode P/Q", padding=15)
+        pq_frame.pack(fill="x", pady=10)
 
         ttk.Label(pq_frame, text="Active Power P (W) :").grid(
             row=0, column=0, sticky="w", pady=5
@@ -221,10 +193,10 @@ class EnergyManagerWindow:
         ttk.Entry(
             pq_frame,
             textvariable=self.p_var,
-            width=18,
+            width=20,
             validate="key",
             validatecommand=vcmd,
-        ).grid(row=0, column=1, padx=8, sticky="ew")
+        ).grid(row=0, column=1, padx=10, sticky="w")
 
         ttk.Label(pq_frame, text="Reactive Power Q (VAR) :").grid(
             row=1, column=0, sticky="w", pady=5
@@ -232,23 +204,23 @@ class EnergyManagerWindow:
         ttk.Entry(
             pq_frame,
             textvariable=self.q_var,
-            width=18,
+            width=20,
             validate="key",
             validatecommand=vcmd,
-        ).grid(row=1, column=1, padx=8, sticky="ew")
+        ).grid(row=1, column=1, padx=10, sticky="w")
 
         ttk.Button(
             pq_frame,
             text="Send P/Q",
             bootstyle="success",
             command=self.send_pq,
-            width=16,
-        ).grid(row=2, column=0, columnspan=2, pady=(12, 4))
+        ).grid(row=2, column=0, columnspan=2, pady=10)
 
-        # --- Mode CosPhi (colonne droite)
-        cos_frame = ttk.Labelframe(side_frame, text="Mode CosPhi", padding=14)
-        cos_frame.grid(row=0, column=1, sticky="nsew", padx=(6, 0), pady=4)
-        cos_frame.columnconfigure(1, weight=1)
+        pq_frame.grid_columnconfigure(2, weight=1)
+
+        # --- Mode CosPhi
+        cos_frame = ttk.Labelframe(frm, text="Mode CosPhi", padding=15)
+        cos_frame.pack(fill="x", pady=10)
 
         ttk.Label(cos_frame, text="Active Power P (W) :").grid(
             row=0, column=0, sticky="w", pady=5
@@ -256,10 +228,10 @@ class EnergyManagerWindow:
         ttk.Entry(
             cos_frame,
             textvariable=self.p_cosphi_var,
-            width=18,
+            width=20,
             validate="key",
             validatecommand=vcmd,
-        ).grid(row=0, column=1, padx=8, sticky="ew")
+        ).grid(row=0, column=1, padx=10, sticky="w")
 
         ttk.Label(cos_frame, text="CosPhi (-1 → 1] :").grid(
             row=1, column=0, sticky="w", pady=5
@@ -267,59 +239,37 @@ class EnergyManagerWindow:
         ttk.Entry(
             cos_frame,
             textvariable=self.cosphi_var,
-            width=18,
+            width=20,
             validate="key",
             validatecommand=vcmd,
-        ).grid(row=1, column=1, padx=8, sticky="ew")
+        ).grid(row=1, column=1, padx=10, sticky="w")
 
-        ttk.Label(cos_frame, text="Q auto (VAR) :").grid(
+        ttk.Label(cos_frame, text="Reactive Power Q (auto) :").grid(
             row=2, column=0, sticky="w", pady=5
         )
         q_auto_entry = ttk.Entry(
             cos_frame,
             textvariable=self.q_auto_var,
-            width=18,
+            width=20,
             state="readonly",
         )
-        q_auto_entry.grid(row=2, column=1, padx=8, sticky="ew")
+        q_auto_entry.grid(row=2, column=1, padx=10, sticky="w")
 
-        btn_row = ttk.Frame(cos_frame)
-        btn_row.grid(row=3, column=0, columnspan=2, pady=(12, 4))
         ttk.Button(
-            btn_row,
+            cos_frame,
             text="Calculate Q",
             bootstyle="info",
             command=self.calculate_q_from_cosphi,
-            width=14,
-        ).pack(side="left", padx=4)
+        ).grid(row=3, column=0, pady=10, sticky="e")
 
         ttk.Button(
-            btn_row,
+            cos_frame,
             text="Send CosPhi",
             bootstyle="success",
             command=self.send_cosphi,
-            width=14,
-        ).pack(side="left", padx=4)
+        ).grid(row=3, column=1, pady=10, sticky="w")
 
-        # Auto-adaptation : si la fenetre devient trop etroite,
-        # basculer en colonne unique
-        def _on_resize(event):
-            w = frm.winfo_width()
-            if w > 0 and w < 600:
-                # Colonne unique
-                pq_frame.grid(row=0, column=0, columnspan=2, sticky="nsew",
-                              padx=0, pady=4)
-                cos_frame.grid(row=1, column=0, columnspan=2, sticky="nsew",
-                               padx=0, pady=4)
-            else:
-                # Cote a cote
-                pq_frame.grid(row=0, column=0, columnspan=1, sticky="nsew",
-                              padx=(0, 6), pady=4)
-                cos_frame.grid(row=0, column=1, columnspan=1, sticky="nsew",
-                               padx=(6, 0), pady=4)
-
-        frm.bind("<Configure>", _on_resize)
-
+        cos_frame.grid_columnconfigure(2, weight=1)
 
     # ------------------------------------------------------------
     # SECTION HISTORIQUE
