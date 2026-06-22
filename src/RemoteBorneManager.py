@@ -159,6 +159,7 @@ def load_config() -> configparser.ConfigParser:
 
         # On écrit dans config/config.ini
         os.makedirs(CONFIG_DIR, exist_ok=True)
+        cfg["SECURITY"] = {"edit_password": ""}
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             cfg.write(f)
 
@@ -166,6 +167,7 @@ def load_config() -> configparser.ConfigParser:
     else:
         # Fichier déjà présent : on le lit
         cfg.read(CONFIG_PATH, encoding="utf-8")
+        needs_writeback = False
         print(f"[CONFIG] Fichier chargé : {CONFIG_PATH}")
 
         # Sécurité : on vérifie que les sections existent
@@ -180,20 +182,35 @@ def load_config() -> configparser.ConfigParser:
                 "retry_max_delay": "10",
                 "alive_interval": "10",
             }
+            needs_writeback = True
         elif "timeout" not in cfg["SSH"]:
             cfg["SSH"]["timeout"] = "30"
+            needs_writeback = True
         if "retry_base_delay" not in cfg["SSH"]:
             cfg["SSH"]["retry_base_delay"] = "2"
+            needs_writeback = True
         if "retry_max_delay" not in cfg["SSH"]:
             cfg["SSH"]["retry_max_delay"] = "10"
+            needs_writeback = True
         if "alive_interval" not in cfg["SSH"]:
             cfg["SSH"]["alive_interval"] = "10"
+            needs_writeback = True
         if "PATHS" not in cfg:
             cfg["PATHS"] = {
                 "remote_path": "/etc/iotecha/configs/GridCodes",
                 "remote_file": "GridCodes.properties",
                 "local_path": os.path.join(EXPORTS_DIR, "GridCodes.properties"),
             }
+            needs_writeback = True
+        if "SECURITY" not in cfg:
+            cfg["SECURITY"] = {"edit_password": ""}
+            needs_writeback = True
+        elif "edit_password" not in cfg["SECURITY"]:
+            cfg["SECURITY"]["edit_password"] = ""
+            needs_writeback = True
+        if needs_writeback:
+            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                cfg.write(f)
 
     return cfg
 
@@ -206,6 +223,7 @@ class RemoteBorneApp:
         self.config = config
         ssh_cfg = config["SSH"]
         paths_cfg = config["PATHS"]
+        security_cfg = config["SECURITY"]
 
         self.host = ssh_cfg.get("host", "")
         self.user = ssh_cfg.get("username", "")
@@ -225,6 +243,7 @@ class RemoteBorneApp:
         self.local_default_path = paths_cfg.get(
             "local_path", os.path.join(EXPORTS_DIR, "GridCodes.properties")
         )
+        self.edit_password = security_cfg.get("edit_password", "").strip()
         _local_dir = os.path.dirname(self.local_default_path) or self.local_default_path
         if not self.local_default_path or not os.path.exists(_local_dir):
             self.local_default_path = os.path.join(
@@ -2207,6 +2226,31 @@ class RemoteBorneApp:
             return
         self.open_file_editor(remote)
 
+    def _ensure_edit_authorized(self) -> bool:
+        password = getattr(self, "edit_password", "").strip()
+        if not password:
+            return True
+
+        entered = simpledialog.askstring(
+            "Edit authentication",
+            "Enter the edit password to modify this file:",
+            show="*",
+            parent=self.root,
+        )
+        if entered is None:
+            self.log("[AUTH] Edit authentication cancelled.")
+            return False
+        if entered != password:
+            self.log("[AUTH] Edit authentication failed.")
+            self._popup_error(
+                "Edit authentication",
+                "Invalid password.\nEdit access denied.",
+            )
+            return False
+
+        self.log("[AUTH] Edit authentication granted.")
+        return True
+
     def open_file_editor(self, remote_path: str):
         self._safe_mark_user_command()
         if not self.connected:
@@ -2231,6 +2275,9 @@ class RemoteBorneApp:
                 pass
             self._editor_window = None
             self._editor_remote_path = None
+
+        if not self._ensure_edit_authorized():
+            return
 
         self.log(f"[EDIT] Downloading {remote_path}...")
         self._lock_file_actions("Editor opening")
@@ -3162,6 +3209,7 @@ class RemoteBorneApp:
                 self.config.read(CONFIG_PATH, encoding="utf-8")
                 ssh_cfg = self.config["SSH"]
                 paths_cfg = self.config["PATHS"]
+                security_cfg = self.config["SECURITY"]
 
                 self.host = ssh_cfg.get("host", "")
                 self.user = ssh_cfg.get("username", "")
@@ -3174,6 +3222,7 @@ class RemoteBorneApp:
                 self.local_default_path = paths_cfg.get(
                     "local_path", os.path.join(EXPORTS_DIR, "GridCodes.properties")
                 )
+                self.edit_password = security_cfg.get("edit_password", "").strip()
                 self.current_path = self.default_path
 
                 # Mise à jour des labels
