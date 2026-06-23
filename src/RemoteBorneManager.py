@@ -265,7 +265,7 @@ class RemoteBorneApp:
         # ---------- ROOT / STYLE ----------
         # Fenêtre ttkbootstrap, thème "flatly" comme V7
         self.root = ttk.Window(themename=self.current_theme)
-        self.root.title("Remote Borne Manager - RBM")
+        self.root.title("Remote Borne Control Interface")
         self._set_app_icon()
 
         try:
@@ -626,7 +626,7 @@ class RemoteBorneApp:
         center_fr.grid(row=0, column=1, sticky="nsew")
         ttk.Label(
             center_fr,
-            text="Remote Borne Manager",
+            text="Remote Borne Control Interface",
             font=("Segoe UI", 16, "bold"),
             anchor="center",
         ).pack(fill="x")
@@ -644,7 +644,9 @@ class RemoteBorneApp:
 
         # ----- LEFT : FILE BROWSER -----
         left = ttk.Labelframe(
-            main, text=f"GridCodes Browser ({self.default_path})", padding=5
+            main,
+            text=f"EVSE Local Grid Code Configuration Files",
+            padding=5,
         )
         left.grid(row=1, column=0, rowspan=2, sticky="nsew", padx=(10, 5), pady=5)
 
@@ -765,15 +767,17 @@ class RemoteBorneApp:
         self.btn_exit.grid(row=0, column=2, padx=2, pady=2, sticky="ew")
 
         # File actions
-        file_actions = ttk.Labelframe(right_top, text="GridCodes", padding=5)
+        file_actions = ttk.Labelframe(right_top, text="Test Configuration", padding=5)
         file_actions.grid(row=2, column=0, sticky="nsew", pady=(4, 0))
 
-        # 🔥 3 colonnes (au lieu de 2)
+        # Layout tuned for long labels: short actions on first row,
+        # long actions on a second row with wider buttons.
         file_actions.grid_columnconfigure(0, weight=1)
         file_actions.grid_columnconfigure(1, weight=1)
         file_actions.grid_columnconfigure(2, weight=1)
+        file_actions.grid_columnconfigure(3, weight=1)
 
-        # LIGNE 1
+        # Row 1: short actions
         self.btn_refresh = ttk.Button(
             file_actions, text="Refresh", command=self.refresh_file_list
         )
@@ -784,28 +788,34 @@ class RemoteBorneApp:
         )
         self.btn_download.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
 
-        self.btn_upload = ttk.Button(
-            file_actions, text="Upload", command=self.upload_files_to_current_path
-        )
-        self.btn_upload.grid(row=0, column=2, padx=2, pady=2, sticky="ew")
-
-        # LIGNE 2
         self.btn_edit = ttk.Button(
             file_actions, text="Edit", command=self._menu_edit
         )
-        self.btn_edit.grid(row=1, column=0, padx=2, pady=2, sticky="ew")
+        self.btn_edit.grid(row=0, column=2, padx=2, pady=2, sticky="ew")
 
         self.btn_print = ttk.Button(
             file_actions, text="Print", command=self._menu_print
         )
-        self.btn_print.grid(row=1, column=1, padx=2, pady=2, sticky="ew")
+        self.btn_print.grid(row=0, column=3, padx=2, pady=2, sticky="ew")
+
+        # Row 2: long actions
+        self.btn_upload = ttk.Button(
+            file_actions,
+            text="Upload Configuration\nFile from PC",
+            command=self.upload_files_to_current_path,
+        )
+        self.btn_upload.grid(
+            row=1, column=0, columnspan=2, padx=2, pady=2, sticky="ew"
+        )
 
         self.btn_copy_panel = ttk.Button(
             file_actions,
-            text="Copy to GridCodes.properties",
+            text="Load Grid Code\nConfiguration",
             command=self.copy_selected_to_gridcodes,
         )
-        self.btn_copy_panel.grid(row=1, column=2, padx=2, pady=2, sticky="ew")
+        self.btn_copy_panel.grid(
+            row=1, column=2, columnspan=2, padx=2, pady=2, sticky="ew"
+        )
 
         # ----- RIGHT MIDDLE : ENERGY MANAGER -----
         em_frame = ttk.Labelframe(main, text="Energy Manager Controls", padding=5)
@@ -901,6 +911,7 @@ class RemoteBorneApp:
         srv_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 4), pady=(4, 0))
         srv_frame.grid_columnconfigure(0, weight=1)
         srv_frame.grid_columnconfigure(1, weight=1)
+        srv_frame.grid_rowconfigure(1, weight=0)
 
         self.btn_restart_services = ttk.Button(
             srv_frame,
@@ -919,6 +930,13 @@ class RemoteBorneApp:
             command=self.reboot_device,
         )
         self.btn_reboot.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
+
+        # ttk.Label(
+            # srv_frame,
+            # text="Run after each configuration change.",
+            # anchor="w",
+            # justify="left",
+        # ).grid(row=1, column=0, columnspan=2, sticky="w", padx=2, pady=(4, 0))
 
         # --- ADDED ---
         derate_frame = ttk.Labelframe(
