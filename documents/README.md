@@ -7,6 +7,7 @@ Remote Borne Manager is a Windows Python application used to control IOTECHA cha
 - SSH connection management with reconnect handling
 - `GridCodes` remote browser with file and folder navigation
 - Remote editing with `Find`, `Save`, and `Save As`
+- Edit authentication support before opening protected files
 - Hardened SCP upload and download flows
 - PDF export from remote text files
 - Copy to `GridCodes.properties` with optional service restart
@@ -21,22 +22,22 @@ Remote Borne Manager is a Windows Python application used to control IOTECHA cha
 
 ```text
 RemoteBorne/
-├── config/
-├── documents/
-├── exports/
-├── logs/
-├── src/
-│   ├── RemoteBorneManager.py
-│   ├── ssh_manager.py
-│   ├── ssh_queue.py
-│   ├── energy_manager.py
-│   ├── debug_logs.py
-│   ├── network_config.py
-│   └── open_help.py
-├── tools/
-│   ├── plink.exe
-│   └── pscp.exe
-└── imgs/
+|-- config/
+|-- documents/
+|-- exports/
+|-- logs/
+|-- src/
+|   |-- RemoteBorneManager.py
+|   |-- ssh_manager.py
+|   |-- ssh_queue.py
+|   |-- energy_manager.py
+|   |-- debug_logs.py
+|   |-- network_config.py
+|   `-- open_help.py
+|-- tools/
+|   |-- plink.exe
+|   `-- pscp.exe
+`-- imgs/
 ```
 
 ## Requirements
@@ -94,6 +95,7 @@ python src/RemoteBorneManager.py
 - SCP transfers use a dedicated lock
 - queue logs use short readable labels
 - transport failures correctly mark the session as disconnected
+- auxiliary windows are closed cleanly on disconnect or application exit
 
 ### GridCodes browser
 
@@ -116,7 +118,7 @@ The `Temperature / Derating` panel shows:
 - temperature
 - Battery SoC
 
-The `↻` button triggers a manual refresh of both values.
+The `Refresh` button triggers a manual refresh of both values.
 
 ### Integrated terminal
 
@@ -144,9 +146,9 @@ Interactive commands intentionally blocked:
 
 ## Known limits
 
-- `Save` and `Save As` still share a very similar remote naming flow
-- exact Battery SoC accuracy still needs to be revalidated on real hardware
-- changing IP at runtime now restarts the application instead of attempting a direct hot reconnect
+- Battery SoC still depends on the latest valid value available in charger logs and current vehicle activity
+- some long-duration and rapid multi-action scenarios still need real hardware regression passes
+- changing IP at runtime still triggers a full application restart by design
 
 ## Related documentation
 

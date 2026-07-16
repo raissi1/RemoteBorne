@@ -326,7 +326,12 @@ class RemoteBorneApp:
         self._file_refresh_seq = 0
         self._editor_window = None
         self._editor_remote_path = None
-        # --- ADDED ---
+        self._close_editor_window = None
+        self._terminal_window = None
+        self._close_terminal_window = None
+        self._energy_win = None
+        self._debug_logs_window = None
+        self._find_dialog = None
         self.temp_label_var = tk.StringVar(value="Relay: -- °C")
         self.soc_label_var = tk.StringVar(value="SoC Batterie: --")
         self._monitor_stop = False
@@ -334,6 +339,7 @@ class RemoteBorneApp:
         self._last_user_command_ts = time.time()
         self._last_monitor_poll_ts = 0.0
         self._refresh_running = False
+        self._refresh_pending = False
         self._closing = False
         self._scp_lock = threading.Lock()
 
@@ -374,6 +380,7 @@ class RemoteBorneApp:
         self._build_layout()
         self._set_led(False)
         self._update_controls_state()
+        self._start_ui_connection_guard()
 
 
         self.log(f"[INFO] RemoteBorne version: {APP_VERSION} ({os.path.basename(__file__)})")
@@ -776,45 +783,53 @@ class RemoteBorneApp:
         file_actions.grid_columnconfigure(1, weight=1)
         file_actions.grid_columnconfigure(2, weight=1)
         file_actions.grid_columnconfigure(3, weight=1)
+        file_actions.grid_rowconfigure(0, weight=0)
+        file_actions.grid_rowconfigure(1, weight=0)
+
+        style = ttk.Style()
+        style.configure("Wide.TButton", padding=(8, 6))
+        style.configure("Monitor.TButton", padding=(8, 2))
 
         # Row 1: short actions
         self.btn_refresh = ttk.Button(
             file_actions, text="Refresh", command=self.refresh_file_list
         )
-        self.btn_refresh.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
+        self.btn_refresh.grid(row=0, column=0, padx=3, pady=3, sticky="ew")
 
         self.btn_download = ttk.Button(
             file_actions, text="Download", command=self._menu_download
         )
-        self.btn_download.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
+        self.btn_download.grid(row=0, column=1, padx=3, pady=3, sticky="ew")
 
         self.btn_edit = ttk.Button(
             file_actions, text="Edit", command=self._menu_edit
         )
-        self.btn_edit.grid(row=0, column=2, padx=2, pady=2, sticky="ew")
+        self.btn_edit.grid(row=0, column=2, padx=3, pady=3, sticky="ew")
 
         self.btn_print = ttk.Button(
             file_actions, text="Print", command=self._menu_print
         )
-        self.btn_print.grid(row=0, column=3, padx=2, pady=2, sticky="ew")
+        self.btn_print.grid(row=0, column=3, padx=3, pady=3, sticky="ew")
 
         # Row 2: long actions
         self.btn_upload = ttk.Button(
             file_actions,
             text="Upload Configuration\nFile from PC",
+            style="Wide.TButton",
             command=self.upload_files_to_current_path,
         )
         self.btn_upload.grid(
-            row=1, column=0, columnspan=2, padx=2, pady=2, sticky="ew"
+            row=1, column=0, columnspan=2, padx=3, pady=3, sticky="ew"
         )
 
         self.btn_copy_panel = ttk.Button(
             file_actions,
             text="Load Grid Code\nConfiguration",
+            style="Wide.TButton",
             command=self.copy_selected_to_gridcodes,
         )
         self.btn_copy_panel.grid(
-            row=1, column=2, columnspan=2, padx=2, pady=2, sticky="ew"
+            row=1, column=2, columnspan=2, padx=3, pady=3, sticky="ew"
         )
 
         # ----- RIGHT MIDDLE : ENERGY MANAGER -----
@@ -860,7 +875,7 @@ class RemoteBorneApp:
             command=self.send_power_command,
         )
         self.btn_send_power.grid(
-            row=2, column=0, columnspan=2, pady=(4, 0), sticky="ew"
+            row=2, column=0, columnspan=2, pady=(6, 0), sticky="ew"
         )
 
         # CosPhi
@@ -903,7 +918,7 @@ class RemoteBorneApp:
             command=self.send_cosphi_command,
         )
         self.btn_send_cosphi.grid(
-            row=3, column=0, columnspan=2, pady=(4, 0), sticky="ew"
+            row=3, column=0, columnspan=2, pady=(6, 0), sticky="ew"
         )
 
         # Services
@@ -920,7 +935,7 @@ class RemoteBorneApp:
             command=self.restart_initd_services,
         )
         self.btn_restart_services.grid(
-            row=0, column=0, padx=2, pady=2, sticky="ew"
+            row=0, column=0, padx=3, pady=3, sticky="ew"
         )
 
         self.btn_reboot = ttk.Button(
@@ -929,7 +944,7 @@ class RemoteBorneApp:
             style="Danger.TButton",
             command=self.reboot_device,
         )
-        self.btn_reboot.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
+        self.btn_reboot.grid(row=0, column=1, padx=3, pady=3, sticky="ew")
 
         # ttk.Label(
             # srv_frame,
@@ -945,27 +960,39 @@ class RemoteBorneApp:
         derate_frame.grid(
             row=1, column=1, sticky="nsew", padx=(4, 0), pady=(4, 0)
         )
+
         derate_frame.grid_columnconfigure(0, weight=1)
-        derate_frame.grid_columnconfigure(1, weight=1)
+        derate_frame.grid_columnconfigure(1, weight=0)
+        derate_frame.grid_rowconfigure(0, weight=0)
+        derate_frame.grid_rowconfigure(1, weight=0)
 
-        # Relay temperatures — toute la largeur (row 0)
-        self.temp_label = ttk.Label(derate_frame, textvariable=self.temp_label_var)
-        self.temp_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=2, pady=2)
+        # Relay temperatures - full width on row 0
+        self.temp_label = ttk.Label(
+            derate_frame,
+            textvariable=self.temp_label_var,
+            anchor="w",
+            justify="left",
+        )
+        self.temp_label.grid(row=0, column=0, columnspan=2, sticky="ew", padx=2, pady=2)
 
-        # SoC + bouton refresh — row 1
-        self.soc_label = ttk.Label(derate_frame, textvariable=self.soc_label_var)
-        self.soc_label.grid(row=1, column=0, sticky="w", padx=2, pady=2)
+        # SoC + refresh button on row 1
+        self.soc_label = ttk.Label(
+            derate_frame,
+            textvariable=self.soc_label_var,
+            anchor="w",
+            justify="left",
+        )
+        self.soc_label.grid(row=1, column=0, sticky="ew", padx=2, pady=2)
 
-        style = ttk.Style()
-        style.configure("Small.TButton", padding=(3, 1))
         self.btn_monitor = ttk.Button(
             derate_frame,
-            text="↻",
-            style="Small.TButton",
-            width=3,
+            text="Refresh",
+            style="Monitor.TButton",
+            width=9,
             command=self.update_monitor,
         )
-        self.btn_monitor.grid(row=1, column=1, sticky="w", padx=2, pady=(2, 2))
+        self.btn_monitor.grid(row=1, column=1, sticky="e", padx=(8, 2), pady=2)
+
 
         # ----- BOTTOM : LOGS -----
         log_frame = ttk.Labelframe(main, text="Logs", padding=5)
@@ -1088,6 +1115,9 @@ class RemoteBorneApp:
 
     def _manual_disconnect(self):
         self._manual_disconnect_mode = True
+        self._refresh_running = False
+        self._refresh_pending = False
+        self._close_aux_windows("manual disconnect")
         try:
             self.ssh.close()
         except Exception:
@@ -1115,6 +1145,146 @@ class RemoteBorneApp:
             cleaned.append(str(p).replace("\\", "/"))
         return posixpath.join(*cleaned)
   
+    def _close_aux_windows(self, reason: str = "disconnect", force: bool = False):
+        if self._closing and not force:
+            return
+
+        closed_any = False
+
+        def _safe_destroy(win):
+            nonlocal closed_any
+            if win is None:
+                return
+            try:
+                if not win.winfo_exists():
+                    return
+            except Exception:
+                return
+            try:
+                win.grab_release()
+            except Exception:
+                pass
+            try:
+                win.destroy()
+                closed_any = True
+            except Exception:
+                pass
+
+        close_editor = getattr(self, "_close_editor_window", None)
+        if callable(close_editor):
+            try:
+                close_editor()
+                closed_any = True
+            except Exception:
+                _safe_destroy(getattr(self, "_editor_window", None))
+        else:
+            _safe_destroy(getattr(self, "_editor_window", None))
+        self._editor_window = None
+        self._editor_remote_path = None
+        self._close_editor_window = None
+
+        _safe_destroy(getattr(self, "_find_dialog", None))
+        self._find_dialog = None
+
+        close_terminal = getattr(self, "_close_terminal_window", None)
+        if callable(close_terminal):
+            try:
+                close_terminal()
+                closed_any = True
+            except Exception:
+                _safe_destroy(getattr(self, "_terminal_window", None))
+        else:
+            _safe_destroy(getattr(self, "_terminal_window", None))
+        self._terminal_window = None
+        self._close_terminal_window = None
+
+        debug_window = getattr(self, "_debug_logs_window", None)
+        if debug_window is not None:
+            try:
+                debug_window.on_close()
+                closed_any = True
+            except Exception:
+                _safe_destroy(getattr(debug_window, "window", None))
+        self._debug_logs_window = None
+
+        energy_win = getattr(self, "_energy_win", None)
+        if energy_win is not None:
+            try:
+                close_energy = getattr(energy_win, "close", None)
+                if callable(close_energy):
+                    close_energy()
+                    closed_any = True
+                else:
+                    _safe_destroy(getattr(energy_win, "win", None))
+            except Exception:
+                _safe_destroy(getattr(energy_win, "win", None))
+        self._energy_win = None
+
+        if force:
+            try:
+                tracked = {
+                    getattr(self, "_editor_window", None),
+                    getattr(self, "_find_dialog", None),
+                    getattr(self, "_terminal_window", None),
+                    getattr(getattr(self, "_energy_win", None), "win", None),
+                    getattr(getattr(self, "_debug_logs_window", None), "window", None),
+                }
+                for child in list(self.root.winfo_children()):
+                    if (
+                        isinstance(child, tk.Toplevel)
+                        and child not in tracked
+                        and child.winfo_exists()
+                    ):
+                        _safe_destroy(child)
+            except Exception:
+                pass
+
+        if closed_any:
+            self.log(f"[UI] Secondary windows closed after {reason}.")
+
+    def _has_aux_windows_open(self) -> bool:
+        tracked_windows = [
+            getattr(self, "_editor_window", None),
+            getattr(self, "_find_dialog", None),
+            getattr(self, "_terminal_window", None),
+            getattr(getattr(self, "_energy_win", None), "win", None),
+            getattr(getattr(self, "_debug_logs_window", None), "window", None),
+        ]
+        for win in tracked_windows:
+            if win is None:
+                continue
+            try:
+                if win.winfo_exists():
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _start_ui_connection_guard(self):
+        def guard():
+            if self._closing:
+                return
+            try:
+                disconnected = (
+                    not self.connected
+                    or not getattr(self.ssh, "connected", False)
+                    or getattr(self.ssh, "_reconnect_in_progress", False)
+                    or str(self.status_var.get()).startswith("Reconnecting")
+                )
+                if disconnected and self._has_aux_windows_open():
+                    self._close_aux_windows("UI guard disconnect")
+            except Exception:
+                pass
+            try:
+                self.root.after(750, guard)
+            except Exception:
+                pass
+
+        try:
+            self.root.after(750, guard)
+        except Exception:
+            pass
+
     # ==================================================================
     # ALIVE MONITOR (heartbeat echo alive)
     # ==================================================================
@@ -1228,71 +1398,48 @@ class RemoteBorneApp:
 
     # --- ADDED ---
     def update_temperature(self):
-        """Alias pour compatibilité — délègue à update_temp_and_soc."""
+        """Compatibility alias: refresh Temp and SoC together."""
         self.update_temp_and_soc()
 
     def update_soc(self):
-        """Alias pour compatibilité — délègue à update_temp_and_soc."""
-        pass  # déjà lancé par update_temperature via update_temp_and_soc
+        """Compatibility alias kept for older call sites."""
+        pass
 
     def update_monitor(self):
-        """Bouton refresh manuel — température et SoC en une seule commande."""
+        """Manual refresh button: Temp and SoC in one SSH command."""
         if not self.connected:
             self.log("[MONITOR] Refresh: not connected.")
             return
-        # Feedback visuel immédiat sur le bouton
-        try:
-            if self.btn_monitor:
-                self.btn_monitor.configure(state="disabled", text="…")
-        except Exception:
-            pass
         self.log("[MONITOR] Manual refresh requested...")
         self.update_temp_and_soc(manual=True)
 
     def update_temp_and_soc(self, manual=False):
-        """
-        Récupère Temp (Relay T1-T4) ET SoC en UNE SEULE commande SSH.
-        Évite tout mélange de stdout entre deux processus plink séquentiels.
-        """
+        """Fetch Temp and SoC with a single SSH command."""
+
         if getattr(self.ssh_queue, "pause_monitoring", False):
+            if manual:
+                self.log("[MONITOR] Refresh skipped: file operation in progress.")
             return
 
-        # Une seule commande avec séparateurs clairs
         cmd = (
             'echo "===TEMP==="; '
             'grep -oiE "DerateDetails:.*" /var/aux/ChargerApp/derate.log 2>/dev/null | tail -1; '
             'echo "===SOC==="; '
-            'grep -oiE "evPresentSoC: [0-9]+" /var/aux/ChargerApp/ChargerApp.log 2>/dev/null | tail -1'
+            'grep -oE "evPresentSo[Cc]: [0-9]+" /var/aux/ChargerApp/ChargerApp.log 2>/dev/null | tail -1 | grep -oE "[0-9]+"'
         )
 
         def cb(res):
-            # Restaurer le bouton si c'était un refresh manuel
-            def restore_btn():
-                try:
-                    if self.btn_monitor:
-                        self.btn_monitor.configure(state="normal", text="↻")
-                except Exception:
-                    pass
-
             stdout = (res.get("stdout") or res.get("out") or "").strip()
 
             if not res.get("success") or not stdout:
                 err = (res.get("stderr") or res.get("err") or "").strip()
-                self.log(f"[MONITOR] SSH error — {err or 'no response'}")
-                if manual:
-                    try:
-                        if not self._closing and self.root.winfo_exists():
-                            self.root.after(0, restore_btn)
-                    except Exception:
-                        pass
+                self.log(f"[MONITOR] SSH error - {err or 'no response'}")
                 return
 
-            # Séparer les deux sections
             parts = stdout.split("===SOC===")
             temp_raw = parts[0].replace("===TEMP===", "").strip()
-            soc_raw  = parts[1].strip() if len(parts) > 1 else ""
+            soc_raw = parts[1].strip() if len(parts) > 1 else ""
 
-            # ── TEMP ──────────────────────────────────────────────────
             relays = re.findall(
                 r"PowerBoard Relay T(\d+)\s*:\s*(\d+)", temp_raw, re.IGNORECASE
             )
@@ -1301,9 +1448,7 @@ class RemoteBorneApp:
 
             if relays:
                 relay_dict = {int(n): int(v) for n, v in relays}
-                relay_str = " | ".join(
-                    f"T{n}:{relay_dict[n]}" for n in sorted(relay_dict)
-                )
+                relay_str = " | ".join(f"T{n}:{relay_dict[n]}" for n in sorted(relay_dict))
                 temp_display = f"Relay: {relay_str} °C"
                 max_temp = max(relay_dict.values())
             elif m_pb:
@@ -1319,29 +1464,25 @@ class RemoteBorneApp:
                 max_temp = None
 
             if temp_display:
-                self.log(f"[MONITOR] Temp — {temp_display}")
+                self.log(f"[MONITOR] Temp - {temp_display}")
             else:
                 self.log(
                     "[MONITOR] Temp: no match in derate.log"
-                    + (f" — raw: {temp_raw[:80]}" if temp_raw else " — empty")
+                    + (f" - raw: {temp_raw[:80]}" if temp_raw else " - empty")
                 )
 
-            # ── SOC ───────────────────────────────────────────────────
-            soc_match = re.search(
-                r"evPresentSoC\s*[:=]\s*(\d+)", soc_raw, re.IGNORECASE
-            )
+            soc_match = re.search(r"(\d+)", soc_raw)
+            soc_value = soc_match.group(1) if soc_match else None
 
-            if soc_match:
-                self.log(f"[MONITOR] SoC: {soc_match.group(1)} %")
+            if soc_value is not None:
+                self.log(f"[MONITOR] SoC: {soc_value} %")
             else:
                 self.log(
                     "[MONITOR] SoC: no match in ChargerApp.log"
-                    + (f" — raw: {soc_raw[:80]}" if soc_raw else " — empty")
+                    + (f" - raw: {soc_raw[:80]}" if soc_raw else " - empty")
                 )
 
-            # ── UI ────────────────────────────────────────────────────
             def apply_ui():
-                # Temp
                 if temp_display is None:
                     self.temp_label_var.set("Relay: -- °C")
                     self.temp_label.configure(foreground="")
@@ -1350,15 +1491,11 @@ class RemoteBorneApp:
                     self.temp_label.configure(
                         foreground=("red" if (max_temp or 0) > 80 else "green")
                     )
-                # SoC
                 self.soc_label_var.set(
-                    f"SoC Batterie: {soc_match.group(1)}"
-                    if soc_match
+                    f"SoC Batterie: {soc_value}"
+                    if soc_value is not None
                     else "SoC Batterie: --"
                 )
-                # Restaurer le bouton si refresh manuel
-                if manual:
-                    restore_btn()
 
             try:
                 if not self._closing and self.root.winfo_exists():
@@ -1369,7 +1506,7 @@ class RemoteBorneApp:
         self.ssh_queue.execute(
             cmd,
             callback=cb,
-            timeout=self.ssh_timeout,
+            timeout=min(self.ssh_timeout, 5),
             command_type="monitor_temp_soc",
             label="Monitor Temp + SoC",
             silent=False,
@@ -1396,7 +1533,7 @@ class RemoteBorneApp:
                 self.log("[SSH] Connected")
                 self._set_led(True)
                 self._update_controls_state()
-                # init navigateur fichiers
+                # Initialize remote file browser
                 self.current_path = self.default_path
                 self.refresh_file_list()
                 # démarre le heartbeat et le monitor
@@ -1407,8 +1544,11 @@ class RemoteBorneApp:
 
             elif ev_type == "disconnected":
                 self.connected = False
+                self._refresh_running = False
+                self._refresh_pending = False
                 self.status_var.set("Disconnected")
                 self.log("[SSH] Disconnected")
+                self._close_aux_windows("SSH disconnect")
                 self._set_led(False)
                 self._clear_file_list_ui()
                 self.temp_label_var.set("Relay: -- °C")
@@ -1554,34 +1694,43 @@ class RemoteBorneApp:
     # NAVIGATION FICHIERS — VERSION ASYNC AVEC SSHManager.execute
     # ==================================================================
     def refresh_file_list(self):
-        """Rafraîchit la liste distante."""
+        """Refresh the remote file list."""
 
         if not self.connected:
             self.log("[FILES] Please connect before refreshing list.")
             return
 
         if getattr(self, "_refresh_running", False):
-            self.log("[FILES] Refresh already in progress, skipping.")
+            if not getattr(self, "_refresh_pending", False):
+                self.log("[FILES] Refresh already in progress, queued.")
+            self._refresh_pending = True
             return
+
         self._refresh_running = True
+        self._refresh_pending = False
 
         if not getattr(self, "current_path", None):
             self.current_path = self.default_path
 
-        cmd = f'ls -Ap "{self.current_path}"'
-        self.log(f"[FILES] Listing {self.current_path}")
+        requested_path = self.current_path
+        cmd = f'ls -Ap "{requested_path}"'
+        self.log(f"[FILES] Listing {requested_path}")
 
         self._file_refresh_seq += 1
         req_id = self._file_refresh_seq
 
         def cb(res):
             def apply_ui():
-                # Reset du flag EN PREMIER — garanti quoi qu'il arrive
                 self._refresh_running = False
+                rerun_needed = bool(getattr(self, "_refresh_pending", False))
+                self._refresh_pending = False
 
                 try:
-                    # Callback périmé (nouveau refresh lancé entre-temps) → on ignore
                     if req_id != self._file_refresh_seq:
+                        return
+
+                    if self.current_path != requested_path:
+                        rerun_needed = True
                         return
 
                     self.file_list.delete(0, "end")
@@ -1599,7 +1748,7 @@ class RemoteBorneApp:
 
                     lines = (res.get("stdout") or res.get("out") or "").splitlines()
 
-                    if self.current_path.rstrip("/") != self.default_path.rstrip("/"):
+                    if requested_path.rstrip("/") != self.default_path.rstrip("/"):
                         self.file_list.insert("end", "[.] (Parent)")
 
                     count = 0
@@ -1611,20 +1760,28 @@ class RemoteBorneApp:
 
                     if hasattr(self, "path_entry"):
                         self.path_entry.delete(0, "end")
-                        self.path_entry.insert(0, self.current_path)
+                        self.path_entry.insert(0, requested_path)
 
-                    self.log(f"[FILES] {count} entries in {self.current_path}")
+                    self.log(f"[FILES] {count} entries in {requested_path}")
 
                 except Exception as ex:
                     self.log(f"[FILES ERROR] {ex}")
+                finally:
+                    if rerun_needed and self.connected and not self._closing:
+                        try:
+                            self.root.after(0, self.refresh_file_list)
+                        except Exception:
+                            pass
 
             try:
                 if not self._closing and self.root.winfo_exists():
                     self.root.after(0, apply_ui)
                 else:
                     self._refresh_running = False
+                    self._refresh_pending = False
             except Exception:
                 self._refresh_running = False
+                self._refresh_pending = False
 
         self.ssh_queue.execute(
             cmd,
@@ -1634,7 +1791,7 @@ class RemoteBorneApp:
             label="Refresh file list",
             silent=False,
         )
-        
+
     def _go_root(self):
         if not self.connected:
             return
@@ -2452,13 +2609,17 @@ class RemoteBorneApp:
             dialog.transient(win)
             dialog.grab_set()
             dialog.resizable(False, False)
-            self._center_toplevel(dialog, 420, 120, parent=win)
+            self._center_toplevel(dialog, 520, 170, parent=win)
+            dialog.grid_columnconfigure(0, weight=0)
+            dialog.grid_columnconfigure(1, weight=1)
+            dialog.grid_rowconfigure(0, weight=0)
+            dialog.grid_rowconfigure(1, weight=0)
             dialog.protocol("WM_DELETE_WINDOW", lambda: (setattr(self, "_find_dialog", None), dialog.destroy()))
 
-            ttk.Label(dialog, text="Search text:").grid(row=0, column=0, padx=8, pady=8, sticky="w")
+            ttk.Label(dialog, text="Search text:").grid(row=0, column=0, padx=10, pady=(12, 8), sticky="w")
             q_var = tk.StringVar()
-            q_entry = ttk.Entry(dialog, textvariable=q_var, width=35)
-            q_entry.grid(row=0, column=1, padx=8, pady=8)
+            q_entry = ttk.Entry(dialog, textvariable=q_var, width=42)
+            q_entry.grid(row=0, column=1, padx=(0, 10), pady=(12, 8), sticky="ew")
             q_entry.focus_set()
 
             txt.tag_configure("find_match", background="#ffe082", foreground="#000000")
@@ -2511,10 +2672,14 @@ class RemoteBorneApp:
                     _focus_match(find_state["pos"] - 1)
 
             btns = ttk.Frame(dialog)
-            btns.grid(row=1, column=0, columnspan=2, sticky="e", padx=8, pady=(0, 8))
-            ttk.Button(btns, text="Previous", command=prev_match).pack(side="right", padx=4)
-            ttk.Button(btns, text="Next", command=next_match).pack(side="right", padx=4)
-            ttk.Button(btns, text="Find", command=run_find).pack(side="right", padx=4)
+            btns.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 10))
+            btns.grid_columnconfigure(0, weight=1)
+            btns.grid_columnconfigure(1, weight=0)
+            btns.grid_columnconfigure(2, weight=0)
+            btns.grid_columnconfigure(3, weight=0)
+            ttk.Button(btns, text="Find", command=run_find, width=10).grid(row=0, column=1, padx=(0, 6))
+            ttk.Button(btns, text="Previous", command=prev_match, width=10).grid(row=0, column=2, padx=6)
+            ttk.Button(btns, text="Next", command=next_match, width=10).grid(row=0, column=3, padx=(6, 0))
             q_entry.bind("<Return>", run_find)
             dialog.bind("<F3>", next_match)
             dialog.bind("<Shift-F3>", prev_match)
@@ -2922,7 +3087,12 @@ class RemoteBorneApp:
             return
         try:
             # même principe que V7 / RemoteBorneManager.py
-            self._energy_win = energy_manager.EnergyManagerWindow(self.root, self.ssh)
+            self._energy_win = energy_manager.EnergyManagerWindow(
+                self.root,
+                self.ssh,
+                ssh_queue=self.ssh_queue,
+                on_close=lambda: setattr(self, "_energy_win", None),
+            )
             try:
                 win = getattr(self._energy_win, "win", self._energy_win)
                 win.transient(self.root)
@@ -3205,6 +3375,7 @@ class RemoteBorneApp:
 
         def _on_close():
             try:
+                self._close_terminal_window = None
                 self._terminal_window = None
             except Exception:
                 pass
@@ -3213,6 +3384,7 @@ class RemoteBorneApp:
             except Exception:
                 pass
 
+        self._close_terminal_window = _on_close
         win.protocol("WM_DELETE_WINDOW", _on_close)
 
     
@@ -3316,7 +3488,7 @@ class RemoteBorneApp:
             return
 
         try:
-            debug_logs.open_debug_logs_window(
+            self._debug_logs_window = debug_logs.open_debug_logs_window(
                 self.root,
                 self.ssh.host,
                 self.ssh.user,        # ← correct
@@ -3329,7 +3501,7 @@ class RemoteBorneApp:
     def _show_about(self):
         self._popup_info(
             "About",
-            "Remote Borne Manager (RBM)\n"
+            "Remote Borne Control Interface (RBM)\n"
             "Author: Nabil RAISSI\n"
             "Backend: plink.exe / pscp.exe\n"
             "SSH queue, SCP protection and integrated terminal included.",
@@ -3342,6 +3514,10 @@ class RemoteBorneApp:
         self._closing = True
         self._alive_stop = True
         self._monitor_stop = True
+        try:
+            self._close_aux_windows("application exit", force=True)
+        except Exception:
+            pass
         try:
             self.ssh_queue.stop()
         except Exception:

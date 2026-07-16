@@ -104,7 +104,7 @@ def open_help(parent=None):
     text.insert("end", "\n1. OVERVIEW\n", "section")
     text.insert(
         "end",
-        "Remote Borne Manager (RBM) is an industrial desktop application used to manage chargers remotely through SSH and SCP.\n\n",
+        "Remote Borne Control Interface (RBM) is an industrial desktop application used to manage chargers remotely through SSH and SCP.\n\n",
         "normal",
     )
     text.insert("end", "Main capabilities:\n", "subtitle")
@@ -160,7 +160,8 @@ def open_help(parent=None):
         "end",
         "Remote editor features:\n"
         "- local Find in the editor\n"
-        "- Save and Save As\n"
+        "- Save overwrites the current remote file\n"
+        "- Save As uploads to a new remote target name or path\n"
         "- LF line ending normalization\n\n"
         "Download, Print, and editor file loading run in background workers to avoid UI freezes.\n\n"
         "Upload includes a remote file size verification step.\n"
@@ -249,14 +250,18 @@ def open_help(parent=None):
     text.insert("end", "\n11. KNOWN LIMITS\n", "section")
     text.insert(
         "end",
-        "- Save and Save As still share a very similar remote naming flow\n"
-        "- exact Battery SoC accuracy still needs hardware revalidation\n"
-        "- some long-duration and rapid multi-action scenarios still need field retesting\n",
+        "- Battery SoC depends on the latest value available in charger logs and current vehicle activity\n"
+        "- long-duration and rapid multi-action scenarios should still be revalidated on the real bench after infrastructure changes\n"
+        "- host key changes on the target still require normal SSH trust verification before reconnecting\n",
         "normal",
     )
 
     text.insert("end", "\n12. VERSION\n", "section")
-    text.insert("end", f"Remote Borne Manager 3.x PRO\nDate: {today}\n\nAuthor: Nabil RAISSI\n", "normal")
+    text.insert(
+        "end",
+        f"Remote Borne Control Interface\nHelp snapshot date: {today}\n\nAuthor: Nabil RAISSI\n",
+        "normal",
+    )
 
     text.bind("<Key>", lambda _e: "break")
 

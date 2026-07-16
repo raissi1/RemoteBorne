@@ -36,9 +36,11 @@ ENERGY_TOOL_RESOLVE = (
 class EnergyManagerWindow:
     """Fenêtre Energy Manager PRO (plein écran, une seule vue)."""
 
-    def __init__(self, master, ssh: "SSHManager"):
+    def __init__(self, master, ssh: "SSHManager", ssh_queue=None, on_close=None):
         self.master = master
         self.ssh = ssh
+        self.ssh_queue = ssh_queue
+        self._on_close_callback = on_close
 
         # Historique : liste de tuples (timestamp, mode, cmd, status)
         self.history = []
@@ -84,6 +86,7 @@ class EnergyManagerWindow:
         self.monitor_text = None
 
         self.build_ui()
+        self.win.protocol("WM_DELETE_WINDOW", self.close)
 
     # ------------------------------------------------------------
     # Helpers popups : toujours devant et modales
@@ -112,6 +115,30 @@ class EnergyManagerWindow:
         finally:
             self.win.attributes("-topmost", False)
 
+    def close(self):
+        try:
+            self.win.grab_release()
+        except Exception:
+            pass
+        try:
+            event_name = getattr(self, "_mousewheel_event", None)
+            if event_name:
+                self.win.unbind_all(event_name)
+        except Exception:
+            pass
+        callback = getattr(self, "_on_close_callback", None)
+        self._on_close_callback = None
+        if callable(callback):
+            try:
+                callback()
+            except Exception:
+                pass
+        try:
+            if self.win.winfo_exists():
+                self.win.destroy()
+        except Exception:
+            pass
+
     # ------------------------------------------------------------
     # Validation saisie numérique (float / int)
     # ------------------------------------------------------------
@@ -138,7 +165,7 @@ class EnergyManagerWindow:
             footer,
             text="Close",
             bootstyle="danger",
-            command=self.win.destroy,
+            command=self.close,
         ).pack(side="right")
 
         # Zone principale scrollable via Canvas
@@ -162,8 +189,12 @@ class EnergyManagerWindow:
 
         # Molette souris
         def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+            try:
+                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            except tk.TclError:
+                pass
+        self._mousewheel_event = "<MouseWheel>"
+        canvas.bind_all(self._mousewheel_event, _on_mousewheel)
 
         # ==========================================================
         # GRID RESPONSIVE
@@ -541,10 +572,20 @@ class EnergyManagerWindow:
             except Exception:
                 pass
 
-        self.ssh.execute(
-            cmd,
-            callback=callback,
-        )
+        if self.ssh_queue is not None:
+            self.ssh_queue.execute(
+                cmd,
+                callback=callback,
+                timeout=getattr(self.ssh, "timeout", 30),
+                auto_retry=False,
+                label=f"Energy {mode}",
+                silent=False,
+            )
+        else:
+            self.ssh.execute(
+                cmd,
+                callback=callback,
+            )
     # ------------------------------------------------------------
     # HISTORIQUE
     # ------------------------------------------------------------
@@ -614,7 +655,17 @@ class EnergyManagerWindow:
             except Exception:
                 pass
 
-        self.ssh.execute(cmd, callback=callback)
+        if self.ssh_queue is not None:
+            self.ssh_queue.execute(
+                cmd,
+                callback=callback,
+                timeout=getattr(self.ssh, "timeout", 30),
+                auto_retry=False,
+                label="Energy status",
+                silent=False,
+            )
+        else:
+            self.ssh.execute(cmd, callback=callback)
 
     def restart_energy_service(self):
         if not self.ssh or not getattr(self.ssh, "connected", False):
@@ -637,4 +688,14 @@ class EnergyManagerWindow:
             except Exception:
                 pass
 
-        self.ssh.execute(cmd, callback=callback)
+        if self.ssh_queue is not None:
+            self.ssh_queue.execute(
+                cmd,
+                callback=callback,
+                timeout=max(30, getattr(self.ssh, "timeout", 30)),
+                auto_retry=False,
+                label="Restart S91energy-manager",
+                silent=False,
+            )
+        else:
+            self.ssh.execute(cmd, callback=callback)

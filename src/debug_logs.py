@@ -554,5 +554,5 @@ def open_debug_logs_window(parent, host: str, user: str, password: str, port: in
         debug_logs.open_debug_logs_window(self.root, self.host, self.user, self.password, self.port)
     """
     ssh_info = (host, user, password, port)
-    DebugLogsWindow(parent, ssh_info)
+    return DebugLogsWindow(parent, ssh_info)
 

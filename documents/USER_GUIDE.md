@@ -53,9 +53,10 @@ Notes:
 From `Edit`:
 
 - `Find` opens local search inside the editor
-- `Save` uploads the current content
-- `Save As` uses the same remote naming flow with a different target name
+- `Save` overwrites the current remote file
+- `Save As` uploads the content to a new remote target name or full path
 - line endings are normalized to `LF`
+- edit authentication can be requested before the editor opens
 
 Useful shortcuts:
 
@@ -137,7 +138,7 @@ The `Temperature / Derating` panel shows:
 - board temperature
 - Battery SoC
 
-The `↻` button triggers an immediate manual refresh.
+The `Refresh` button triggers an immediate manual refresh.
 
 ## 10. Network config
 
@@ -150,10 +151,11 @@ The `Network config` window lets you change:
 - `remote_path`
 - `remote_file`
 - `local_path`
+- edit password
 
 Current behavior:
 
-- if only paths change, they are reloaded
+- if only paths or the edit password change, they are reloaded directly
 - if IP, port, or credentials change, the application restarts after saving
 
 ## 11. Integrated SSH terminal
@@ -204,11 +206,12 @@ If `plink` reports a host key error in batch mode:
 
 - make sure you are targeting the correct charger
 - clear the cached PuTTY key for that IP if required
+- reconnect only after validating the new host key fingerprint
 
 ### Temperature or Battery SoC not updating
 
 - confirm the SSH session is still active
-- use the `↻` button
+- use the `Refresh` button
 - check the application logs
 
 ### IP address change
@@ -223,6 +226,6 @@ If `plink` reports a host key error in batch mode:
 
 ## 13. Known points
 
-- `Save` and `Save As` are not yet fully separated functionally
-- Battery `SoC` still needs to be revalidated against the actual vehicle value
-- some long-duration tests still need to be rerun on real hardware
+- Battery `SoC` depends on the latest valid value available in charger logs and current vehicle activity
+- some long-duration and rapid multi-action scenarios still need to be rerun on real hardware after infrastructure changes
+- if the SSH host key changes, reconnecting still requires standard trust verification on the target IP

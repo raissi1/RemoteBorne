@@ -13,6 +13,7 @@ This document is a short guide for replaying the most sensitive scenarios after 
 - restoration of the full `GridCodes` context menu
 - fix for the `Energy Manager PRO` window sizing
 - clean application restart after IP / SSH changes in `Network config`
+- safer closing of auxiliary windows on disconnect or application exit
 
 ## 2. Revalidation priorities
 
@@ -85,7 +86,7 @@ This document is a short guide for replaying the most sensitive scenarios after 
 ### T61 / T62 - Temperature / Battery SoC
 
 - Expected:
-  - manual refresh works through `↻`
+  - manual refresh works through `Refresh`
   - temperature is displayed
   - Battery SoC is displayed
 
