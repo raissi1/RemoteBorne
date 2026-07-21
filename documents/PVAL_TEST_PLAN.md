@@ -1,10 +1,10 @@
-# PVAL - Post-fix Revalidation Plan
+# RBM V10 - Revalidation Test Plan
 
 ## Goal
 
-This document is a short guide for replaying the most sensitive scenarios after the major RBM fixes.
+This document is a short guide for replaying the most sensitive scenarios after the major `RBM V10` fixes and packaging updates.
 
-## 1. Items already addressed in code
+## 1. Items already addressed in V10
 
 - UI freezes around `refresh`, `download`, `print`, `upload`, and editor flows
 - serialization of critical remote commands through `SSHQueue`
@@ -13,7 +13,8 @@ This document is a short guide for replaying the most sensitive scenarios after 
 - restoration of the full `GridCodes` context menu
 - fix for the `Energy Manager PRO` window sizing
 - clean application restart after IP / SSH changes in `Network config`
-- safer closing of auxiliary windows on disconnect or application exit
+- cleaner handling of debug log popups and auxiliary windows
+- updated project documents and harmonized delivery names
 
 ## 2. Revalidation priorities
 
@@ -22,6 +23,7 @@ This document is a short guide for replaying the most sensitive scenarios after 
 3. `Energy Manager PRO`
 4. integrated SSH terminal
 5. temperature and Battery SoC monitoring
+6. consistency between code features and delivered documentation
 
 ## 3. High-priority test cases
 
@@ -117,9 +119,11 @@ This document is a short guide for replaying the most sensitive scenarios after 
 - Battery `SoC` accuracy versus the real vehicle value
 - long-duration behavior over several hours
 - rapid multi-action scenarios when an editor is already open
+- final validation of all customer-facing documents against the packaged `V10` build
 
 ## 5. Exit criteria
 
 - no UI blocking on critical workflows
 - terminal and help stay consistent with the visible features
+- user guide, validation plan, and packaged document names are aligned
 - three consecutive runs without major regression on the priority cases

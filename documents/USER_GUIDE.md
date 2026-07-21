@@ -1,4 +1,4 @@
-# Remote Borne Manager - User Guide
+# Remote Borne Manager - V10 User Guide
 
 ## 1. Startup
 
@@ -222,10 +222,5 @@ If `plink` reports a host key error in batch mode:
 
 ### Energy Manager PRO
 
-- if a button still appears hidden, make sure you are running a version that includes the latest window sizing fixes
-
-## 13. Known points
-
-- Battery `SoC` depends on the latest valid value available in charger logs and current vehicle activity
-- some long-duration and rapid multi-action scenarios still need to be rerun on real hardware after infrastructure changes
-- if the SSH host key changes, reconnecting still requires standard trust verification on the target IP
+- verify the SSH session is active before sending a command
+- use the command history and monitor panel to confirm execution feedback

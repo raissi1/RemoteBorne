@@ -1,13 +1,25 @@
-# Remote Borne Manager (RBM)
+# Remote Borne Manager (RBM) - V10 Documentation Overview
 
-Remote Borne Manager is a Windows Python application used to control IOTECHA chargers remotely over SSH and SCP through `plink.exe` and `pscp.exe`.
+This folder contains the consolidated documentation package prepared for the `V10` delivery of `Remote Borne Manager`.
 
-## Main features
+## Deliverable content
+
+- `RBM_V10_Init_Validation_Plan.docx`
+- `RBM_V10_Campaign_Validation_Plan.docx`
+- `RBM_V10_Campaign_Validation_Plan_Filled.docx`
+- `RBM_V10_Client_Guide_Step_By_Step.docx`
+- `RBM_V10_Client_Guide_Step_By_Step.pdf`
+- `RBM_V10_User_Guide.md`
+- `RBM_V10_Revalidation_Test_Plan.md`
+- `RBM_V10_Documentation_Requirements.txt`
+
+## V10 functional scope covered by the documentation
 
 - SSH connection management with reconnect handling
-- `GridCodes` remote browser with file and folder navigation
+- GridCodes remote browser with file and folder navigation
 - Remote editing with `Find`, `Save`, and `Save As`
-- Hardened SCP upload and download flows
+- Edit authentication before opening protected files
+- SCP upload and download with hardened transfer flow
 - PDF export from remote text files
 - Copy to `GridCodes.properties` with optional service restart
 - `Energy Manager PRO` with `P/Q` and `CosPhi` modes
@@ -17,143 +29,23 @@ Remote Borne Manager is a Windows Python application used to control IOTECHA cha
 - Temperature and Battery SoC monitoring
 - Full right-click context menu in the `GridCodes` browser
 
-## Useful structure
+## Source mapping
 
-```text
-RemoteBorne/
-├── config/
-├── documents/
-├── exports/
-├── logs/
-├── src/
-│   ├── RemoteBorneManager.py
-│   ├── ssh_manager.py
-│   ├── ssh_queue.py
-│   ├── energy_manager.py
-│   ├── debug_logs.py
-│   ├── network_config.py
-│   └── open_help.py
-├── tools/
-│   ├── plink.exe
-│   └── pscp.exe
-└── imgs/
-```
+- `RBM_V10_Init_Validation_Plan.docx`
+  Source: `documents/PV_RBM_V8_Init.docx`
+- `RBM_V10_Campaign_Validation_Plan.docx`
+  Source: `documents/RBM_PVAL_v8_CampagneTest.docx`
+- `RBM_V10_Campaign_Validation_Plan_Filled.docx`
+  Source: `src/documents/RBM_PVAL_v8_CampagneTest_Rempli.docx`
+- `RBM_V10_Client_Guide_Step_By_Step.docx`
+  Source: `documents/RBM_GUIDE_CLIENT_PAS_A_PAS_V2.docx`
+- `RBM_V10_Client_Guide_Step_By_Step.pdf`
+  Source: `documents/RBM_GUIDE_CLIENT_PAS_A_PAS_V2.pdf`
+- `RBM_V10_User_Guide.md`
+  Source base: `documents/USER_GUIDE.md`
+- `RBM_V10_Revalidation_Test_Plan.md`
+  Source base: `documents/PVAL_TEST_PLAN.md`
 
-## Requirements
+## Packaging note
 
-- Windows 10 or 11
-- Python 3.10+
-- `plink.exe` and `pscp.exe` available in `tools/`
-
-Install dependencies:
-
-```bash
-pip install -r documents/requirements.txt
-```
-
-## Configuration
-
-The main SSH configuration is stored in `config/config.ini`:
-
-```ini
-[SSH]
-host = 192.168.1.100
-username = root
-password = myPassword
-port = 22
-```
-
-And the app paths:
-
-```ini
-[PATHS]
-remote_path = /etc/iotecha/configs/GridCodes
-remote_file = GridCodes.properties
-local_path = exports/GridCodes.properties
-```
-
-You can edit these values from the application:
-
-- `Network` -> `Network config`
-
-Important behavior:
-
-- if the IP address or SSH credentials change, the application saves the config and restarts cleanly instead of trying a hot reconnect
-
-## Launch
-
-```bash
-python src/RemoteBorneManager.py
-```
-
-## Current behavior highlights
-
-### SSH and stability
-
-- `SSHQueue` serializes critical remote commands
-- SCP transfers use a dedicated lock
-- queue logs use short readable labels
-- transport failures correctly mark the session as disconnected
-
-### GridCodes browser
-
-Right-click on a file:
-
-- `Edit`
-- `Download`
-- `Print`
-- `Copy to GridCodes.properties`
-- `Delete`
-
-Right-click on a folder:
-
-- `Delete`
-
-### Monitoring
-
-The `Temperature / Derating` panel shows:
-
-- temperature
-- Battery SoC
-
-The `↻` button triggers a manual refresh of both values.
-
-### Integrated terminal
-
-Available from:
-
-- `Terminal` -> `Open Terminal`
-
-Features:
-
-- history with `Up/Down`
-- persistent `cd`
-- `clear`
-- `help`
-- `rm`, `mv`, and `cp` forced with `-f`
-
-Interactive commands intentionally blocked:
-
-- `vim`
-- `vi`
-- `nano`
-- `top`
-- `htop`
-- `less`
-- `more`
-
-## Known limits
-
-- `Save` and `Save As` still share a very similar remote naming flow
-- exact Battery SoC accuracy still needs to be revalidated on real hardware
-- changing IP at runtime now restarts the application instead of attempting a direct hot reconnect
-
-## Related documentation
-
-- `documents/USER_GUIDE.md`
-- `documents/PVAL_TEST_PLAN.md`
-- `documents/PV_RBM_V8_Init.docx`
-
-## Usage
-
-Internal professional use.
+The original project path was read-only in this session. This V10 documentation package was therefore rebuilt in a writable workspace as a clean delivery set, with harmonized names for client-facing use.
