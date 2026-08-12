@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 import subprocess
 import threading
@@ -481,7 +481,7 @@ class DebugLogsWindow:
     # ------------------------------------------------------------------
     # Boutons
     # ------------------------------------------------------------------
-    def stop_log(self, log_name: str):
+    def stop_log(self, log_name: str, silent: bool = False):
         if log_name in self.processes:
             self.running[log_name] = False
             try:
@@ -489,7 +489,8 @@ class DebugLogsWindow:
             except Exception:
                 pass
             del self.processes[log_name]
-            messagebox.showinfo("Info", f"Stopped following {log_name}.")
+            if not silent:
+                messagebox.showinfo("Info", f"Stopped following {log_name}.")
 
     def clear_log(self, log_name: str):
         # efface la vue + le buffer
@@ -543,9 +544,8 @@ class DebugLogsWindow:
 
     def on_close(self):
         for log_name in list(self.processes.keys()):
-            self.stop_log(log_name)
+            self.stop_log(log_name, silent=True)
         self.window.destroy()
-
 
 # ---------- Wrapper utilisÃ© par RemoteBorneManager.py ----------
 def open_debug_logs_window(parent, host: str, user: str, password: str, port: int = 22):

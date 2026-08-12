@@ -1492,7 +1492,7 @@ class RemoteBorneApp:
                         foreground=("red" if (max_temp or 0) > 80 else "green")
                     )
                 self.soc_label_var.set(
-                    f"SoC Batterie: {soc_value}"
+                    f"SoC Batterie (last known): {soc_value}"
                     if soc_value is not None
                     else "SoC Batterie: --"
                 )
@@ -3086,7 +3086,14 @@ class RemoteBorneApp:
             )
             return
         try:
-            # même principe que V7 / RemoteBorneManager.py
+            if self._energy_win is not None:
+                win = getattr(self._energy_win, "win", self._energy_win)
+                if win is not None and win.winfo_exists():
+                    win.deiconify()
+                    win.lift()
+                    win.focus_force()
+                    return
+
             self._energy_win = energy_manager.EnergyManagerWindow(
                 self.root,
                 self.ssh,
@@ -3108,9 +3115,6 @@ class RemoteBorneApp:
                 f"Unable to open Energy Manager:\n{e}",
             )
 
-    # ==================================================================
-    # TERMINAL SSH
-    # ==================================================================
     def open_terminal(self):
         if self._closing:
             return
@@ -3479,7 +3483,7 @@ class RemoteBorneApp:
 
        
     def open_debug_logs(self):
-        """Ouvre la fenêtre Debug Logs seulement si SSH connecté."""
+        """Ouvre la fenÃªtre Debug Logs seulement si SSH connectÃ©."""
         if not self.connected:
             self._popup_warning(
                 "Debug logs",
@@ -3488,14 +3492,23 @@ class RemoteBorneApp:
             return
 
         try:
+            if self._debug_logs_window is not None:
+                if self._debug_logs_window.winfo_exists():
+                    self._debug_logs_window.deiconify()
+                    self._debug_logs_window.lift()
+                    self._debug_logs_window.focus_force()
+                    return
+            self._debug_logs_window = None
+
             self._debug_logs_window = debug_logs.open_debug_logs_window(
                 self.root,
                 self.ssh.host,
-                self.ssh.user,        # ← correct
-                self.ssh.password,    # ← correct
-                self.ssh.port         # ← correct
+                self.ssh.user,
+                self.ssh.password,
+                self.ssh.port
             )
         except Exception as e:
+            self._debug_logs_window = None
             self._popup_error("Debug logs", f"Unable to open the Debug logs window:\n{e}")
 
     def _show_about(self):
