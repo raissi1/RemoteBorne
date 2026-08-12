@@ -3493,10 +3493,11 @@ class RemoteBorneApp:
 
         try:
             if self._debug_logs_window is not None:
-                if self._debug_logs_window.winfo_exists():
-                    self._debug_logs_window.deiconify()
-                    self._debug_logs_window.lift()
-                    self._debug_logs_window.focus_force()
+                debug_win = getattr(self._debug_logs_window, "window", None)
+                if debug_win is not None and debug_win.winfo_exists():
+                    debug_win.deiconify()
+                    debug_win.lift()
+                    debug_win.focus_force()
                     return
             self._debug_logs_window = None
 
