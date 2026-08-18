@@ -1,13 +1,50 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_all
+
+from PyInstaller.utils.hooks import collect_all, collect_data_files
 
 datas = [('BorneCommander.ico', '.')]
 binaries = []
-hiddenimports = ['debug_logs', 'energy_manager', 'network_config', 'plink_backend', 'ssh_manager']
-tmp_ret = collect_all('ttkbootstrap')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('reportlab')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+
+hiddenimports = [
+    'debug_logs',
+    'energy_manager',
+    'network_config',
+    'plink_backend',
+    'ssh_manager'
+]
+
+# ============================================================
+# TTKBOOTSTRAP
+# ============================================================
+
+ttk_datas, ttk_binaries, ttk_hiddenimports = collect_all('ttkbootstrap')
+
+datas += ttk_datas
+binaries += ttk_binaries
+hiddenimports += ttk_hiddenimports
+
+# Force inclusion of ttkbootstrap resources/fonts
+datas += collect_data_files('ttkbootstrap', include_py_files=False)
+
+# ============================================================
+# PILLOW
+# ============================================================
+
+pil_datas, pil_binaries, pil_hiddenimports = collect_all('PIL')
+
+datas += pil_datas
+binaries += pil_binaries
+hiddenimports += pil_hiddenimports
+
+# ============================================================
+# REPORTLAB
+# ============================================================
+
+reportlab_datas, reportlab_binaries, reportlab_hiddenimports = collect_all('reportlab')
+
+datas += reportlab_datas
+binaries += reportlab_binaries
+hiddenimports += reportlab_hiddenimports
 
 
 a = Analysis(
@@ -23,6 +60,7 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+
 pyz = PYZ(a.pure)
 
 exe = EXE(
@@ -43,6 +81,7 @@ exe = EXE(
     entitlements_file=None,
     icon=['BorneCommander.ico'],
 )
+
 coll = COLLECT(
     exe,
     a.binaries,

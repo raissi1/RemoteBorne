@@ -3016,6 +3016,13 @@ class RemoteBorneApp:
             self._popup_warning("Services", "Please connect first.")
             return
 
+        if not messagebox.askyesno(
+            "Services",
+            "Before restarting services, verify that the charging cable is unplugged.\n\nContinue?",
+            parent=self.root,
+        ):
+            return
+
         services = ["S39ConfigManager", "S91energy-manager", "S95chargerapp"]
 
         cmd_parts = []
@@ -3052,7 +3059,19 @@ class RemoteBorneApp:
         if not self.connected:
             self._popup_warning("Reboot", "Please connect first.")
             return
-        if not messagebox.askyesno("Reboot", "Reboot the device now?"):
+
+        if not messagebox.askyesno(
+            "Reboot",
+            "Before rebooting the device, verify that the charging cable is unplugged.\n\nContinue?",
+            parent=self.root,
+        ):
+            return
+
+        if not messagebox.askyesno(
+            "Reboot",
+            "Reboot the device now?",
+            parent=self.root,
+        ):
             return
 
         self.log("[REBOOT] Sending 'reboot' command...")
@@ -3065,7 +3084,6 @@ class RemoteBorneApp:
                 self.log("[REBOOT] Command sent. Device will reboot.")
                 self._popup_info("Reboot", "Reboot command sent.")
 
-        # IMPORTANT : pas d’auto_retry, la borne s’éteint juste après
         self.ssh_queue.execute(
             "reboot",
             callback=cb,
@@ -3075,9 +3093,6 @@ class RemoteBorneApp:
             silent=False,
         )
 
-    # ==================================================================
-    # NETWORK CONFIG / DEBUG / HELP
-    # ==================================================================
     def open_energy_manager(self):
         if not self.connected:
             self._popup_warning(
