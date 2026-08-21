@@ -2688,7 +2688,7 @@ class RemoteBorneApp:
                 lambda _e: (setattr(self, "_find_dialog", None), dialog.destroy()),
             )
 
-        def _write_local_and_upload(target_remote: str):
+        def _write_local_and_upload(target_remote: str, check_existing: bool = True):
             content = txt.get("1.0", "end-1c")
             content = content.replace("\r\n", "\n").replace("\r", "\n")
             try:
@@ -2749,6 +2749,10 @@ class RemoteBorneApp:
                         return
                 do_upload()
 
+            if not check_existing:
+                do_upload()
+                return
+
             self.ssh_queue.execute(
                 f'test -e "{target_remote}"',
                 callback=on_exists_check,
@@ -2761,7 +2765,13 @@ class RemoteBorneApp:
             )
 
         def save_direct():
-            _write_local_and_upload(remote_path)
+            if not messagebox.askyesno(
+                "Save",
+                "Do you want to save the updates made to this file?",
+                parent=win,
+            ):
+                return
+            _write_local_and_upload(remote_path, check_existing=False)
 
         def save_and_upload():
             user_name = simpledialog.askstring(
@@ -3431,6 +3441,18 @@ class RemoteBorneApp:
                 self.local_default_path = paths_cfg.get(
                     "local_path", os.path.join(EXPORTS_DIR, "GridCodes.properties")
                 )
+                local_dir = (
+                    os.path.dirname(self.local_default_path)
+                    or self.local_default_path
+                )
+                if not self.local_default_path or not os.path.exists(local_dir):
+                    self.local_default_path = os.path.join(
+                        os.path.expanduser("~"),
+                        "Documents",
+                        "remote_borne_manager",
+                        self.remote_file,
+                    )
+                    os.makedirs(os.path.dirname(self.local_default_path), exist_ok=True)
                 self.edit_password = security_cfg.get("edit_password", "").strip()
                 self.current_path = self.default_path
 

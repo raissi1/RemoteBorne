@@ -97,12 +97,11 @@ class DebugLogsWindow:
         self.filter_warn = {}            # log_name -> BooleanVar
         self.filter_info = {}            # log_name -> BooleanVar
 
-        # FenÃªtre modale
+        # Keep logs visible while the operator continues working in RBM.
         self.window = tk.Toplevel(parent)
         self.window.title("Debug Logs - Service Monitor")
         self.window.geometry("1180x760")
         self.window.transient(parent)
-        self.window.grab_set()
         self.window.minsize(980, 620)
 
         # Centrage sur la fenÃªtre parente
@@ -123,7 +122,6 @@ class DebugLogsWindow:
             self._create_tab(name, path)
 
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
-        # Non-bloquant: la fenÃªtre reste modale via grab_set mais sans bloquer l'appelant
 
     # ------------------------------------------------------------------
     # CrÃ©ation d'un onglet complet (zone texte + barre grep + boutons)
@@ -547,7 +545,7 @@ class DebugLogsWindow:
             self.stop_log(log_name, silent=True)
         self.window.destroy()
 
-# ---------- Wrapper utilisÃ© par RemoteBorneManager.py ----------
+# ---------- Wrapper utilisation par RemoteBorneManager.py ----------
 def open_debug_logs_window(parent, host: str, user: str, password: str, port: int = 22):
     """
     Appel simple depuis RemoteBorneManager:
