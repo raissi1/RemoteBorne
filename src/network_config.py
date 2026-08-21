@@ -36,11 +36,21 @@ def open_network_config(parent, config_path, on_saved=None):
             "password": "",
             "port": "22",
         }
+    export_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(config_path))), "exports"
+    )
+
+    def normalize_local_dir(value: str) -> str:
+        candidate = os.path.normpath(os.path.expanduser((value or "").strip()))
+        if candidate and os.path.splitext(os.path.basename(candidate))[1]:
+            candidate = os.path.dirname(candidate)
+        return candidate or export_dir
+
     if "PATHS" not in cfg:
         cfg["PATHS"] = {
             "remote_path": "/etc/iotecha/configs/GridCodes",
             "remote_file": "GridCodes.properties",
-            "local_path": os.path.expanduser("~/Downloads"),
+            "local_path": export_dir,
         }
 
     # Fenêtre
@@ -107,11 +117,11 @@ def open_network_config(parent, config_path, on_saved=None):
     rfile_entry.insert(0, cfg["PATHS"].get("remote_file", "GridCodes.properties"))
     rfile_entry.grid(row=6, column=1, sticky="ew", padx=10)
 
-    ttk.Label(main_frame, text="Local path:").grid(
+    ttk.Label(main_frame, text="Local export folder:").grid(
         row=7, column=0, sticky="w", padx=10, pady=5
     )
     lpath_entry = ttk.Entry(main_frame)
-    lpath_entry.insert(0, cfg["PATHS"].get("local_path", ""))
+    lpath_entry.insert(0, normalize_local_dir(cfg["PATHS"].get("local_path", "")))
     lpath_entry.grid(row=7, column=1, sticky="ew", padx=10)
 
     def browse_local():
@@ -145,7 +155,7 @@ def open_network_config(parent, config_path, on_saved=None):
         port_raw = port_entry.get().strip()
         remote_path = rpath_entry.get().strip()
         remote_file = rfile_entry.get().strip()
-        local_path = lpath_entry.get().strip()
+        local_path = normalize_local_dir(lpath_entry.get())
 
         if not _is_valid_host(host):
             messagebox.showerror("Validation", "Invalid IP address or hostname.")

@@ -129,6 +129,26 @@ IMG_DIR_1 = os.path.join(BASE_DIR, "imgs")
 IMG_DIR_2  = os.path.join(BASE_DIR, "imgs")
 
 
+def _local_export_dir(value: str) -> str:
+    """Return a usable export directory and migrate legacy file paths."""
+    candidate = os.path.normpath(os.path.expanduser((value or "").strip()))
+    if candidate and os.path.splitext(os.path.basename(candidate))[1]:
+        candidate = os.path.dirname(candidate)
+    return candidate or EXPORTS_DIR
+
+
+def _ensure_local_export_dir(value: str) -> str:
+    """Create the configured folder, with the portable exports folder as fallback."""
+    requested_dir = _local_export_dir(value)
+    for candidate in (requested_dir, EXPORTS_DIR):
+        try:
+            os.makedirs(candidate, exist_ok=True)
+            return candidate
+        except OSError as exc:
+            print(f"[CONFIG] Local export path unavailable: {candidate} ({exc})")
+    return EXPORTS_DIR
+
+
 # ----------------------------------------------------------------------
 # Lecture config.ini
 # ----------------------------------------------------------------------
@@ -153,8 +173,7 @@ def load_config() -> configparser.ConfigParser:
         cfg["PATHS"] = {
             "remote_path": "/etc/iotecha/configs/GridCodes",
             "remote_file": "GridCodes.properties",
-            # par défaut on pointe vers EXPORTS_DIR ou documents
-            "local_path": os.path.join(EXPORTS_DIR, "GridCodes.properties"),
+            "local_path": EXPORTS_DIR,
         }
 
         # On écrit dans config/config.ini
@@ -199,8 +218,14 @@ def load_config() -> configparser.ConfigParser:
             cfg["PATHS"] = {
                 "remote_path": "/etc/iotecha/configs/GridCodes",
                 "remote_file": "GridCodes.properties",
-                "local_path": os.path.join(EXPORTS_DIR, "GridCodes.properties"),
+                "local_path": EXPORTS_DIR,
             }
+            needs_writeback = True
+        normalized_local_path = _ensure_local_export_dir(
+            cfg["PATHS"].get("local_path", "")
+        )
+        if cfg["PATHS"].get("local_path", "") != normalized_local_path:
+            cfg["PATHS"]["local_path"] = normalized_local_path
             needs_writeback = True
         if "SECURITY" not in cfg:
             cfg["SECURITY"] = {"edit_password": ""}
@@ -240,19 +265,10 @@ class RemoteBorneApp:
             "remote_path", "/etc/iotecha/configs/GridCodes"
         )
         self.remote_file = paths_cfg.get("remote_file", "GridCodes.properties")
-        self.local_default_path = paths_cfg.get(
-            "local_path", os.path.join(EXPORTS_DIR, "GridCodes.properties")
+        self.local_default_path = _ensure_local_export_dir(
+            paths_cfg.get("local_path", EXPORTS_DIR)
         )
         self.edit_password = security_cfg.get("edit_password", "").strip()
-        _local_dir = os.path.dirname(self.local_default_path) or self.local_default_path
-        if not self.local_default_path or not os.path.exists(_local_dir):
-            self.local_default_path = os.path.join(
-                os.path.expanduser("~"),
-                "Documents",
-                "remote_borne_manager",
-                self.remote_file,
-            )
-            os.makedirs(os.path.dirname(self.local_default_path), exist_ok=True)
 
         self.current_path = self.default_path
 
@@ -3438,21 +3454,9 @@ class RemoteBorneApp:
                     "remote_path", "/etc/iotecha/configs/GridCodes"
                 )
                 self.remote_file = paths_cfg.get("remote_file", "GridCodes.properties")
-                self.local_default_path = paths_cfg.get(
-                    "local_path", os.path.join(EXPORTS_DIR, "GridCodes.properties")
+                self.local_default_path = _ensure_local_export_dir(
+                    paths_cfg.get("local_path", EXPORTS_DIR)
                 )
-                local_dir = (
-                    os.path.dirname(self.local_default_path)
-                    or self.local_default_path
-                )
-                if not self.local_default_path or not os.path.exists(local_dir):
-                    self.local_default_path = os.path.join(
-                        os.path.expanduser("~"),
-                        "Documents",
-                        "remote_borne_manager",
-                        self.remote_file,
-                    )
-                    os.makedirs(os.path.dirname(self.local_default_path), exist_ok=True)
                 self.edit_password = security_cfg.get("edit_password", "").strip()
                 self.current_path = self.default_path
 
