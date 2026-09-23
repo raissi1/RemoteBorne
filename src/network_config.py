@@ -51,17 +51,40 @@ def open_network_config(parent, config_path, on_saved=None):
             "remote_path": "/etc/iotecha/configs/GridCodes",
             "remote_file": "GridCodes.properties",
             "local_path": export_dir,
+            "netlogger_path": "/var/aux/netlogger",
         }
 
     # Fenêtre
     win = tk.Toplevel(parent)
+    win.withdraw()
     win.title("Network Configuration")
-    win.geometry("640x430")
+    win.geometry("640x475")
     win.resizable(False, False)
-    win.transient(parent)
-    win.grab_set()
-
     center_window(parent, win, 640, 430)
+
+    def show_error(title: str, message: str):
+        win.lift()
+        messagebox.showerror(title, message, parent=win)
+        win.lift()
+        win.focus_force()
+
+    def show_info(title: str, message: str):
+        win.lift()
+        messagebox.showinfo(title, message, parent=win)
+        win.lift()
+        win.focus_force()
+
+    def close_window():
+        try:
+            win.grab_release()
+        except tk.TclError:
+            pass
+        try:
+            win.destroy()
+        except tk.TclError:
+            pass
+
+    win.protocol("WM_DELETE_WINDOW", close_window)
 
     main_frame = ttk.Frame(win, padding=20)
     main_frame.pack(expand=True, fill="both")
@@ -125,7 +148,7 @@ def open_network_config(parent, config_path, on_saved=None):
     lpath_entry.grid(row=7, column=1, sticky="ew", padx=10)
 
     def browse_local():
-        folder = filedialog.askdirectory(title="Select local folder")
+        folder = filedialog.askdirectory(parent=win, title="Select local folder")
         if folder:
             lpath_entry.delete(0, tk.END)
             lpath_entry.insert(0, folder)
@@ -133,6 +156,15 @@ def open_network_config(parent, config_path, on_saved=None):
     ttk.Button(main_frame, text="Browse", command=browse_local).grid(
         row=7, column=2, padx=5
     )
+
+    ttk.Label(main_frame, text="NetLogger folder:").grid(
+        row=8, column=0, sticky="w", padx=10, pady=5
+    )
+    netlogger_entry = ttk.Entry(main_frame)
+    netlogger_entry.insert(
+        0, cfg["PATHS"].get("netlogger_path", "/var/aux/netlogger")
+    )
+    netlogger_entry.grid(row=8, column=1, columnspan=2, sticky="ew", padx=10)
 
     # Boutons
     def _is_valid_host(value: str) -> bool:
@@ -156,34 +188,40 @@ def open_network_config(parent, config_path, on_saved=None):
         remote_path = rpath_entry.get().strip()
         remote_file = rfile_entry.get().strip()
         local_path = normalize_local_dir(lpath_entry.get())
+        netlogger_path = netlogger_entry.get().strip()
 
         if not _is_valid_host(host):
-            messagebox.showerror("Validation", "Invalid IP address or hostname.")
+            show_error("Validation", "Invalid IP address or hostname.")
             return
         if not username:
-            messagebox.showerror("Validation", "Username is required.")
+            show_error("Validation", "Username is required.")
             return
         try:
             port = int(port_raw)
             if not (1 <= port <= 65535):
                 raise ValueError
         except ValueError:
-            messagebox.showerror("Validation", "Invalid port (1-65535).")
+            show_error("Validation", "Invalid port (1-65535).")
             return
         if not remote_path:
-            messagebox.showerror("Validation", "Remote path is required.")
+            show_error("Validation", "Remote path is required.")
             return
         if not remote_file:
-            messagebox.showerror("Validation", "Remote file is required.")
+            show_error("Validation", "Remote file is required.")
             return
         if not local_path:
-            messagebox.showerror("Validation", "Local path is required.")
+            show_error("Validation", "Local path is required.")
+            return
+        if not netlogger_path.startswith("/"):
+            show_error(
+                "Validation", "NetLogger folder must be an absolute remote path."
+            )
             return
 
         try:
             os.makedirs(local_path, exist_ok=True)
         except Exception as e:
-            messagebox.showerror("Validation", f"Local path inaccessible:\n{e}")
+            show_error("Validation", f"Local path inaccessible:\n{e}")
             return
 
         cfg["SSH"]["host"] = host
@@ -194,25 +232,33 @@ def open_network_config(parent, config_path, on_saved=None):
         cfg["PATHS"]["remote_path"] = remote_path
         cfg["PATHS"]["remote_file"] = remote_file
         cfg["PATHS"]["local_path"] = local_path
+        cfg["PATHS"]["netlogger_path"] = netlogger_path
 
         try:
             with open(config_path, "w", encoding="utf-8") as f:
                 cfg.write(f)
-            messagebox.showinfo("Network", "Configuration saved successfully.")
+            show_info("Network", "Configuration saved successfully.")
             if callable(on_saved):
                 on_saved()
-            win.destroy()
+            close_window()
         except Exception as e:
-            messagebox.showerror("Error", f"Error saving configuration:\n{e}")
+            show_error("Error", f"Error saving configuration:\n{e}")
 
     ttk.Button(main_frame, text="Save", command=save_and_close).grid(
-        row=8, column=1, pady=(24, 8), sticky="e", padx=5
+        row=9, column=1, pady=(24, 8), sticky="e", padx=5
     )
-    ttk.Button(main_frame, text="Cancel", command=win.destroy).grid(
-        row=8, column=2, pady=(24, 8), sticky="w", padx=5
+    ttk.Button(main_frame, text="Cancel", command=close_window).grid(
+        row=9, column=2, pady=(24, 8), sticky="w", padx=5
     )
 
     main_frame.columnconfigure(1, weight=1)
-    win.minsize(620, 420)
+    win.minsize(620, 465)
+
+    # Build first, then show the completed modal window above RBM only.
+    win.transient(parent)
+    win.deiconify()
+    win.lift()
+    win.focus_force()
+    win.grab_set()
 
     # Non-bloquant: la fenêtre reste modale via grab_set mais n'arrête pas la boucle appelante

@@ -1,15 +1,18 @@
 # plink_backend.py — version avec chemins tools\plink.exe et tools\pscp.exe
 
 import os
+import queue
 import subprocess
 import sys
+import threading
+import time
 
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 
 class PlinkBackend:
     def __init__(self, host, username, password, port=22,
-                 plink_path=None, pscp_path=None):
+                 plink_path=None, pscp_path=None, host_key=None):
         if getattr(sys, "frozen", False):
             # mode exe PyInstaller: outils à côté du .exe
             project_root = os.path.dirname(sys.executable)
@@ -33,6 +36,11 @@ class PlinkBackend:
         self.username = username
         self.password = password
         self.port = port
+        # Set after explicit operator approval for the current EVSE session.
+        self.host_key = host_key
+
+    def _host_key_args(self):
+        return ["-hostkey", self.host_key] if self.host_key else []
 
         # petit check utile pour le debug
         if not os.path.isfile(self.plink_path):
@@ -69,6 +77,7 @@ class PlinkBackend:
             self.plink_path,
             "-ssh",
             "-batch",
+            *self._host_key_args(),
             "-P", str(self.port),
             "-l", self.username,
             "-pw", self.password,
@@ -94,6 +103,80 @@ class PlinkBackend:
         except Exception as e:
             return 1, "", str(e)
 
+    def exec_stream(self, remote_cmd, on_output=None, timeout=None, cancel_event=None):
+        """Run a remote command while forwarding stdout/stderr line by line."""
+        if not remote_cmd or not str(remote_cmd).strip():
+            return 1, "", "Empty remote command"
+
+        cmd = [
+            self.plink_path,
+            "-ssh",
+            "-batch",
+            *self._host_key_args(),
+            "-P", str(self.port),
+            "-l", self.username,
+            "-pw", self.password,
+            self.host,
+            remote_cmd,
+        ]
+        kwargs = self._popen_kwargs()
+        output_lines = []
+        chunks = queue.Queue()
+
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                **kwargs,
+            )
+        except Exception as e:
+            return 1, "", str(e)
+
+        def read_output():
+            try:
+                for line in iter(proc.stdout.readline, ""):
+                    chunks.put(line)
+            finally:
+                if proc.stdout:
+                    proc.stdout.close()
+
+        reader = threading.Thread(target=read_output, daemon=True)
+        reader.start()
+        deadline = None if timeout is None else time.monotonic() + timeout
+
+        try:
+            while reader.is_alive() or not chunks.empty():
+                if cancel_event is not None and cancel_event.is_set():
+                    proc.kill()
+                    reader.join(timeout=1)
+                    return 1, "".join(output_lines), "Cancelled by operator"
+                if deadline is not None and time.monotonic() >= deadline:
+                    proc.kill()
+                    reader.join(timeout=1)
+                    return 1, "".join(output_lines), f"Timeout after {timeout} seconds"
+                try:
+                    line = chunks.get(timeout=0.2)
+                except queue.Empty:
+                    continue
+                output_lines.append(line)
+                if on_output:
+                    try:
+                        on_output(line)
+                    except Exception:
+                        pass
+
+            returncode = proc.wait(timeout=1)
+            return returncode, "".join(output_lines), ""
+        except Exception as e:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            return 1, "".join(output_lines), str(e)
+
     def scp_get(self, remote_path, local_path, timeout=None):
         if not remote_path:
             return False, "", "Empty remote path"
@@ -107,6 +190,7 @@ class PlinkBackend:
             self.pscp_path,
             "-batch",
             "-scp",
+            *self._host_key_args(),
             "-P", str(self.port),
             "-pw", self.password,
             f"{self.username}@{self.host}:{remote_path}",
@@ -142,6 +226,7 @@ class PlinkBackend:
             self.pscp_path,
             "-batch",
             "-scp",
+            *self._host_key_args(),
             "-P", str(self.port),
             "-pw", self.password,
             local_path,

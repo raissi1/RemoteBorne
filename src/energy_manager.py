@@ -47,26 +47,23 @@ class EnergyManagerWindow:
 
         # Fenêtre principale de l'Energy Manager
         self.win = ttk.Toplevel(master)
+        # Build the dashboard off-screen. Showing it before its geometry is
+        # known produces a visible default-size flash on some Windows PCs.
+        self.win.withdraw()
         self.win.title("Energy Manager PRO")
-        try:
-            self.win.transient(master)
-            self.win.grab_set()
-            self.win.focus_force()
-        except Exception:
-            pass
         # ------------------------------------------------------------
         # Taille fenêtre principale
         # ------------------------------------------------------------
         # Adapter la taille à la résolution de l'écran
         screen_h = self.win.winfo_screenheight()
         screen_w = self.win.winfo_screenwidth()
-        window_height = min(900, int(screen_h * 0.88))
-        window_width  = min(1280, int(screen_w * 0.90))
-
-        self.win.geometry(f"{window_width}x{window_height}")
+        # The operating panels and monitor benefit from additional room while
+        # preserving a margin around RBM on compact industrial displays.
+        window_height = max(660, min(820, int(screen_h * 0.84)))
+        window_width = max(980, min(1200, int(screen_w * 0.84)))
 
         # taille minimale raisonnable
-        self.win.minsize(860, 600)
+        self.win.minsize(900, 640)
 
         # centrage
         center_window(self.master, self.win, window_width, window_height)
@@ -80,6 +77,9 @@ class EnergyManagerWindow:
         self.p_cosphi_var = tk.StringVar()
         self.cosphi_var = tk.StringVar()
         self.q_auto_var = tk.StringVar()
+        self._command_in_progress = False
+        self.btn_send_pq = None
+        self.btn_send_cosphi = None
 
         # Widgets pour historique / monitor
         self.table = None
@@ -87,33 +87,44 @@ class EnergyManagerWindow:
 
         self.build_ui()
         self.win.protocol("WM_DELETE_WINDOW", self.close)
+        try:
+            # Keep this dashboard modeless. It remains above RBM when opened,
+            # without grabbing the main application or flashing on creation.
+            self.win.transient(master)
+            self.win.deiconify()
+            self.win.lift()
+            self.win.focus_force()
+        except Exception:
+            pass
 
     # ------------------------------------------------------------
     # Helpers popups : toujours devant et modales
     # ------------------------------------------------------------
-    def _popup_info(self, title: str, message: str):
-        self.win.lift()
-        self.win.attributes("-topmost", True)
+    def _show_popup(self, popup, title: str, message: str):
         try:
-            messagebox.showinfo(title, message, parent=self.win)
+            was_topmost = bool(int(self.win.attributes("-topmost")))
+        except (tk.TclError, TypeError, ValueError):
+            was_topmost = False
+        try:
+            self.win.lift()
+            self.win.attributes("-topmost", True)
+            popup(title, message, parent=self.win)
         finally:
-            self.win.attributes("-topmost", False)
+            try:
+                self.win.attributes("-topmost", was_topmost)
+                if was_topmost:
+                    self.win.lift()
+            except tk.TclError:
+                pass
+
+    def _popup_info(self, title: str, message: str):
+        self._show_popup(messagebox.showinfo, title, message)
 
     def _popup_warning(self, title: str, message: str):
-        self.win.lift()
-        self.win.attributes("-topmost", True)
-        try:
-            messagebox.showwarning(title, message, parent=self.win)
-        finally:
-            self.win.attributes("-topmost", False)
+        self._show_popup(messagebox.showwarning, title, message)
 
     def _popup_error(self, title: str, message: str):
-        self.win.lift()
-        self.win.attributes("-topmost", True)
-        try:
-            messagebox.showerror(title, message, parent=self.win)
-        finally:
-            self.win.attributes("-topmost", False)
+        self._show_popup(messagebox.showerror, title, message)
 
     def close(self):
         try:
@@ -158,7 +169,7 @@ class EnergyManagerWindow:
     # UI principale : une seule vue structurée
     # ------------------------------------------------------------
     def build_ui(self):
-        # Footer Close toujours ancré en bas — packé EN PREMIER
+        # Keep the Close action visible independently from the content panels.
         footer = ttk.Frame(self.win, padding=(14, 6, 14, 10))
         footer.pack(side="bottom", fill="x")
         ttk.Button(
@@ -168,39 +179,19 @@ class EnergyManagerWindow:
             command=self.close,
         ).pack(side="right")
 
-        # Zone principale scrollable via Canvas
-        canvas = tk.Canvas(self.win, borderwidth=0, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(self.win, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
-
-        main = ttk.Frame(canvas, padding=(14, 14, 14, 6))
-        canvas_window = canvas.create_window((0, 0), window=main, anchor="nw")
-
-        def _on_frame_configure(event):
-            canvas.configure(scrollregion=canvas.bbox("all"))
-
-        def _on_canvas_configure(event):
-            canvas.itemconfig(canvas_window, width=event.width)
-
-        main.bind("<Configure>", _on_frame_configure)
-        canvas.bind("<Configure>", _on_canvas_configure)
-
-        # Molette souris
-        def _on_mousewheel(event):
-            try:
-                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-            except tk.TclError:
-                pass
-        self._mousewheel_event = "<MouseWheel>"
-        canvas.bind_all(self._mousewheel_event, _on_mousewheel)
+        # The dashboard content fits in the compact window. Avoid a global
+        # mouse-wheel binding and scrolling canvas, which previously made the
+        # layout look oversized and could hide the footer.
+        main = ttk.Frame(self.win, padding=(14, 10, 14, 6))
+        main.pack(fill="both", expand=True)
 
         # ==========================================================
         # GRID RESPONSIVE
         # ==========================================================
-        main.columnconfigure(0, weight=4)
-        main.columnconfigure(1, weight=3)
+        # The history and service monitor are complementary views. Keeping
+        # them at the same width prevents the command columns being clipped.
+        main.columnconfigure(0, weight=1, uniform="energy_lower_panels")
+        main.columnconfigure(1, weight=1, uniform="energy_lower_panels")
         main.rowconfigure(0, weight=0)
         main.rowconfigure(1, weight=1)
 
@@ -228,10 +219,10 @@ class EnergyManagerWindow:
         title = ttk.Label(
             frm,
             text="P/Q and CosPhi Mode",
-            font=("Segoe UI", 16, "bold"),
+            font=("Segoe UI", 14, "bold"),
             anchor="center",
         )
-        title.pack(pady=(8, 4))
+        title.pack(pady=(2, 6))
 
         vcmd = (self.win.register(self._validate_numeric), "%P")
 
@@ -242,7 +233,7 @@ class EnergyManagerWindow:
         side_frame.columnconfigure(1, weight=1, minsize=280)
 
         # --- Mode P/Q (colonne gauche)
-        pq_frame = ttk.Labelframe(side_frame, text="Mode P/Q", padding=14)
+        pq_frame = ttk.Labelframe(side_frame, text="Mode P/Q", padding=10)
         pq_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 6), pady=4)
         pq_frame.columnconfigure(1, weight=1)
 
@@ -252,7 +243,7 @@ class EnergyManagerWindow:
         ttk.Entry(
             pq_frame,
             textvariable=self.p_var,
-            width=18,
+            width=14,
             validate="key",
             validatecommand=vcmd,
         ).grid(row=0, column=1, padx=8, sticky="ew")
@@ -263,21 +254,22 @@ class EnergyManagerWindow:
         ttk.Entry(
             pq_frame,
             textvariable=self.q_var,
-            width=18,
+            width=14,
             validate="key",
             validatecommand=vcmd,
         ).grid(row=1, column=1, padx=8, sticky="ew")
 
-        ttk.Button(
+        self.btn_send_pq = ttk.Button(
             pq_frame,
             text="Send P/Q",
             bootstyle="success",
             command=self.send_pq,
             width=16,
-        ).grid(row=2, column=0, columnspan=2, pady=(12, 4))
+        )
+        self.btn_send_pq.grid(row=2, column=0, columnspan=2, pady=(12, 4))
 
         # --- Mode CosPhi (colonne droite)
-        cos_frame = ttk.Labelframe(side_frame, text="Mode CosPhi", padding=14)
+        cos_frame = ttk.Labelframe(side_frame, text="Mode CosPhi", padding=10)
         cos_frame.grid(row=0, column=1, sticky="nsew", padx=(6, 0), pady=4)
         cos_frame.columnconfigure(1, weight=1)
 
@@ -287,7 +279,7 @@ class EnergyManagerWindow:
         ttk.Entry(
             cos_frame,
             textvariable=self.p_cosphi_var,
-            width=18,
+            width=14,
             validate="key",
             validatecommand=vcmd,
         ).grid(row=0, column=1, padx=8, sticky="ew")
@@ -298,7 +290,7 @@ class EnergyManagerWindow:
         ttk.Entry(
             cos_frame,
             textvariable=self.cosphi_var,
-            width=18,
+            width=14,
             validate="key",
             validatecommand=vcmd,
         ).grid(row=1, column=1, padx=8, sticky="ew")
@@ -309,7 +301,7 @@ class EnergyManagerWindow:
         q_auto_entry = ttk.Entry(
             cos_frame,
             textvariable=self.q_auto_var,
-            width=18,
+            width=14,
             state="readonly",
         )
         q_auto_entry.grid(row=2, column=1, padx=8, sticky="ew")
@@ -324,13 +316,14 @@ class EnergyManagerWindow:
             width=14,
         ).pack(side="left", padx=4)
 
-        ttk.Button(
+        self.btn_send_cosphi = ttk.Button(
             btn_row,
             text="Send CosPhi",
             bootstyle="success",
             command=self.send_cosphi,
             width=14,
-        ).pack(side="left", padx=4)
+        )
+        self.btn_send_cosphi.pack(side="left", padx=4)
 
         # Auto-adaptation : si la fenetre devient trop etroite,
         # basculer en colonne unique
@@ -364,15 +357,17 @@ class EnergyManagerWindow:
         self.table = ttk.Treeview(
             frm, columns=columns, show="headings", height=8, bootstyle="info"
         )
-        self.table.heading("timestamp", text="Timestamp")
+        self.table.heading("timestamp", text="Time")
         self.table.heading("mode", text="Mode")
         self.table.heading("cmd", text="Command")
-        self.table.heading("status", text="Status")
+        self.table.heading("status", text="Result")
 
-        self.table.column("timestamp", width=150, anchor="w")
-        self.table.column("mode", width=80, anchor="center")
-        self.table.column("cmd", width=520, anchor="w")
-        self.table.column("status", width=120, anchor="center")
+        # These widths fit in the left half of the companion window and keep
+        # the Status column visible instead of clipping it off-screen.
+        self.table.column("timestamp", width=105, minwidth=90, anchor="w", stretch=False)
+        self.table.column("mode", width=65, minwidth=55, anchor="center", stretch=False)
+        self.table.column("cmd", width=220, minwidth=150, anchor="w", stretch=True)
+        self.table.column("status", width=85, minwidth=70, anchor="center", stretch=False)
 
         self.table.pack(fill="both", expand=True, pady=(0, 10))
 
@@ -433,30 +428,44 @@ class EnergyManagerWindow:
 
         try:
             p_val = int(float(p_str))
-            q_val = int(float(q_str))
         except ValueError:
-            self._popup_warning("Invalid values", "P and Q must be numeric.")
+            self._popup_warning("Invalid value", "Active power P must be numeric.")
             return
+
+        q_val = None
+        if q_str:
+            try:
+                q_val = int(float(q_str))
+            except ValueError:
+                self._popup_warning("Invalid value", "Reactive power Q must be numeric.")
+                return
+
+        reactive_option = f" --reactive-power {q_val}" if q_val is not None else ""
+        display_text = f"Active Power : {p_val} W"
+        if q_val is None:
+            display_text += "\nReactive Power : not sent"
+        else:
+            display_text += f"\nReactive Power : {q_val} VAR"
 
         cmd = (
             "cd /var/aux/EnergyManager && "
             "export LD_LIBRARY_PATH=/usr/local/lib && "
             f"{ENERGY_TOOL_RESOLVE}"
             f"\"$EM_TOOL\" -S -s ocpp -a "
-            f"--power {p_val} --reactive-power {q_val} -m CentralSetpoint"
+            f"--power {p_val}{reactive_option} -m CentralSetpoint"
         )
         self.execute_energy_cmd(
             "P/Q",
             cmd,
-            display_text=(
-                f"Active Power : {p_val} W\n"
-                f"Reactive Power : {q_val} VAR"
-            )
+            display_text=display_text,
         )
 
     def calculate_q_from_cosphi(self):
         p_str = self.p_cosphi_var.get().strip()
         cosphi_str = self.cosphi_var.get().strip()
+        if not cosphi_str:
+            cosphi_str = "1"
+            self.cosphi_var.set(cosphi_str)
 
         try:
             p_val = float(p_str)
@@ -499,7 +508,7 @@ class EnergyManagerWindow:
             f"(\"$EM_TOOL\" --grid-option "
             f"\"SetpointCosPhi_Pct={int(round(cosphi_val * 100))}\" && "
             f"\"$EM_TOOL\" -S -s ocpp -a "
-            f"--power {p_val} -m CentralSetpoint) >/dev/null 2>&1 &"
+            f"--power {p_val} -m CentralSetpoint)"
         )
         self.execute_energy_cmd(
             "CosPhi",
@@ -534,6 +543,18 @@ class EnergyManagerWindow:
 
             return
 
+        if self._command_in_progress:
+            self._popup_warning(
+                "Energy Manager",
+                "A command is already running. Wait for its result before sending another one.",
+            )
+            return
+
+        self._command_in_progress = True
+        for button in (self.btn_send_pq, self.btn_send_cosphi):
+            if button is not None:
+                button.configure(state="disabled")
+
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
 
         # texte affiché utilisateur
@@ -553,10 +574,15 @@ class EnergyManagerWindow:
 
                 self.update_history_table()
 
+                self._command_in_progress = False
+                for button in (self.btn_send_pq, self.btn_send_cosphi):
+                    if button is not None:
+                        button.configure(state="normal")
+
                 if res["success"]:
                     self._popup_info(
                         "Energy Manager",
-                        (f"Command sent successfully.\n\n{pretty_cmd}")
+                        (f"Command completed successfully.\n\n{pretty_cmd}")
                     )
                 else:
                     err = (
@@ -573,14 +599,21 @@ class EnergyManagerWindow:
                 pass
 
         if self.ssh_queue is not None:
-            self.ssh_queue.execute(
+            queued = self.ssh_queue.execute(
                 cmd,
                 callback=callback,
                 timeout=getattr(self.ssh, "timeout", 30),
                 auto_retry=False,
                 label=f"Energy {mode}",
                 silent=False,
+                dedupe_key="energy_manager_command",
             )
+            if not queued:
+                self._command_in_progress = False
+                for button in (self.btn_send_pq, self.btn_send_cosphi):
+                    if button is not None:
+                        button.configure(state="normal")
+                self._popup_warning("Energy Manager", "A command is already queued or running.")
         else:
             self.ssh.execute(
                 cmd,
@@ -616,7 +649,7 @@ class EnergyManagerWindow:
                 writer.writerow(["timestamp", "mode", "command", "status"])
                 writer.writerows(self.history)
         except Exception as e:
-            self._popup_error("Export", f"Erreur lors de l'export CSV :\n{e}")
+            self._popup_error("Export", f"CSV export error:\n{e}")
             return
 
         self._popup_info("Export", "CSV export completed.")
@@ -672,6 +705,13 @@ class EnergyManagerWindow:
             self._popup_error("SSH Error", "Not connected to the charger.")
             return
 
+        if not messagebox.askyesno(
+            "Services",
+            "Before restarting the Energy Manager service, verify that the charging cable is unplugged.\n\nContinue?",
+            parent=self.win,
+        ):
+            return
+
         cmd = "/etc/init.d/S91energy-manager restart"
 
         def callback(res):
@@ -696,6 +736,7 @@ class EnergyManagerWindow:
                 auto_retry=False,
                 label="Restart S91energy-manager",
                 silent=False,
+                dedupe_key="energy_manager_restart",
             )
         else:
             self.ssh.execute(cmd, callback=callback)

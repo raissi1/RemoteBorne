@@ -53,6 +53,12 @@ def _detect_plink() -> str:
 PLINK_PATH = _detect_plink()
 
 
+def _runtime_logs_dir() -> str:
+    """Return a writable, launch-directory-independent folder for captures."""
+    base_dir = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    return os.path.join(base_dir, "RemoteBorneManager", "logs")
+
+
 class DebugLogsWindow:
     """
     Ultimate debug tool :
@@ -99,6 +105,7 @@ class DebugLogsWindow:
 
         # Keep logs visible while the operator continues working in RBM.
         self.window = tk.Toplevel(parent)
+        self.window.withdraw()
         self.window.title("Debug Logs - Service Monitor")
         self.window.geometry("1180x760")
         self.window.transient(parent)
@@ -122,6 +129,31 @@ class DebugLogsWindow:
             self._create_tab(name, path)
 
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.window.deiconify()
+        self.window.lift()
+        self.window.focus_force()
+
+    def _show_popup(self, popup, title: str, message: str):
+        """Keep native dialogs above the Debug Logs window that triggered them."""
+        try:
+            self.window.lift()
+            self.window.attributes("-topmost", True)
+            popup(title, message, parent=self.window)
+        finally:
+            try:
+                self.window.attributes("-topmost", False)
+                self.window.lift()
+            except tk.TclError:
+                pass
+
+    def _popup_info(self, title: str, message: str):
+        self._show_popup(messagebox.showinfo, title, message)
+
+    def _popup_warning(self, title: str, message: str):
+        self._show_popup(messagebox.showwarning, title, message)
+
+    def _popup_error(self, title: str, message: str):
+        self._show_popup(messagebox.showerror, title, message)
 
     # ------------------------------------------------------------------
     # CrÃ©ation d'un onglet complet (zone texte + barre grep + boutons)
@@ -274,24 +306,25 @@ class DebugLogsWindow:
     # ------------------------------------------------------------------
     def start_log(self, log_name: str):
         if log_name in self.processes:
-            messagebox.showinfo("Info", f"{log_name} is already being followed.")
+            self._popup_info("Info", f"{log_name} is already being followed.")
             return
 
         remote_log = self.logs_paths.get(log_name)
         if not remote_log:
-            messagebox.showerror("Error", f"No remote path defined for {log_name}.")
+            self._popup_error("Error", f"No remote path defined for {log_name}.")
             return
 
-        # Dossier local logs
-        logs_dir = os.path.join(os.getcwd(), "logs")
-        os.makedirs(logs_dir, exist_ok=True)
+        # Use a per-user folder, not os.getcwd(), so a shortcut or protected
+        # installation folder cannot redirect or prevent log capture.
+        logs_dir = _runtime_logs_dir()
         date_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         file_path = os.path.join(logs_dir, f"{log_name.split('.')[0]}_{date_str}.log")
 
         try:
+            os.makedirs(logs_dir, exist_ok=True)
             log_file = open(file_path, "w", encoding="utf-8")
         except Exception as e:
-            messagebox.showerror("Error", f"Cannot open local log file:\n{e}")
+            self._popup_error("Error", f"Cannot open local log file:\n{e}")
             return
 
         cmd = self._build_plink_tail_cmd(remote_log)
@@ -312,7 +345,7 @@ class DebugLogsWindow:
                 **popen_kwargs,
             )
         except FileNotFoundError:
-            messagebox.showerror(
+            self._popup_error(
                 "Error",
                 "Unable to start plink.\n"
                 "Check that plink.exe is available in the project folder\n"
@@ -321,7 +354,7 @@ class DebugLogsWindow:
             log_file.close()
             return
         except Exception as e:
-            messagebox.showerror("Error", f"Could not start log for {log_name}:\n{e}")
+            self._popup_error("Error", f"Could not start log for {log_name}:\n{e}")
             log_file.close()
             return
 
@@ -488,7 +521,7 @@ class DebugLogsWindow:
                 pass
             del self.processes[log_name]
             if not silent:
-                messagebox.showinfo("Info", f"Stopped following {log_name}.")
+                self._popup_info("Info", f"Stopped following {log_name}.")
 
     def clear_log(self, log_name: str):
         # efface la vue + le buffer
@@ -508,16 +541,18 @@ class DebugLogsWindow:
 
         content = text_widget.get("1.0", tk.END)
         if not content.strip():
-            messagebox.showwarning("Warning", "No content to save.")
+            self._popup_warning("Warning", "No content to save.")
             return
 
-        # dossier logs du projet
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(base_dir)
-        logs_dir = os.path.join(project_root, "logs")
-        os.makedirs(logs_dir, exist_ok=True)
+        logs_dir = _runtime_logs_dir()
+        try:
+            os.makedirs(logs_dir, exist_ok=True)
+        except Exception as e:
+            self._popup_error("Error", f"Cannot create local log folder:\n{e}")
+            return
 
         file_path = filedialog.asksaveasfilename(
+            parent=self.window,
             title=f"Save view of {log_name}",
             defaultextension=".log",
             initialfile=f"view_{log_name}",
@@ -530,11 +565,11 @@ class DebugLogsWindow:
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
         except Exception as e:
-            messagebox.showerror("Error", f"Could not save log:\n{e}")
+            self._popup_error("Error", f"Could not save log:\n{e}")
             return
 
         self.saved_files[log_name] = file_path
-        messagebox.showinfo("Success", f"Log successfully saved:\n{file_path}")
+        self._popup_info("Success", f"Log successfully saved:\n{file_path}")
 
     def exit_log(self, log_name: str):
         self.stop_log(log_name)

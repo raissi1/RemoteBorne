@@ -1,8 +1,15 @@
 # ssh_manager.py — gestion SSH pour RemoteBorneManager
 import os
+import re
+import shlex
 import threading
 import subprocess
 from typing import Callable, Optional
+
+try:
+    import winreg
+except ImportError:
+    winreg = None
 
 try:
     from .plink_backend import PlinkBackend
@@ -37,6 +44,7 @@ class SSHManager:
         self.connected = False
         self._ui_callback: Optional[Callable[[str, object], None]] = None
         self._log_callback: Optional[Callable[[str], None]] = None
+        self._host_key_confirmation_callback: Optional[Callable[[str, str], bool]] = None
         self._stop = False
 
         # paramètres de reconnexion
@@ -48,6 +56,8 @@ class SSHManager:
         self._reconnect_requested = False
         self._connect_generation = 0
         self._cancel_reconnect_event = threading.Event()
+        self._connection_state_lock = threading.Lock()
+        self._disconnect_notified = False
 
     def _is_transport_error(self, message: str) -> bool:
         msg = (message or "").lower()
@@ -59,20 +69,51 @@ class SSHManager:
             "software caused connection abort",
             "connection refused",
             "connection reset",
+            "connection closed",
+            "connection aborted",
+            "connection lost",
+            "connection failed",
+            "connection unexpectedly closed",
+            "broken pipe",
+            "no route to host",
+            "network is unreachable",
             "unable to open connection",
+            "unable to connect",
             "host does not exist",
             "server unexpectedly closed network connection",
         )
         return any(marker in msg for marker in transport_markers)
 
-    def _mark_transport_failure(self, message: str):
-        if not self._is_transport_error(message):
-            return
-        was_connected = self.connected
-        self.connected = False
-        if was_connected:
+    def _mark_connected(self):
+        """Record a successful SSH command and allow a future disconnect event."""
+        with self._connection_state_lock:
+            self.connected = True
+            self._disconnect_notified = False
+
+    def report_connection_lost(self, message: str, force_event: bool = False) -> bool:
+        """Synchronize the SSH and UI states after a confirmed connection loss.
+
+        A single outage can be seen by several queued commands.  Emit only one
+        ``disconnected`` event until a successful connection resets the state.
+        ``force_event`` covers callers such as the heartbeat which know that a
+        command expected to succeed (``echo alive``) has failed.
+        """
+        with self._connection_state_lock:
+            was_connected = self.connected
+            self.connected = False
+            should_notify = (was_connected or force_event) and not self._disconnect_notified
+            if should_notify:
+                self._disconnect_notified = True
+
+        if should_notify:
             self._emit_ui("disconnected", None)
-        self._log(f"[SSH] Transport failure detected: {message}")
+        if should_notify and message:
+            self._log(f"[SSH] Connection lost: {message}")
+        return should_notify
+
+    def _mark_transport_failure(self, message: str):
+        if self._is_transport_error(message):
+            self.report_connection_lost(message)
 
     # ------------------------------------------------------------------ #
     #  Callbacks
@@ -82,6 +123,10 @@ class SSHManager:
 
     def set_log_callback(self, cb: Callable[[str], None]):
         self._log_callback = cb
+
+    def set_host_key_confirmation_callback(self, cb: Callable[[str, str], bool]):
+        """Set the UI callback used before trusting a new SSH host key."""
+        self._host_key_confirmation_callback = cb
 
     def _emit_ui(self, event_type: str, data=None):
         if self._ui_callback:
@@ -100,16 +145,72 @@ class SSHManager:
         # fallback console si pas de callback
         print(msg)
 
+    def clear_cached_host_keys(
+        self, host: Optional[str] = None, port: Optional[int] = None
+    ) -> bool:
+        """Remove only the PuTTY host keys associated with one SSH target."""
+        if os.name != "nt" or winreg is None:
+            self._log("[SSH SECURITY] Host-key cache management is supported on Windows only.")
+            return False
+
+        target_host = (host or self.host).strip()
+        target_port = self.port if port is None else int(port)
+        if not target_host:
+            self._log("[SSH SECURITY] Empty host: cached host key was not removed.")
+            return False
+
+        key_path = r"Software\SimonTatham\PuTTY\SshHostKeys"
+        target_suffix = f"@{target_port}:{target_host}".lower()
+        try:
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                key_path,
+                0,
+                winreg.KEY_READ | winreg.KEY_WRITE,
+            ) as registry_key:
+                names = []
+                index = 0
+                while True:
+                    try:
+                        name, _, _ = winreg.EnumValue(registry_key, index)
+                    except OSError:
+                        break
+                    if name.lower().endswith(target_suffix):
+                        names.append(name)
+                    index += 1
+
+                if not names:
+                    self._log("[SSH SECURITY] No cached host key found for this target.")
+                    return False
+
+                for name in names:
+                    winreg.DeleteValue(registry_key, name)
+
+            self._log(f"[SSH] Cleared cached host key for {target_host}:{target_port}.")
+            return True
+        except OSError as exc:
+            self._log(f"[SSH SECURITY] Unable to clear cached host key: {exc}")
+            return False
+
+    def _replace_cached_host_key(self) -> bool:
+        """Replace the current target's cached key after operator approval."""
+        return self.clear_cached_host_keys(self.host, self.port)
+
+    @staticmethod
+    def _extract_host_key_fingerprint(output: str) -> Optional[str]:
+        """Return Plink's SHA256 fingerprint in the form accepted by -hostkey."""
+        match = re.search(
+            r"key fingerprint is:\s*\r?\n\s*([^\r\n]+)",
+            output or "",
+            re.IGNORECASE,
+        )
+        return match.group(1).strip() if match else None
+
     # ------------------------------------------------------------------ #
     #  Auto accept host key
     # ------------------------------------------------------------------ #
-    def _auto_accept_hostkey(self, expected_generation: Optional[int] = None):
-        """
-        Accepte automatiquement la host key de la borne en simulant un 'y'
-        sur la première connexion plink, AVEC mot de passe, SANS -batch.
-
-        -> évite "The host key is not cached..." + "Cannot confirm host key in batch mode"
-        """
+    def _auto_accept_hostkey(self, expected_generation: Optional[int] = None) -> bool:
+        """Confirm a new key explicitly for the current EVSE session."""
         try:
             if (
                 expected_generation is not None
@@ -117,6 +218,11 @@ class SSHManager:
             ):
                 self._log("[SSH] Skip host key auto-accept for stale target generation.")
                 return
+            # The exact approved fingerprint is passed to Plink's batch
+            # commands. It is more reliable than depending on its registry
+            # cache after an operator switches chargers or networks.
+            if self.backend.host_key:
+                return True
             cmd = [
                 self.backend.plink_path,
                 "-ssh",
@@ -126,7 +232,7 @@ class SSHManager:
                 self.host,
                 "exit",
             ]
-            self._log(f"[SSH] Auto-accept host key for {self.host}...")
+            self._log(f"[SSH] Checking host key for {self.host}...")
 
             kwargs = {}
             if os.name == "nt":
@@ -135,24 +241,54 @@ class SSHManager:
                 kwargs["startupinfo"] = startupinfo
                 kwargs["creationflags"] = CREATE_NO_WINDOW
 
-            subprocess.run(
+            probe = subprocess.run(
                 cmd,
-                input="y\n",  # on répond 'y' au prompt de host key
+                input="n\n",
                 text=True,
                 capture_output=True,
                 timeout=self.timeout * 2,
                 **kwargs,
             )
-            self._log("[SSH] Host key added/cached.")
+            output = "\n".join(part for part in (probe.stdout, probe.stderr) if part)
+            lowered = output.lower()
+            changed_key = (
+                "potential security breach" in lowered
+                or "does not match" in lowered
+            )
+            unknown_key = (
+                "host key is not cached" in lowered
+                or "store key in cache" in lowered
+            )
+            if unknown_key or changed_key:
+                confirm = self._host_key_confirmation_callback
+                if not callable(confirm) or not confirm(self.host, output):
+                    self._log("[SSH SECURITY] Host key was not approved by the operator.")
+                    return False
+
+                host_key = self._extract_host_key_fingerprint(output)
+                if not host_key:
+                    self._log("[SSH SECURITY] Host key fingerprint could not be read.")
+                    return False
+
+                self.backend.host_key = host_key
+                self._log("[SSH] Host key approved for this EVSE session.")
+                return True
+
+            if probe.returncode == 0:
+                return True
+
+            if not (unknown_key or changed_key):
+                # Network or authentication failures are reported by the normal connection.
+                return True
         except Exception as e:
             if (
                 expected_generation is not None
                 and expected_generation != self._connect_generation
             ):
                 self._log("[SSH] Host key auto-accept cancelled (target updated).")
-                return
-            # On ne bloque pas sur ça, on log seulement
-            self._log(f"[SSH] Auto-accept host key failed (ignored): {e}")
+                return False
+            self._log(f"[SSH SECURITY] Host key check failed: {e}")
+            return False
 
     # ------------------------------------------------------------------ #
     #  Démarrage explicite
@@ -175,7 +311,11 @@ class SSHManager:
         self._log(f"[SSH] Connecting to {self.host}:{self.port}...")
 
         # 1) s'assurer que la host key est dans le cache PuTTY
-        self._auto_accept_hostkey(expected_generation=generation)
+        if not self._auto_accept_hostkey(expected_generation=generation):
+            self.connected = False
+            self._emit_ui("disconnected", None)
+            self._log("[SSH] Initial connection stopped by host key verification.")
+            return
         if generation != self._connect_generation or self._stop:
             self._log("[SSH] Initial connect cancelled (target updated).")
             return
@@ -209,11 +349,15 @@ class SSHManager:
         ):
             return False
         if rc == 0:
-            self.connected = True
+            self._mark_connected()
             return True
         else:
             self.connected = False
             msg = (err or out or "unknown error").strip()
+            if "host key" in msg.lower():
+                # A key changed while RBM was open. Clear the session approval
+                # so the next reconnect asks the operator to validate it.
+                self.backend.host_key = None
             self._log(f"[SSH] Connect error: {msg}")
             return False
 
@@ -231,6 +375,15 @@ class SSHManager:
         try:
             self._emit_ui("reconnecting", None)
             self._log("[SSH] Reconnecting...")
+
+            # A charger may become reachable only after the initial connection
+            # failed. Verify its host key here as well, before batch-mode Plink
+            # retries, so an operator can explicitly trust a new target.
+            if not self._auto_accept_hostkey(expected_generation=generation):
+                self.connected = False
+                self._emit_ui("disconnected", None)
+                self._log("[SSH] Reconnect stopped by host key verification.")
+                return
 
             for attempt in range(1, self.max_retries + 1):
                 if self._stop:
@@ -321,7 +474,9 @@ class SSHManager:
         self._connect_generation += 1
         self._cancel_reconnect_event.set()
         self.backend = PlinkBackend(host, user, password, port)
-        self.connected = False
+        self.report_connection_lost(
+            f"Target changed to {host}:{port}", force_event=True
+        )
         self._log(f"[SSH] Target updated to {host}:{port} ({user})")
         if auto_reconnect:
             self.force_reconnect()
@@ -411,6 +566,44 @@ class SSHManager:
             "returncode": rc,
         }
 
+    def execute_stream_sync(
+        self,
+        cmd: str,
+        on_output: Optional[Callable[[str], None]] = None,
+        timeout: Optional[int] = None,
+        cancel_event: Optional[threading.Event] = None,
+        auto_retry: bool = True,
+        log_errors: bool = True,
+    ) -> dict:
+        """Execute a command in the queue worker while forwarding remote output."""
+        if not self.connected and auto_retry:
+            self._try_reconnect()
+        if not self.connected:
+            err_msg = "SSH not connected"
+            if log_errors:
+                self._log(f"[SSH CMD ERROR] {err_msg}")
+            return {"success": False, "out": "", "err": err_msg, "returncode": None}
+
+        rc, out, err = self.backend.exec_stream(
+            cmd,
+            on_output=on_output,
+            timeout=timeout,
+            cancel_event=cancel_event,
+        )
+        success = rc == 0
+        if not success and log_errors:
+            self._log(f"[SSH CMD ERROR] {err or out or 'unknown error'}")
+        if not success and err != "Cancelled by operator":
+            self._mark_transport_failure(err or out or "")
+        return {
+            "success": success,
+            "out": out,
+            "err": err,
+            "stdout": out,
+            "stderr": err,
+            "returncode": rc,
+        }
+
     def ensure_remote_dir(self, remote_dir: str) -> dict:
         if not self.connected:
             self._try_reconnect()
@@ -418,7 +611,9 @@ class SSHManager:
             err = "SSH not connected"
             self._log(f"[SSH CMD ERROR] {err}")
             return {"success": False, "out": "", "err": err}
-        rc, out, err = self.backend.exec(f'mkdir -p "{remote_dir}"', timeout=self.timeout)
+        rc, out, err = self.backend.exec(
+            f"mkdir -p -- {shlex.quote(remote_dir)}", timeout=self.timeout
+        )
         success = (rc == 0)
         if not success:
             self._log(f"[SSH CMD ERROR] {err or out or 'unknown error'}")
@@ -476,7 +671,6 @@ class SSHManager:
     def close(self):
         self._stop = True
         self._cancel_reconnect_event.set()
-        self.connected = False
-        self._emit_ui("disconnected", None)
+        self.report_connection_lost("SSH manager closed.", force_event=True)
         self._log("[SSH] Manager closed.")
     

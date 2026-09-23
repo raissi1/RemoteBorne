@@ -9,12 +9,14 @@ Interface Windows pour contrôle de borne IOTECHA :
 - Copie vers GridCodes.properties
 - Download / Print PDF / Edition distante
 - Commandes EnergyManagerTestingTool (P/Q et CosPhi)
+- Sequences automatisees de paliers P/Q et CosPhi
 - Restart services + reboot borne
 - Debug logs (via debug_logs.py)
 - Network config (config.ini modifiable)
 - Thèmes : flatly (clair) & darkly (sombre)
 """
 import sys, os
+import shutil
 import subprocess
 
 
@@ -28,8 +30,11 @@ import time
 import tempfile
 import threading
 import configparser
+import csv
+import fnmatch
 import posixpath
 import re
+import shlex
 
 import tkinter as tk
 from tkinter import messagebox, filedialog, simpledialog
@@ -48,6 +53,7 @@ try:
     from .open_help import open_help
     from . import energy_manager
     from . import debug_logs
+    from . import test_sequence
 except ImportError:
     try:
         from ssh_manager import SSHManager
@@ -56,6 +62,7 @@ except ImportError:
         from open_help import open_help
         import energy_manager
         import debug_logs
+        import test_sequence
     except ImportError:
         from src.ssh_manager import SSHManager
         from src.ssh_queue import SSHQueue
@@ -63,8 +70,19 @@ except ImportError:
         from src.open_help import open_help
         from src import energy_manager
         from src import debug_logs
+        from src import test_sequence
 
-APP_VERSION = "2026.03.31.1"
+APP_VERSION = "14.0.8"
+
+# Operational limits used by the main P/Q and CosPhi panels.  The target still
+# validates commands; Pn is an operator-side guard that can be read from the
+# active GridCodes.properties file.
+DEFAULT_PN_LIMIT_W = 11000.0
+MAX_PN_LIMIT_W = 100000.0
+NETLOGGER_DEFAULT_PATH = "/var/aux/netlogger"
+# Restarting the three EVSE services can legitimately take longer than a
+# normal SSH command, especially while ChargerApp initializes.
+SERVICE_RESTART_TIMEOUT = 120
 
 ENERGY_TOOL_RESOLVE = (
     'EM_TOOL="$(command -v EnergyManagerTestingTool 2>/dev/null || true)"; '
@@ -123,6 +141,7 @@ for d in (CONFIG_DIR, DOCS_DIR, TOOLS_DIR, EXPORTS_DIR, LOGS_DIR):
 
 # Fichier de config unique (dans config/)
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.ini")
+CONFIG_TEMPLATE_PATH = os.path.join(CONFIG_DIR, "config.example.ini")
 
 # Dossiers images (on garde les mêmes noms qu'avant)
 IMG_DIR_1 = os.path.join(BASE_DIR, "imgs")
@@ -159,7 +178,13 @@ def load_config() -> configparser.ConfigParser:
     cfg = configparser.ConfigParser()
 
     if not os.path.isfile(CONFIG_PATH):
-        # Premier lancement : on crée un fichier config.ini par défaut
+        # Portable builds ship a template only; each installation creates its
+        # own local configuration on first start.
+        if os.path.isfile(CONFIG_TEMPLATE_PATH):
+            shutil.copyfile(CONFIG_TEMPLATE_PATH, CONFIG_PATH)
+
+    if not os.path.isfile(CONFIG_PATH):
+        # Fallback for development runs without a template.
         cfg["SSH"] = {
             "host": "192.168.1.100",
             "username": "root",
@@ -174,20 +199,20 @@ def load_config() -> configparser.ConfigParser:
             "remote_path": "/etc/iotecha/configs/GridCodes",
             "remote_file": "GridCodes.properties",
             "local_path": EXPORTS_DIR,
+            "netlogger_path": NETLOGGER_DEFAULT_PATH,
         }
 
         # On écrit dans config/config.ini
         os.makedirs(CONFIG_DIR, exist_ok=True)
-        cfg["SECURITY"] = {"edit_password": ""}
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             cfg.write(f)
 
-        print(f"[CONFIG] Fichier créé : {CONFIG_PATH}")
+        print(f"[CONFIG] Created: {CONFIG_PATH}")
     else:
         # Fichier déjà présent : on le lit
         cfg.read(CONFIG_PATH, encoding="utf-8")
         needs_writeback = False
-        print(f"[CONFIG] Fichier chargé : {CONFIG_PATH}")
+        print(f"[CONFIG] Loaded: {CONFIG_PATH}")
 
         # Sécurité : on vérifie que les sections existent
         if "SSH" not in cfg:
@@ -219,7 +244,16 @@ def load_config() -> configparser.ConfigParser:
                 "remote_path": "/etc/iotecha/configs/GridCodes",
                 "remote_file": "GridCodes.properties",
                 "local_path": EXPORTS_DIR,
+                "netlogger_path": NETLOGGER_DEFAULT_PATH,
             }
+            needs_writeback = True
+        elif "netlogger_path" not in cfg["PATHS"]:
+            cfg["PATHS"]["netlogger_path"] = NETLOGGER_DEFAULT_PATH
+            needs_writeback = True
+        elif cfg["PATHS"].get("netlogger_path", "") == "/var/aux/NetLogger":
+            # Linux paths are case-sensitive. Migrate the former placeholder
+            # to the actual EVSE NetLogger directory used by RBM.
+            cfg["PATHS"]["netlogger_path"] = NETLOGGER_DEFAULT_PATH
             needs_writeback = True
         normalized_local_path = _ensure_local_export_dir(
             cfg["PATHS"].get("local_path", "")
@@ -227,11 +261,12 @@ def load_config() -> configparser.ConfigParser:
         if cfg["PATHS"].get("local_path", "") != normalized_local_path:
             cfg["PATHS"]["local_path"] = normalized_local_path
             needs_writeback = True
-        if "SECURITY" not in cfg:
-            cfg["SECURITY"] = {"edit_password": ""}
-            needs_writeback = True
-        elif "edit_password" not in cfg["SECURITY"]:
-            cfg["SECURITY"]["edit_password"] = ""
+        # The editor is no longer password protected. Clean up the obsolete
+        # setting left in configurations created by earlier RBM versions.
+        if "SECURITY" in cfg and cfg.has_option("SECURITY", "edit_password"):
+            cfg.remove_option("SECURITY", "edit_password")
+            if not cfg["SECURITY"]:
+                cfg.remove_section("SECURITY")
             needs_writeback = True
         if needs_writeback:
             with open(CONFIG_PATH, "w", encoding="utf-8") as f:
@@ -248,7 +283,6 @@ class RemoteBorneApp:
         self.config = config
         ssh_cfg = config["SSH"]
         paths_cfg = config["PATHS"]
-        security_cfg = config["SECURITY"]
 
         self.host = ssh_cfg.get("host", "")
         self.user = ssh_cfg.get("username", "")
@@ -268,8 +302,9 @@ class RemoteBorneApp:
         self.local_default_path = _ensure_local_export_dir(
             paths_cfg.get("local_path", EXPORTS_DIR)
         )
-        self.edit_password = security_cfg.get("edit_password", "").strip()
-
+        self.netlogger_path = paths_cfg.get(
+            "netlogger_path", NETLOGGER_DEFAULT_PATH
+        ).strip() or NETLOGGER_DEFAULT_PATH
         self.current_path = self.default_path
 
         # ---------- ETAT ----------
@@ -287,8 +322,10 @@ class RemoteBorneApp:
         try:
             sw = self.root.winfo_screenwidth()
             sh = self.root.winfo_screenheight()
-            w = int(sw * 0.90)
-            h = int(sh * 0.90)
+            # Keep the full operating panel visible on 1080p laptops while
+            # retaining a small desktop margin instead of forcing maximized.
+            w = int(sw * 0.95)
+            h = int(sh * 0.96)
             x = max(0, (sw - w) // 2)
             y = max(0, (sh - h) // 2)
             self.root.geometry(f"{w}x{h}+{x}+{y}")
@@ -321,6 +358,11 @@ class RemoteBorneApp:
         self.btn_download = None
         self.btn_upload = None
         self.btn_print = None
+        self.btn_edit_current_properties = None
+        self.btn_netlogger = None
+        self.btn_go = None
+        self.btn_up = None
+        self.btn_root = None
 
         self.btn_send_power = None
         self.btn_send_cosphi = None
@@ -335,27 +377,61 @@ class RemoteBorneApp:
         self.reactive_entry = None
         self.cosphi_active_entry = None
         self.cosphi_entry = None
+        self.pn_entry = None
+        self.pn_scale = None
+        self.pn_percent_entry = None
+        self.btn_read_pn = None
+        self.btn_read_last_active_power = None
+        self.pn_value_var = tk.StringVar(value=str(int(DEFAULT_PN_LIMIT_W)))
+        self.pn_slider_var = tk.DoubleVar(value=0.0)
+        self.pn_percent_var = tk.StringVar(value="0")
+        self.last_active_power_var = tk.StringVar(value="--")
+        self.pn_limit_w = DEFAULT_PN_LIMIT_W
         
         self.log_text = None 
         self.file_list = None
         self.path_entry = None
+        self.find_entry = None
+        self.btn_find = None
+        self.btn_clear_find = None
+        self._file_find_var = tk.StringVar(value="")
+        self._file_entries = []
+        self._file_filter_query = ""
+        self._recursive_search_active = False
+        self._recursive_search_running = False
+        self._recursive_search_after_id = None
+        self._recursive_search_pending_query = None
+        self._recursive_search_rows = {}
+        self._browser_find_dialog = None
         self._file_refresh_seq = 0
+        self._file_list_path = None
+        self._navigation_pending_logged = False
         self._editor_window = None
         self._editor_remote_path = None
         self._close_editor_window = None
         self._terminal_window = None
         self._close_terminal_window = None
+        self._terminal_prefill_command = None
         self._energy_win = None
+        self._sequence_win = None
+        self._sequence_modal_open = False
+        self._sequence_running = False
+        # Steps survive closing/reopening Test Sequence in this RBM session,
+        # but are deliberately discarded when the application exits.
+        self._test_sequence_session_steps = []
         self._debug_logs_window = None
         self._find_dialog = None
         self.temp_label_var = tk.StringVar(value="Relay: -- °C")
-        self.soc_label_var = tk.StringVar(value="SoC Batterie: --")
+        self.soc_label_var = tk.StringVar(value="Battery SoC: --")
         self._monitor_stop = False
         self._monitor_thread_started = False
         self._last_user_command_ts = time.time()
         self._last_monitor_poll_ts = 0.0
         self._refresh_running = False
         self._refresh_pending = False
+        self._refresh_pending_navigation = False
+        self._navigation_locked = False
+        self._navigation_in_progress = False
         self._closing = False
         self._scp_lock = threading.Lock()
 
@@ -384,6 +460,7 @@ class RemoteBorneApp:
         # Callbacks pour que ssh_manager remonte les événements à l’UI
         self.ssh.set_ui_callback(self.on_ssh_event)
         self.ssh.set_log_callback(self.log)
+        self.ssh.set_host_key_confirmation_callback(self._confirm_new_host_key)
         self.ssh_queue = SSHQueue(self.ssh, self.root, log=self.log)
 
         # On démarre le thread interne de SSHManager
@@ -416,6 +493,43 @@ class RemoteBorneApp:
         except Exception:
             pass
 
+    def _confirm_new_host_key(self, host: str, details: str) -> bool:
+        """Ask in Tk's thread before trusting a new or replaced EVSE key."""
+        answer = {"approved": False}
+        done = threading.Event()
+
+        fingerprint = re.search(r"fingerprint is:\s*(.+)", details or "", re.IGNORECASE)
+        fingerprint_text = fingerprint.group(1).strip() if fingerprint else "Fingerprint unavailable"
+        is_replacement = bool(re.search(
+            r"potential security breach|does not match", details or "", re.IGNORECASE
+        ))
+        title = "SSH host key changed" if is_replacement else "SSH host key verification"
+        action = (
+            "The cached key for this IP will be replaced."
+            if is_replacement
+            else "This key will be cached for this IP."
+        )
+
+        def ask_operator():
+            try:
+                answer["approved"] = messagebox.askyesno(
+                    title,
+                    "An SSH host key was received for:\n"
+                    f"{host}\n\nFingerprint:\n{fingerprint_text}\n\n"
+                    f"{action}\n\n"
+                    "Verify this fingerprint with the EVSE owner before accepting it.",
+                    parent=self.root,
+                )
+            finally:
+                done.set()
+
+        try:
+            self.root.after(0, ask_operator)
+            done.wait(timeout=60)
+        except Exception:
+            return False
+        return bool(answer["approved"])
+
     # ==================================================================
     # THEMES (flatly / darkly)
     # ==================================================================
@@ -429,6 +543,8 @@ class RemoteBorneApp:
         self.current_theme = theme_name
         try:
             self.style.theme_use(theme_name)
+            # Re-apply the RBM visual language after ttkbootstrap changes theme.
+            self._configure_ui_styles()
             # MAJ du style du log en fonction du nouveau thème
             if self.log_text is not None:
                 self._style_logs()
@@ -472,8 +588,16 @@ class RemoteBorneApp:
         """
         if new_value == "":
             return True
-        pattern = r"^-?\d*(\.\d*)?$"
-        return re.match(pattern, new_value) is not None
+        return re.fullmatch(r"-?\d*(?:\.\d*)?", new_value) is not None
+
+    @staticmethod
+    def _is_valid_cosphi(value) -> bool:
+        """CosPhi operates from -0.99 to 1.00, excluding zero."""
+        try:
+            cosphi = float(value)
+        except (TypeError, ValueError):
+            return False
+        return math.isfinite(cosphi) and -0.99 <= cosphi <= 1.0 and abs(cosphi) >= 1e-9
 
     # ==================================================================
     # LOGOS
@@ -588,6 +712,13 @@ class RemoteBorneApp:
         )
         menubar.add_cascade(label="Terminal", menu=self.terminal_menu)
 
+        # TESTS
+        self.tests_menu = tk.Menu(menubar, tearoff=0)
+        self.tests_menu.add_command(
+            label="Test Sequence", command=self.open_test_sequence
+        )
+        menubar.add_cascade(label="Tests", menu=self.tests_menu)
+
 
         # HELP
         help_menu = tk.Menu(menubar, tearoff=0)
@@ -599,43 +730,83 @@ class RemoteBorneApp:
         self.root.config(menu=menubar)
 
     def _style_logs(self):
-        if self.current_theme == "darkly":
-            self.log_text.configure(
-                background="#1e1e1e",
-                foreground="#dcdcdc",
-                insertbackground="#ffffff",
-                borderwidth=0,
-                relief="flat"
-            )
-        else:
-            self.log_text.configure(
-                background="#f0f0f0",
-                foreground="black",
-                insertbackground="black",
-                borderwidth=1,
-                relief="sunken"
-            )
+        # A fixed high-contrast terminal surface stays readable in both RBM
+        # themes and visually separates operational evidence from controls.
+        self.log_text.configure(
+            background="#18232f",
+            foreground="#e7edf2",
+            insertbackground="#ffffff",
+            selectbackground="#3c6388",
+            selectforeground="#ffffff",
+            font=("Consolas", 10),
+            borderwidth=0,
+            relief="flat",
+        )
 
     # ==================================================================
     # LAYOUT (proche V2, plus clean)
     # ==================================================================
+    def _configure_ui_styles(self):
+        """Keep the main workspace visually consistent across screen sizes."""
+        self.style.configure(
+            "HeaderTitle.TLabel",
+            font=("Segoe UI", 14, "bold"),
+        )
+        self.style.configure(
+            "HeaderSubtitle.TLabel",
+            font=("Segoe UI", 9, "italic"),
+        )
+        self.style.configure(
+            "Status.TLabel",
+            font=("Segoe UI", 9),
+        )
+        self.style.configure(
+            "MetricValue.TLabel",
+            font=("Segoe UI", 10, "bold"),
+        )
+        self.style.configure(
+            "Section.TLabelframe.Label",
+            font=("Segoe UI", 10, "bold"),
+        )
+        self.style.configure(
+            "Nav.TButton",
+            font=("Segoe UI", 9, "bold"),
+            padding=(8, 4),
+        )
+        self.style.configure(
+            "Action.TButton",
+            font=("Segoe UI", 9, "bold"),
+            padding=(10, 5),
+        )
+        self.style.configure(
+            "Wide.TButton",
+            font=("Segoe UI", 9, "bold"),
+            padding=(10, 6),
+        )
+        self.style.configure(
+            "Monitor.TButton",
+            font=("Segoe UI", 9, "bold"),
+            padding=(9, 3),
+        )
+
     def _build_layout(self):
+        self._configure_ui_styles()
+
         # ----- MAIN -----
         main = ttk.Frame(self.root)
         main.pack(fill="both", expand=True)
 
-        # 🔥 IMPORTANT (responsive)
-        main.grid_columnconfigure(0, weight=3)
-        main.grid_columnconfigure(1, weight=2)
-
+        # Keep the control area compact and use any additional display height
+        # for operational evidence in Logs rather than empty space.
+        main.grid_columnconfigure(0, weight=1)
+        main.grid_columnconfigure(1, weight=1)
         main.grid_rowconfigure(0, weight=0)
-        main.grid_rowconfigure(1, weight=3)
+        main.grid_rowconfigure(1, weight=1)
         main.grid_rowconfigure(2, weight=2)
-        main.grid_rowconfigure(3, weight=2)
 
         # ----- HEADER (logos + titre + status) -----
         header = ttk.Frame(main)
-        header.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=(5, 0))
+        header.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=(2, 2))
         header.grid_columnconfigure(0, weight=1)
         header.grid_columnconfigure(1, weight=3)
         header.grid_columnconfigure(2, weight=1)
@@ -649,14 +820,8 @@ class RemoteBorneApp:
         center_fr.grid(row=0, column=1, sticky="nsew")
         ttk.Label(
             center_fr,
-            text="Remote Borne Control Interface",
-            font=("Segoe UI", 16, "bold"),
-            anchor="center",
-        ).pack(fill="x")
-        ttk.Label(
-            center_fr,
-            text="RBM",
-            font=("Segoe UI", 8, "italic"),
+            text="Remote Borne Control Interface (RBM)",
+            style="HeaderTitle.TLabel",
             anchor="center",
         ).pack(fill="x")
 
@@ -669,13 +834,15 @@ class RemoteBorneApp:
         left = ttk.Labelframe(
             main,
             text=f"EVSE Local Grid Code Configuration Files",
+            style="Section.TLabelframe",
             padding=5,
         )
-        left.grid(row=1, column=0, rowspan=2, sticky="nsew", padx=(10, 5), pady=5)
+        left.grid(row=1, column=0, sticky="nsew", padx=(10, 5), pady=5)
 
         # 🔥 IMPORTANT (responsive)
         left.grid_rowconfigure(0, weight=0)   # barre de path
-        left.grid_rowconfigure(1, weight=1)   # liste fichiers
+        left.grid_rowconfigure(1, weight=0)   # barre de recherche
+        left.grid_rowconfigure(2, weight=1)   # liste fichiers
         left.grid_columnconfigure(0, weight=1)
 
         # Path bar
@@ -688,22 +855,57 @@ class RemoteBorneApp:
         self.path_entry.grid(row=0, column=1, sticky="ew", padx=2)
         self.path_entry.insert(0, self.current_path)
 
-        ttk.Button(path_row, text="Go", width=6, command=self._go_to_path).grid(
+        self.btn_go = ttk.Button(
+            path_row, text="Go", width=6, style="Nav.TButton", command=self._go_to_path
+        )
+        self.btn_go.grid(
             row=0, column=2, padx=2
         )
-        ttk.Button(path_row, text="Up", width=6, command=self._go_parent).grid(
+        self.btn_up = ttk.Button(
+            path_row, text="Up", width=6, style="Nav.TButton", command=self._go_parent
+        )
+        self.btn_up.grid(
             row=0, column=3, padx=2
         )
-        ttk.Button(path_row, text="Root", width=6, command=self._go_root).grid(
+        self.btn_root = ttk.Button(
+            path_row, text="Root", width=6, style="Nav.TButton", command=self._go_root
+        )
+        self.btn_root.grid(
             row=0, column=4, padx=2
         )
+        # Find stays visible beside the path controls, without opening a
+        # secondary window or changing the remote navigation flow.
+        find_row = ttk.Frame(left)
+        find_row.grid(row=1, column=0, sticky="ew", pady=(0, 4))
+        find_row.grid_columnconfigure(1, weight=1)
+        ttk.Label(find_row, text="Find:").grid(row=0, column=0, sticky="w")
+        self.find_entry = ttk.Entry(find_row, textvariable=self._file_find_var)
+        self.find_entry.grid(row=0, column=1, sticky="ew", padx=2)
+        self.find_entry.bind("<Return>", lambda _event: self._apply_file_filter_from_entry())
+        self._file_find_var.trace_add("write", self._on_file_find_changed)
+        self.btn_find = ttk.Button(
+            find_row,
+            text="Find",
+            width=6,
+            style="Nav.TButton",
+            command=self._apply_file_filter_from_entry,
+        )
+        self.btn_find.grid(row=0, column=2, padx=2)
+        self.btn_clear_find = ttk.Button(
+            find_row,
+            text="Clear",
+            width=6,
+            style="Nav.TButton",
+            command=self._clear_file_filter,
+        )
+        self.btn_clear_find.grid(row=0, column=3, padx=(2, 0))
 
         # File list
         list_frame = ttk.Frame(left)
-        list_frame.grid(row=1, column=0, sticky="nsew")
+        list_frame.grid(row=2, column=0, sticky="nsew")
         list_frame.grid_rowconfigure(0, weight=1)
         list_frame.grid_columnconfigure(0, weight=1)
-        left.grid_rowconfigure(1, weight=1)     # <--- AJOUT NECESSAIRE
+        left.grid_rowconfigure(2, weight=1)     # <--- AJOUT NECESSAIRE
         left.grid_columnconfigure(0, weight=1)  # <--- AJOUT NECESSAIRE
 
 
@@ -728,9 +930,21 @@ class RemoteBorneApp:
         self.file_list.bind("<Double-Button-1>", self.on_file_double_click)
         self.file_list.bind("<Button-3>", self._on_file_menu)
 
+        # ----- RIGHT : COMPACT OPERATIONS STACK -----
+        # On wide screens this avoids the former oversized empty Test
+        # Configuration panel while keeping all operating controls together.
+        right_stack = ttk.Frame(main)
+        right_stack.grid(row=1, column=1, sticky="nsew", padx=(5, 10), pady=5)
+        right_stack.grid_columnconfigure(0, weight=1)
+        right_stack.grid_rowconfigure(0, weight=0)
+        right_stack.grid_rowconfigure(1, weight=0)
+        right_stack.grid_rowconfigure(2, weight=1)
+
         # ----- RIGHT TOP : STATUS + CONTROLS -----
-        right_top = ttk.Labelframe(main, text="Status & Controls", padding=5)
-        right_top.grid(row=1, column=1, sticky="nsew", padx=(5, 10), pady=(5, 2))
+        right_top = ttk.Labelframe(
+            right_stack, text="Status & Controls", style="Section.TLabelframe", padding=5
+        )
+        right_top.grid(row=0, column=0, sticky="ew", pady=(0, 4))
         right_top.grid_columnconfigure(0, weight=1)
 
         # Status row
@@ -739,12 +953,12 @@ class RemoteBorneApp:
         status_row.grid_columnconfigure(1, weight=1)
 
         self.ip_label = ttk.Label(
-            status_row, text=f"IP: {self.host or '-'}", anchor="w"
+            status_row, text=f"IP: {self.host or '-'}", style="Status.TLabel", anchor="w"
         )
         self.ip_label.grid(row=0, column=0, sticky="w")
 
         self.user_label = ttk.Label(
-            status_row, text=f"User: {self.user or '-'}", anchor="w"
+            status_row, text=f"User: {self.user or '-'}", style="Status.TLabel", anchor="w"
         )
         self.user_label.grid(row=1, column=0, sticky="w")
         
@@ -771,7 +985,7 @@ class RemoteBorneApp:
         self.btn_connect = ttk.Button(
             btn_row,
             text="Connect",
-            style="Accent.TButton",
+            style="Success.TButton",
             command=self.force_reconnect,
         )
         self.btn_connect.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
@@ -779,18 +993,20 @@ class RemoteBorneApp:
         self.btn_disconnect = ttk.Button(
             btn_row,
             text="Disconnect",
-            style="Danger.TButton",
+            style="Warning.TButton",
             command=self._manual_disconnect,
         )
         self.btn_disconnect.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
 
         self.btn_exit = ttk.Button(
-            btn_row, text="Exit", style="Danger.TButton", command=self.on_exit
+            btn_row, text="Exit", style="Secondary.TButton", command=self.on_exit
         )
         self.btn_exit.grid(row=0, column=2, padx=2, pady=2, sticky="ew")
 
         # File actions
-        file_actions = ttk.Labelframe(right_top, text="Test Configuration", padding=5)
+        file_actions = ttk.Labelframe(
+            right_top, text="Test Configuration", style="Section.TLabelframe", padding=5
+        )
         file_actions.grid(row=2, column=0, sticky="nsew", pady=(4, 0))
 
         # Layout tuned for long labels: short actions on first row,
@@ -802,87 +1018,181 @@ class RemoteBorneApp:
         file_actions.grid_rowconfigure(0, weight=0)
         file_actions.grid_rowconfigure(1, weight=0)
 
-        style = ttk.Style()
-        style.configure("Wide.TButton", padding=(8, 6))
-        style.configure("Monitor.TButton", padding=(8, 2))
-
         # Row 1: short actions
         self.btn_refresh = ttk.Button(
-            file_actions, text="Refresh", command=self.refresh_file_list
+            file_actions, text="Refresh", style="Action.TButton", command=self.refresh_file_list
         )
         self.btn_refresh.grid(row=0, column=0, padx=3, pady=3, sticky="ew")
 
         self.btn_download = ttk.Button(
-            file_actions, text="Download", command=self._menu_download
+            file_actions, text="Download", style="Action.TButton", command=self._menu_download
         )
         self.btn_download.grid(row=0, column=1, padx=3, pady=3, sticky="ew")
 
         self.btn_edit = ttk.Button(
-            file_actions, text="Edit", command=self._menu_edit
+            file_actions, text="Edit", style="Action.TButton", command=self._menu_edit
         )
         self.btn_edit.grid(row=0, column=2, padx=3, pady=3, sticky="ew")
 
         self.btn_print = ttk.Button(
-            file_actions, text="Print", command=self._menu_print
+            file_actions, text="Print", style="Action.TButton", command=self._menu_print
         )
         self.btn_print.grid(row=0, column=3, padx=3, pady=3, sticky="ew")
 
-        # Row 2: long actions
+        # Row 2: configuration actions and direct operational shortcuts.
+        # Keeping all four on one row prevents them from being clipped on a
+        # standard 1080p display.
         self.btn_upload = ttk.Button(
             file_actions,
-            text="Upload Configuration\nFile from PC",
+            text="Upload",
             style="Wide.TButton",
             command=self.upload_files_to_current_path,
         )
-        self.btn_upload.grid(
-            row=1, column=0, columnspan=2, padx=3, pady=3, sticky="ew"
-        )
+        self.btn_upload.grid(row=1, column=0, padx=3, pady=3, sticky="ew")
 
         self.btn_copy_panel = ttk.Button(
             file_actions,
-            text="Load Grid Code\nConfiguration",
+            text="Apply Grid Code",
             style="Wide.TButton",
             command=self.copy_selected_to_gridcodes,
         )
-        self.btn_copy_panel.grid(
-            row=1, column=2, columnspan=2, padx=3, pady=3, sticky="ew"
+        self.btn_copy_panel.grid(row=1, column=1, padx=3, pady=3, sticky="ew")
+
+        self.btn_edit_current_properties = ttk.Button(
+            file_actions,
+            text="Active properties",
+            style="Wide.TButton",
+            command=self.edit_current_gridcodes_properties,
         )
+        self.btn_edit_current_properties.grid(row=1, column=2, padx=3, pady=3, sticky="ew")
+
+        self.btn_netlogger = ttk.Button(
+            file_actions,
+            text="NetLogger logs",
+            style="Wide.TButton",
+            command=self.open_netlogger_download,
+        )
+        self.btn_netlogger.grid(row=1, column=3, padx=3, pady=3, sticky="ew")
 
         # ----- RIGHT MIDDLE : ENERGY MANAGER -----
-        em_frame = ttk.Labelframe(main, text="Energy Manager Controls", padding=5)
-        em_frame.grid(row=2, column=1, sticky="ew", padx=(5, 10), pady=(2, 5))
+        em_frame = ttk.Labelframe(
+            right_stack, text="Energy Manager Controls", style="Section.TLabelframe", padding=5
+        )
+        em_frame.grid(row=1, column=0, sticky="ew")
         em_frame.grid_columnconfigure(0, weight=1)
         em_frame.grid_columnconfigure(1, weight=1)
 
         # Validateur float commun à tous les champs P/Q/CosPhi
         vcmd_float = (self.root.register(self._validate_float_key), "%P")
 
+        # Pn is an operator-side limit for the active-power fields. It can be
+        # typed, adjusted with the slider, or loaded from GridCodes.properties.
+        pn_frame = ttk.Labelframe(
+            em_frame, text="Active Power Limit (Pn)", style="Section.TLabelframe", padding=(5, 3)
+        )
+        pn_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        pn_frame.grid_columnconfigure(1, weight=0)
+
+        ttk.Label(pn_frame, text="Pn max [W]:").grid(row=0, column=0, sticky="w")
+        self.pn_entry = ttk.Entry(
+            pn_frame,
+            textvariable=self.pn_value_var,
+            width=9,
+            justify="right",
+            validate="key",
+            validatecommand=vcmd_float,
+        )
+        self.pn_entry.grid(row=0, column=1, sticky="w", padx=(6, 6))
+        self.pn_entry.bind("<Return>", self._commit_manual_pn)
+        self.pn_entry.bind("<FocusOut>", self._commit_manual_pn)
+
+        self.btn_read_pn = ttk.Button(
+            pn_frame,
+            text="Read Pn",
+            command=self.read_pn_from_gridcodes_properties,
+        )
+        self.btn_read_pn.grid(row=0, column=2, sticky="w", padx=(0, 12))
+
+        # Compact HMI-style feedback: the last target-confirmed P value is
+        # shown as a dedicated read-only metric rather than a long message.
+        ttk.Label(pn_frame, text="Last confirmed P [W]:").grid(
+            row=1, column=0, sticky="w", pady=(3, 0)
+        )
+        ttk.Label(
+            pn_frame,
+            textvariable=self.last_active_power_var,
+            style="MetricValue.TLabel",
+            width=10,
+            anchor="e",
+        ).grid(row=1, column=1, sticky="w", padx=(6, 6), pady=(3, 0))
+        self.btn_read_last_active_power = ttk.Button(
+            pn_frame,
+            text="Refresh P",
+            command=self.read_last_active_power_from_energy_log,
+        )
+        self.btn_read_last_active_power.grid(row=1, column=2, sticky="w", pady=(3, 0))
+
+        ttk.Label(pn_frame, text="P [%]:").grid(row=0, column=3, sticky="w")
+        pn_frame.grid_columnconfigure(4, weight=1)
+        self.pn_scale = tk.Scale(
+            pn_frame,
+            from_=-100,
+            to=100,
+            resolution=1,
+            orient="horizontal",
+            showvalue=False,
+            variable=self.pn_slider_var,
+            command=self._on_pn_slider_changed,
+            highlightthickness=0,
+        )
+        self.pn_scale.grid(row=0, column=4, sticky="ew", padx=(6, 6))
+        self.pn_percent_entry = ttk.Entry(
+            pn_frame,
+            textvariable=self.pn_percent_var,
+            width=6,
+            justify="right",
+            validate="key",
+            validatecommand=vcmd_float,
+        )
+        self.pn_percent_entry.grid(row=0, column=5, sticky="e")
+        self.pn_percent_entry.bind("<Return>", self._commit_manual_percent)
+        self.pn_percent_entry.bind("<FocusOut>", self._commit_manual_percent)
+        ttk.Label(pn_frame, text="%").grid(row=0, column=6, sticky="w", padx=(3, 0))
+
         # P/Q
-        pq_frame = ttk.Labelframe(em_frame, text="P / Q Setpoint", padding=5)
-        pq_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
-        pq_frame.grid_columnconfigure(1, weight=1)
+        pq_frame = ttk.Labelframe(
+            em_frame, text="P / Q Setpoint", style="Section.TLabelframe", padding=5
+        )
+        pq_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 4))
+        # Setpoints are short numerical values. Keeping P and Q on one row
+        # leaves enough vertical space for the monitoring panel on laptops.
+        pq_frame.grid_columnconfigure(1, weight=0)
+        pq_frame.grid_columnconfigure(3, weight=0)
 
         ttk.Label(pq_frame, text="Active (P) [W]:").grid(row=0, column=0, sticky="w")
         self.active_entry = ttk.Entry(
             pq_frame,
+            width=10,
+            justify="right",
             validate="key",
             validatecommand=vcmd_float,
         )
-        self.active_entry.grid(row=0, column=1, sticky="ew", pady=2)
+        self.active_entry.grid(row=0, column=1, sticky="w", padx=(5, 12), pady=2)
         # Default value for active
         self.active_entry.insert(0, "0")
 
         ttk.Label(pq_frame, text="Reactive (Q) [var]:").grid(
-            row=1, column=0, sticky="w"
+            row=0, column=2, sticky="w"
         )
         self.reactive_entry = ttk.Entry(
             pq_frame,
+            width=10,
+            justify="right",
             validate="key",
             validatecommand=vcmd_float,
         )
-        self.reactive_entry.grid(row=1, column=1, sticky="ew", pady=2)
-        # Default value for reactive
-        self.reactive_entry.insert(0, "0")
+        self.reactive_entry.grid(row=0, column=3, sticky="w", padx=(5, 0), pady=2)
+        # An empty Q field means that no reactive-power option is sent.
 
         self.btn_send_power = ttk.Button(
             pq_frame,
@@ -891,41 +1201,51 @@ class RemoteBorneApp:
             command=self.send_power_command,
         )
         self.btn_send_power.grid(
-            row=2, column=0, columnspan=2, pady=(6, 0), sticky="ew"
+            row=1, column=0, columnspan=4, pady=(4, 0), sticky="ew"
         )
+        self.btn_send_power.configure(padding=(8, 3))
 
         # CosPhi
-        cosphi_frame = ttk.Labelframe(em_frame, text="CosPhi Setpoint", padding=5)
-        cosphi_frame.grid(row=0, column=1, sticky="nsew", padx=(4, 0))
-        cosphi_frame.grid_columnconfigure(1, weight=1)
+        cosphi_frame = ttk.Labelframe(
+            em_frame, text="CosPhi Setpoint", style="Section.TLabelframe", padding=5
+        )
+        cosphi_frame.grid(row=1, column=1, sticky="nsew", padx=(4, 0))
+        cosphi_frame.grid_columnconfigure(1, weight=0)
+        cosphi_frame.grid_columnconfigure(3, weight=0)
 
         ttk.Checkbutton(
             cosphi_frame,
             text="Use CosPhi mode",
             variable=self.use_cosphi_var,
             command=self._on_cosphi_toggle,
-        ).grid(row=0, column=0, columnspan=2, sticky="w")
+        ).grid(row=0, column=0, columnspan=4, sticky="w")
 
         ttk.Label(cosphi_frame, text="Active (P) [W]:").grid(
             row=1, column=0, sticky="w"
         )
         self.cosphi_active_entry = ttk.Entry(
             cosphi_frame,
+            width=10,
+            justify="right",
             validate="key",
             validatecommand=vcmd_float,
         )
-        self.cosphi_active_entry.grid(row=1, column=1, sticky="ew", pady=2)
+        self.cosphi_active_entry.grid(
+            row=1, column=1, sticky="w", padx=(5, 12), pady=2
+        )
         # Default value for active
         self.cosphi_active_entry.insert(0, "0")
 
-        ttk.Label(cosphi_frame, text="CosPhi:").grid(row=2, column=0, sticky="w")
+        ttk.Label(cosphi_frame, text="CosPhi:").grid(row=1, column=2, sticky="w")
         self.cosphi_entry = ttk.Entry(
             cosphi_frame,
+            width=10,
+            justify="right",
             validate="key",
             validatecommand=vcmd_float,
         )
-        self.cosphi_entry.grid(row=2, column=1, sticky="ew", pady=2)
-        # PAS de valeur par défaut : CosPhi doit être saisi par l'utilisateur
+        self.cosphi_entry.grid(row=1, column=3, sticky="w", padx=(5, 0), pady=2)
+        # A neutral value is inserted when CosPhi mode is enabled or sent.
 
         self.btn_send_cosphi = ttk.Button(
             cosphi_frame,
@@ -934,12 +1254,15 @@ class RemoteBorneApp:
             command=self.send_cosphi_command,
         )
         self.btn_send_cosphi.grid(
-            row=3, column=0, columnspan=2, pady=(6, 0), sticky="ew"
+            row=2, column=0, columnspan=4, pady=(4, 0), sticky="ew"
         )
+        self.btn_send_cosphi.configure(padding=(8, 3))
 
         # Services
-        srv_frame = ttk.Labelframe(em_frame, text="Services", padding=5)
-        srv_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 4), pady=(4, 0))
+        srv_frame = ttk.Labelframe(
+            em_frame, text="Services", style="Section.TLabelframe", padding=5
+        )
+        srv_frame.grid(row=2, column=0, sticky="nsew", padx=(0, 4), pady=(4, 0))
         srv_frame.grid_columnconfigure(0, weight=1)
         srv_frame.grid_columnconfigure(1, weight=1)
         srv_frame.grid_rowconfigure(1, weight=0)
@@ -947,7 +1270,7 @@ class RemoteBorneApp:
         self.btn_restart_services = ttk.Button(
             srv_frame,
             text="Restart services",
-            style="Success.TButton",
+            style="Warning.TButton",
             command=self.restart_initd_services,
         )
         self.btn_restart_services.grid(
@@ -971,10 +1294,10 @@ class RemoteBorneApp:
 
         # --- ADDED ---
         derate_frame = ttk.Labelframe(
-            em_frame, text="Temperature / Derating", padding=5
+            em_frame, text="Temperature / Derating", style="Section.TLabelframe", padding=5
         )
         derate_frame.grid(
-            row=1, column=1, sticky="nsew", padx=(4, 0), pady=(4, 0)
+            row=2, column=1, sticky="nsew", padx=(4, 0), pady=(4, 0)
         )
 
         derate_frame.grid_columnconfigure(0, weight=1)
@@ -1011,20 +1334,24 @@ class RemoteBorneApp:
 
 
         # ----- BOTTOM : LOGS -----
-        log_frame = ttk.Labelframe(main, text="Logs", padding=5)
+        log_frame = ttk.Labelframe(
+            main, text="Logs", style="Section.TLabelframe", padding=5
+        )
         log_frame.grid(
-            row=3, column=0, columnspan=2, sticky="nsew", padx=10, pady=(0, 10)
+            row=2, column=0, columnspan=2, sticky="nsew", padx=10, pady=(0, 10)
         )
 
-        # 🔥 IMPORTANT : moins de priorité verticale
-        main.grid_rowconfigure(3, weight=1)
+        # On large displays, the log grows into the remaining area. Its
+        # requested height still keeps the operational controls prioritized
+        # on compact laptop screens.
+        main.grid_rowconfigure(2, weight=2)
 
         log_frame.grid_columnconfigure(0, weight=1)
         log_frame.grid_rowconfigure(0, weight=1)
 
         self.log_text = tk.Text(
             log_frame,
-            height=6,
+            height=5,
             wrap="word",
             state="disabled",
         )
@@ -1133,6 +1460,8 @@ class RemoteBorneApp:
         self._manual_disconnect_mode = True
         self._refresh_running = False
         self._refresh_pending = False
+        self._refresh_pending_navigation = False
+        self._navigation_in_progress = False
         self._close_aux_windows("manual disconnect")
         try:
             self.ssh.close()
@@ -1145,6 +1474,14 @@ class RemoteBorneApp:
         self._update_controls_state()
 
     def _clear_file_list_ui(self):
+        self._cancel_scheduled_recursive_file_search()
+        self._file_list_path = None
+        self._file_entries = []
+        self._file_filter_query = ""
+        self._recursive_search_active = False
+        self._recursive_search_running = False
+        self._recursive_search_rows = {}
+        self._file_find_var.set("")
         if self.file_list is None:
             return
         try:
@@ -1201,6 +1538,8 @@ class RemoteBorneApp:
 
         _safe_destroy(getattr(self, "_find_dialog", None))
         self._find_dialog = None
+        _safe_destroy(getattr(self, "_browser_find_dialog", None))
+        self._browser_find_dialog = None
 
         close_terminal = getattr(self, "_close_terminal_window", None)
         if callable(close_terminal):
@@ -1236,11 +1575,27 @@ class RemoteBorneApp:
                 _safe_destroy(getattr(energy_win, "win", None))
         self._energy_win = None
 
+        sequence_win = getattr(self, "_sequence_win", None)
+        if sequence_win is not None:
+            try:
+                sequence_win.close(force=True)
+                closed_any = True
+            except Exception:
+                _safe_destroy(getattr(sequence_win, "win", None))
+        self._sequence_win = None
+        self._sequence_modal_open = False
+        self._sequence_running = False
+        try:
+            self.ssh_queue.pause_monitoring = False
+        except Exception:
+            pass
+
         if force:
             try:
                 tracked = {
                     getattr(self, "_editor_window", None),
                     getattr(self, "_find_dialog", None),
+                    getattr(self, "_browser_find_dialog", None),
                     getattr(self, "_terminal_window", None),
                     getattr(getattr(self, "_energy_win", None), "win", None),
                     getattr(getattr(self, "_debug_logs_window", None), "window", None),
@@ -1262,8 +1617,10 @@ class RemoteBorneApp:
         tracked_windows = [
             getattr(self, "_editor_window", None),
             getattr(self, "_find_dialog", None),
+            getattr(self, "_browser_find_dialog", None),
             getattr(self, "_terminal_window", None),
             getattr(getattr(self, "_energy_win", None), "win", None),
+            getattr(getattr(self, "_sequence_win", None), "win", None),
             getattr(getattr(self, "_debug_logs_window", None), "window", None),
         ]
         for win in tracked_windows:
@@ -1317,7 +1674,6 @@ class RemoteBorneApp:
 
         def worker():
             last_reconnect_try = 0.0
-            heartbeat_failures = 0
             monitor_interval = max(10, self.alive_interval)
             while not self._alive_stop:
                 time.sleep(monitor_interval)
@@ -1325,17 +1681,12 @@ class RemoteBorneApp:
                 if not hasattr(self, "ssh"):
                     break
                 if getattr(self.ssh, "_reconnect_in_progress", False):
-                    heartbeat_failures = 0
                     continue
                 # Si pas connecté -> on tente une reconnexion périodique
                 if not self.ssh.connected:
-                    heartbeat_failures = 0
                     if self._manual_disconnect_mode:
                         continue
-                    if self.status_var.get().startswith("Reconnecting"):
-                        continue
                     now = time.time()
-                    # évite de spammer plusieurs tentatives/logs toutes les 10s
                     if now - last_reconnect_try >= 30:
                         self.log("[ALIVE] Disconnected, attempting reconnect.")
                         self.ssh.restart()
@@ -1343,27 +1694,20 @@ class RemoteBorneApp:
                     continue
 
                 def cb(res):
-                    nonlocal heartbeat_failures, last_reconnect_try
+                    nonlocal last_reconnect_try
                     if not res["success"]:
                         if getattr(self.ssh, "_reconnect_in_progress", False):
-                            heartbeat_failures = 0
                             return
-                        heartbeat_failures += 1
-                        self.log(
-                            f"[ALIVE] Heartbeat failed ({heartbeat_failures}/3)."
-                        )
-                        if heartbeat_failures < 3:
-                            return
+                        reason = (res.get("err") or res.get("out") or "unknown error").strip()
+                        self.log("[ALIVE] Heartbeat failed; marking SSH disconnected.")
+                        # ``echo alive`` has no application-level failure mode:
+                        # one failed response means this SSH session is no longer usable.
+                        self.ssh.report_connection_lost(reason, force_event=True)
                         now = time.time()
                         if now - last_reconnect_try >= 30:
-                            self.log(
-                                "[ALIVE] 3 heartbeat failures in a row, forcing reconnect."
-                            )
-                            self.ssh.force_reconnect(force_if_connected=True)
+                            self.log("[ALIVE] Starting automatic reconnect after heartbeat failure.")
+                            self.ssh.force_reconnect()
                             last_reconnect_try = now
-                        heartbeat_failures = 0
-                    else:
-                        heartbeat_failures = 0
 
                 # IMPORTANT : pas d’auto_retry ici, sinon double gestion
                 self.ssh_queue.execute(
@@ -1422,12 +1766,17 @@ class RemoteBorneApp:
         pass
 
     def update_monitor(self):
-        """Manual refresh button: Temp and SoC in one SSH command."""
+        """Manual refresh button: Temp, SoC, and the last confirmed P setpoint."""
+        if self._sequence_operation_blocked("Manual monitor refresh"):
+            return
         if not self.connected:
             self.log("[MONITOR] Refresh: not connected.")
             return
         self.log("[MONITOR] Manual refresh requested...")
         self.update_temp_and_soc(manual=True)
+        # Queue this read after the lightweight monitor command so the UI
+        # refreshes all displayed live values without blocking the operator.
+        self.read_last_active_power_from_energy_log()
 
     def update_temp_and_soc(self, manual=False):
         """Fetch Temp and SoC with a single SSH command."""
@@ -1441,7 +1790,9 @@ class RemoteBorneApp:
             'echo "===TEMP==="; '
             'grep -oiE "DerateDetails:.*" /var/aux/ChargerApp/derate.log 2>/dev/null | tail -1; '
             'echo "===SOC==="; '
-            'grep -oE "evPresentSo[Cc]: [0-9]+" /var/aux/ChargerApp/ChargerApp.log 2>/dev/null | tail -1 | grep -oE "[0-9]+"'
+            # A vehicle may be absent: do not turn a missing SoC into a
+            # transport failure that also hides the available temperatures.
+            'grep -oE "evPresentSo[Cc]: [0-9]+" /var/aux/ChargerApp/ChargerApp.log 2>/dev/null | tail -1 | grep -oE "[0-9]+" || true'
         )
 
         def cb(res):
@@ -1508,9 +1859,9 @@ class RemoteBorneApp:
                         foreground=("red" if (max_temp or 0) > 80 else "green")
                     )
                 self.soc_label_var.set(
-                    f"SoC Batterie (last known): {soc_value}"
+                    f"Battery SoC (last known): {soc_value}"
                     if soc_value is not None
-                    else "SoC Batterie: --"
+                    else "Battery SoC: --"
                 )
 
             try:
@@ -1519,7 +1870,7 @@ class RemoteBorneApp:
             except Exception:
                 pass
 
-        self.ssh_queue.execute(
+        queued = self.ssh_queue.execute(
             cmd,
             callback=cb,
             timeout=min(self.ssh_timeout, 5),
@@ -1528,7 +1879,10 @@ class RemoteBorneApp:
             silent=False,
             auto_retry=False,
             log_errors=False,
+            dedupe_key="monitor_temp_soc",
         )
+        if manual and not queued:
+            self.log("[MONITOR] Refresh already queued or running.")
 
     # ==================================================================
     # SSH EVENTS (connect / disconnect / reconnect)
@@ -1562,6 +1916,9 @@ class RemoteBorneApp:
                 self.connected = False
                 self._refresh_running = False
                 self._refresh_pending = False
+                self._refresh_pending_navigation = False
+                self._navigation_in_progress = False
+                self._navigation_locked = False
                 self.status_var.set("Disconnected")
                 self.log("[SSH] Disconnected")
                 self._close_aux_windows("SSH disconnect")
@@ -1569,17 +1926,26 @@ class RemoteBorneApp:
                 self._clear_file_list_ui()
                 self.temp_label_var.set("Relay: -- °C")
                 self.temp_label.configure(foreground="")
-                self.soc_label_var.set("SoC Batterie: --")
+                self.soc_label_var.set("Battery SoC: --")
+                self.last_active_power_var.set("--")
                 self._update_controls_state()
 
             elif ev_type == "reconnecting":
                 self.connected = False
+                self._refresh_running = False
+                self._refresh_pending = False
+                self._refresh_pending_navigation = False
+                self._navigation_in_progress = False
+                self._navigation_locked = False
                 self.status_var.set("Reconnecting…")
                 self.log("[SSH] Reconnecting…")
+                self._close_aux_windows("SSH reconnect")
                 self._set_led(False)
+                self._clear_file_list_ui()
                 self.temp_label_var.set("Relay: -- °C")
                 self.temp_label.configure(foreground="")
-                self.soc_label_var.set("SoC Batterie: --")
+                self.soc_label_var.set("Battery SoC: --")
+                self.last_active_power_var.set("--")
                 self._update_controls_state()
 
             elif ev_type == "reconnected":
@@ -1602,6 +1968,18 @@ class RemoteBorneApp:
     # ==================================================================
     # ENABLE / DISABLE WIDGETS
     # ==================================================================
+    def _sequence_operation_blocked(self, action: str) -> bool:
+        """Reject direct calls that bypass disabled controls during a sequence."""
+        if not bool(getattr(self, "_sequence_modal_open", False)):
+            return False
+        message = (
+            f"{action} is unavailable while the Test Sequence window is open. "
+            "Close Test Sequence before using other RBM actions."
+        )
+        self.log(f"[SEQUENCE] Blocked: {action}.")
+        self._popup_warning("Test Sequence open", message)
+        return True
+
     def _update_controls_state(self):
         # boutons qui doivent fonctionner même déconnecté
         always = [self.btn_exit]
@@ -1615,12 +1993,18 @@ class RemoteBorneApp:
             self.btn_upload,
             self.btn_print,
             self.btn_edit,
+            self.btn_edit_current_properties,
+            self.btn_netlogger,
             self.btn_upload,
+            self.btn_read_pn,
+            self.btn_read_last_active_power,
             self.btn_send_power,
             self.btn_send_cosphi,
             self.btn_restart_services,
             self.btn_reboot,
             self.btn_monitor,
+            self.btn_find,
+            self.btn_clear_find,
         ]
 
         # ----- Bouton Connect -----
@@ -1634,14 +2018,20 @@ class RemoteBorneApp:
             if b:
                 b.configure(state="normal")
 
+        sequence_locked = bool(getattr(self, "_sequence_modal_open", False))
+
         # ----- Boutons qui nécessitent une connexion -----
         for b in needs_conn:
             if b:
-                b.configure(state="normal" if self.connected else "disabled")
+                enabled = self.connected and not sequence_locked
+                b.configure(state="normal" if enabled else "disabled")
 
         # ----- Menus -----
         try:
             state_conn = tk.NORMAL if self.connected else tk.DISABLED
+            state_action = (
+                tk.NORMAL if self.connected and not sequence_locked else tk.DISABLED
+            )
             state_not_conn = tk.NORMAL if not self.connected else tk.DISABLED
 
             if self.file_menu:
@@ -1650,26 +2040,30 @@ class RemoteBorneApp:
                 # Disconnect only when connected
                 self.file_menu.entryconfig("Disconnect", state=state_conn)
                 # Actions needing connection
-                self.file_menu.entryconfig("Download", state=state_conn)
-                self.file_menu.entryconfig("Print", state=state_conn)
-                self.file_menu.entryconfig("Edit", state=state_conn)
-                self.file_menu.entryconfig("Restart services", state=state_conn)
-                self.file_menu.entryconfig("Reboot device", state=state_conn)
+                self.file_menu.entryconfig("Download", state=state_action)
+                self.file_menu.entryconfig("Print", state=state_action)
+                self.file_menu.entryconfig("Edit", state=state_action)
+                self.file_menu.entryconfig("Restart services", state=state_action)
+                self.file_menu.entryconfig("Reboot device", state=state_action)
 
-            state_conn = tk.NORMAL if self.connected else tk.DISABLED
             if hasattr(self, "debug_menu"):
-                self.debug_menu.entryconfig("Debug logs", state=state_conn)
+                self.debug_menu.entryconfig("Debug logs", state=state_action)
             if hasattr(self, "energy_menu") and self.energy_menu:
-                self.energy_menu.entryconfig("Energy Manager PRO", state=state_conn)
+                self.energy_menu.entryconfig("Energy Manager PRO", state=state_action)
             if hasattr(self, "terminal_menu") and self.terminal_menu:
-                self.terminal_menu.entryconfig("Open Terminal", state=state_conn)
+                self.terminal_menu.entryconfig("Open Terminal", state=state_action)
+            if hasattr(self, "tests_menu") and self.tests_menu:
+                self.tests_menu.entryconfig(
+                    "Test Sequence",
+                    state=tk.DISABLED if sequence_locked else state_conn,
+                )
 
         except Exception:
             pass
 
         # ----- Liste de fichiers (GridCodes browser) -----
         if hasattr(self, "file_list") and self.file_list:
-            if self.connected:
+            if self.connected and not sequence_locked:
                 self.file_list.configure(state="normal")
             else:
                 self.file_list.configure(state="disabled")
@@ -1678,15 +2072,31 @@ class RemoteBorneApp:
                 except Exception:
                     pass
 
+        self._set_navigation_locked(
+            self._navigation_locked or sequence_locked, update_model=False
+        )
+
         # CosPhi exclusif vs P/Q
         self._on_cosphi_toggle(update_only=True)
+        if sequence_locked:
+            for button in (self.btn_send_power, self.btn_send_cosphi):
+                if button:
+                    button.configure(state="disabled")
 
     # ==================================================================
     # FILE ACTION LOCK — désactive les boutons fichier pendant une action
     # ==================================================================
     def _lock_file_actions(self, reason: str = ""):
         """Désactive Edit, Download, Print, Copy tant qu'une action est en cours."""
-        for b in [self.btn_edit, self.btn_download, self.btn_print, self.btn_copy_panel]:
+        for b in [
+            self.btn_edit,
+            self.btn_download,
+            self.btn_print,
+            self.btn_upload,
+            self.btn_copy_panel,
+            self.btn_edit_current_properties,
+            self.btn_netlogger,
+        ]:
             try:
                 if b:
                     b.configure(state="disabled")
@@ -1699,7 +2109,15 @@ class RemoteBorneApp:
         """Réactive les boutons fichier si connecté."""
         if not self.connected:
             return
-        for b in [self.btn_edit, self.btn_download, self.btn_print, self.btn_copy_panel]:
+        for b in [
+            self.btn_edit,
+            self.btn_download,
+            self.btn_print,
+            self.btn_upload,
+            self.btn_copy_panel,
+            self.btn_edit_current_properties,
+            self.btn_netlogger,
+        ]:
             try:
                 if b:
                     b.configure(state="normal")
@@ -1709,17 +2127,410 @@ class RemoteBorneApp:
     # ==================================================================
     # NAVIGATION FICHIERS — VERSION ASYNC AVEC SSHManager.execute
     # ==================================================================
-    def refresh_file_list(self):
+    def _set_navigation_locked(self, locked: bool, update_model: bool = True):
+        if update_model:
+            self._navigation_locked = locked
+        state = "disabled" if locked or not self.connected else "normal"
+        for widget in (self.btn_go, self.btn_up, self.btn_root, self.btn_refresh, self.path_entry):
+            try:
+                if widget is not None:
+                    widget.configure(state=state)
+            except Exception:
+                pass
+
+    def _set_file_list_loading(self, loading: bool):
+        """Prevent selection of stale entries without blanking the browser."""
+        if self.file_list is None:
+            return
+        try:
+            self.file_list.configure(state="normal")
+            if loading:
+                self.file_list.selection_clear(0, "end")
+                # Keep the last valid listing visible while SSH fetches the next
+                # folder. Clearing it made normal navigation look frozen.
+                self.file_list.configure(state="disabled")
+            else:
+                state = "normal" if self.connected else "disabled"
+                self.file_list.configure(state=state)
+        except Exception:
+            pass
+
+    def _begin_navigation(self) -> bool:
+        if not self.connected:
+            return False
+        if self._navigation_in_progress:
+            if not self._navigation_pending_logged:
+                self.log("[FILES] Navigation already in progress; additional click ignored.")
+                self._navigation_pending_logged = True
+            return False
+        # Keep controls visually available, but accept one navigation intent at
+        # a time. This avoids piling up Go/Up/Root commands in the SSH queue.
+        self._navigation_in_progress = True
+        self._navigation_pending_logged = False
+        return True
+
+    def _finish_navigation(self):
+        self._navigation_in_progress = False
+        self._navigation_pending_logged = False
+
+    @staticmethod
+    def _file_name_matches_query(entry: str, query: str) -> bool:
+        """Match a name as a case-insensitive contains search with wildcards."""
+        query = query.strip().casefold()
+        if not query:
+            return True
+        candidate = entry.casefold()
+        if "*" in query or "?" in query:
+            # Find is a contains search. Preserve wildcard segments inside the
+            # query, but add outer wildcards so ``5*5`` matches any filename
+            # containing a 5 followed later by another 5.
+            pattern = query
+            if not pattern.startswith("*"):
+                pattern = "*" + pattern
+            if not pattern.endswith("*"):
+                pattern += "*"
+            return fnmatch.fnmatchcase(candidate, pattern)
+        return query in candidate
+
+    def _file_entry_matches_filter(self, entry: str) -> bool:
+        """Match a local GridCodes entry without sending another SSH command."""
+        return self._file_name_matches_query(
+            entry, getattr(self, "_file_filter_query", "")
+        )
+
+    def _render_file_entries(self):
+        """Render the cached remote list, optionally filtered by the Find query."""
+        if self.file_list is None:
+            return 0, 0
+        try:
+            self.file_list.delete(0, "end")
+            if self.current_path.rstrip("/") != self.default_path.rstrip("/"):
+                self.file_list.insert("end", "[.] (Parent)")
+
+            entries = list(getattr(self, "_file_entries", []))
+            shown = 0
+            for entry in entries:
+                if self._file_entry_matches_filter(entry):
+                    self.file_list.insert("end", entry)
+                    shown += 1
+            return shown, len(entries)
+        except Exception as exc:
+            self.log(f"[FILES ERROR] Unable to render file list: {exc}")
+            return 0, 0
+
+    def _on_file_find_changed(self, *_):
+        """Filter locally first, then search subfolders after a short pause."""
+        if not self.connected or not getattr(self, "_file_entries", []):
+            return
+        self._apply_file_filter_from_entry(log_result=False, allow_recursive=False)
+        query = self._file_find_var.get().strip()
+        if query:
+            self._schedule_recursive_file_search(query)
+        else:
+            self._cancel_scheduled_recursive_file_search()
+
+    def _apply_file_filter_from_entry(
+        self, log_result: bool = True, allow_recursive: bool = True
+    ):
+        """Apply the visible Find field to the already loaded folder entries."""
+        if not self.connected:
+            if log_result:
+                self.log("[FILES] Please connect before using Find.")
+            return
+        self._file_filter_query = self._file_find_var.get().strip()
+        if (
+            allow_recursive
+            and self._file_filter_query
+        ):
+            self._cancel_scheduled_recursive_file_search()
+            self._search_files_in_subfolders(self._file_filter_query)
+            return
+        self._recursive_search_active = False
+        self._recursive_search_rows = {}
+        shown, total = self._render_file_entries()
+        if log_result and self._file_filter_query:
+            self.log(f"[FILES] Find '{self._file_filter_query}': {shown}/{total} match(es).")
+        elif log_result:
+            self.log(f"[FILES] Find cleared: {total} item(s) displayed.")
+
+    def _clear_file_filter(self):
+        self._cancel_scheduled_recursive_file_search()
+        self._recursive_search_active = False
+        self._recursive_search_rows = {}
+        self._file_find_var.set("")
+        self._apply_file_filter_from_entry()
+        try:
+            if self.find_entry is not None:
+                self.find_entry.focus_set()
+        except Exception:
+            pass
+
+    def _cancel_scheduled_recursive_file_search(self):
+        """Cancel a debounce timer and discard a superseded pending query."""
+        after_id = getattr(self, "_recursive_search_after_id", None)
+        if after_id is not None:
+            try:
+                self.root.after_cancel(after_id)
+            except (tk.TclError, AttributeError):
+                pass
+        self._recursive_search_after_id = None
+        self._recursive_search_pending_query = None
+
+    def _schedule_recursive_file_search(self, query: str, delay_ms: int = 600):
+        """Start one recursive search after typing pauses, like Explorer search."""
+        after_id = getattr(self, "_recursive_search_after_id", None)
+        if after_id is not None:
+            try:
+                self.root.after_cancel(after_id)
+            except (tk.TclError, AttributeError):
+                pass
+
+        def start_search():
+            self._recursive_search_after_id = None
+            if (
+                self._closing
+                or not self.connected
+                or self._file_find_var.get().strip() != query
+                or self.current_path != getattr(self, "_file_list_path", None)
+            ):
+                return
+            if self._recursive_search_running:
+                # The active request will schedule this final query when it
+                # completes, preventing concurrent find commands on the EVSE.
+                self._recursive_search_pending_query = query
+                return
+            self._search_files_in_subfolders(query)
+
+        try:
+            self._recursive_search_after_id = self.root.after(delay_ms, start_search)
+        except tk.TclError:
+            self._recursive_search_after_id = None
+
+    def _render_recursive_search_results(self, paths, base_path: str):
+        """Show recursive matches grouped by their remote parent folder."""
+        if self.file_list is None:
+            return 0, 0
+        groups = {}
+        for remote_path in paths:
+            parent = posixpath.dirname(remote_path) or "/"
+            groups.setdefault(parent, []).append(remote_path)
+
+        self.file_list.delete(0, "end")
+        self._recursive_search_rows = {}
+        row = 0
+        for folder in sorted(groups, key=str.casefold):
+            relative_folder = posixpath.relpath(folder, base_path)
+            label = "." if relative_folder == "." else relative_folder
+            self.file_list.insert("end", f"[DIR] {label}/")
+            self._recursive_search_rows[row] = ("folder", folder)
+            row += 1
+            for remote_path in sorted(groups[folder], key=lambda item: posixpath.basename(item).casefold()):
+                self.file_list.insert("end", f"    {posixpath.basename(remote_path)}")
+                self._recursive_search_rows[row] = ("file", remote_path)
+                row += 1
+
+        if not paths:
+            self.file_list.insert("end", "[No matching file in subfolders]")
+        return len(paths), len(groups)
+
+    def _search_files_in_subfolders(self, query: str):
+        """Find files asynchronously below the current folder and group matches locally."""
+        if self._recursive_search_running:
+            self._recursive_search_pending_query = query
+            return
+        if getattr(self, "_file_list_path", None) != self.current_path:
+            self.log("[FILES] Wait for the current folder list before searching subfolders.")
+            return
+
+        base_path = self.current_path
+        self._recursive_search_running = True
+        self._recursive_search_pending_query = None
+        self.log(f"[FILES] Searching all folders below {base_path} for '{query}'...")
+        # Matching is performed locally for consistent case-insensitive and
+        # wildcard behavior across EVSE images. Limit output to keep the UI
+        # responsive on unusually large test folders.
+        command = f"find {shlex.quote(base_path)} -type f -print 2>/dev/null | head -n 2000"
+
+        def callback(result):
+            def apply_ui():
+                self._recursive_search_running = False
+                pending_query = self._recursive_search_pending_query
+                self._recursive_search_pending_query = None
+                if self._closing or not self.connected:
+                    return
+                if self.current_path != base_path:
+                    self.log("[FILES] All-folder search ignored because the folder changed.")
+                    return
+                # The operator may have cleared or changed the query while
+                # the remote find command was running. Do not overwrite the
+                # newer local view with this older response.
+                if (
+                    self._file_find_var.get().strip() != query
+                ):
+                    self.log("[FILES] All-folder search ignored because the query changed.")
+                    if pending_query:
+                        self._schedule_recursive_file_search(pending_query, delay_ms=100)
+                    return
+                if not result.get("success"):
+                    message = (
+                        result.get("stderr")
+                        or result.get("err")
+                        or result.get("stdout")
+                        or result.get("out")
+                        or "Search failed."
+                    ).strip()
+                    self.log(f"[FILES] All-folder search error: {message}")
+                    return
+                all_paths = [
+                    path.strip()
+                    for path in (result.get("stdout") or result.get("out") or "").splitlines()
+                    if path.strip().startswith("/")
+                ]
+                matches = [
+                    path
+                    for path in all_paths
+                    if self._file_name_matches_query(posixpath.basename(path), query)
+                ]
+                self._recursive_search_active = True
+                count, folders = self._render_recursive_search_results(matches, base_path)
+                self.log(
+                    f"[FILES] All-folder Find '{query}': {count} file(s) in {folders} folder(s)."
+                )
+                if len(all_paths) >= 2000:
+                    self.log("[FILES] All-folder search reached the 2000-file safety limit.")
+                if pending_query and pending_query != query:
+                    self._schedule_recursive_file_search(pending_query, delay_ms=100)
+
+            try:
+                if not self._closing and self.root.winfo_exists():
+                    self.root.after(0, apply_ui)
+            except Exception:
+                self._recursive_search_running = False
+
+        self.ssh_queue.execute(
+            command,
+            callback=callback,
+            timeout=max(self.ssh_timeout, 60),
+            command_type="recursive_find",
+            label="Find files in all folders",
+            silent=True,
+        )
+
+    def _open_file_find_dialog(self):
+        """Open a non-blocking local filter for the currently displayed folder."""
+        if not self.connected:
+            self.log("[FILES] Please connect before using Find.")
+            return
+        if not getattr(self, "_file_entries", []):
+            self._popup_warning("Find", "Refresh the file list before searching.")
+            return
+
+        dialog = getattr(self, "_browser_find_dialog", None)
+        try:
+            if dialog is not None and dialog.winfo_exists():
+                dialog.lift()
+                dialog.focus_force()
+                return
+        except Exception:
+            self._browser_find_dialog = None
+
+        dialog = tk.Toplevel(self.root)
+        dialog.withdraw()
+        self._browser_find_dialog = dialog
+        dialog.title("Find in GridCodes")
+        dialog.transient(self.root)
+        dialog.resizable(False, False)
+        # Leave room for the action row on compact displays and themed buttons.
+        dialog.geometry("460x190")
+        dialog.minsize(460, 190)
+
+        frame = ttk.Frame(dialog, padding=12)
+        frame.pack(fill="both", expand=True)
+        frame.grid_columnconfigure(0, weight=1)
+
+        ttk.Label(
+            frame,
+            text="Find file or folder name (example: Power or *Power*):",
+        ).grid(row=0, column=0, sticky="w")
+        query_var = tk.StringVar(value=getattr(self, "_file_filter_query", ""))
+        query_entry = ttk.Entry(frame, textvariable=query_var, width=48)
+        query_entry.grid(row=1, column=0, sticky="ew", pady=(5, 8))
+        status_var = tk.StringVar(value="The search is local to the current folder.")
+        ttk.Label(frame, textvariable=status_var).grid(row=2, column=0, sticky="w")
+
+        actions = ttk.Frame(frame)
+        actions.grid(row=3, column=0, sticky="ew", pady=(10, 0))
+
+        def close_dialog():
+            try:
+                dialog.destroy()
+            except Exception:
+                pass
+            self._browser_find_dialog = None
+
+        def apply_filter(*_):
+            self._file_filter_query = query_var.get().strip()
+            shown, total = self._render_file_entries()
+            if self._file_filter_query:
+                status_var.set(f"{shown} match(es) out of {total} item(s).")
+                self.log(f"[FILES] Find '{self._file_filter_query}': {shown}/{total} match(es).")
+            else:
+                status_var.set(f"Filter cleared: {total} item(s) displayed.")
+
+        def clear_filter():
+            query_var.set("")
+            apply_filter()
+            query_entry.focus_set()
+
+        ttk.Button(actions, text="Find", command=apply_filter, width=10).pack(side="left")
+        ttk.Button(actions, text="Clear", command=clear_filter, width=10).pack(side="left", padx=6)
+        ttk.Button(actions, text="Close", command=close_dialog, width=10).pack(side="right")
+        query_entry.bind("<Return>", apply_filter)
+        dialog.bind("<Escape>", lambda _event: close_dialog())
+        dialog.protocol("WM_DELETE_WINDOW", close_dialog)
+        dialog.deiconify()
+        dialog.lift()
+        dialog.focus_force()
+        query_entry.focus_set()
+        query_entry.selection_range(0, "end")
+
+    def refresh_file_list(self, navigation: bool = False):
         """Refresh the remote file list."""
 
         if not self.connected:
             self.log("[FILES] Please connect before refreshing list.")
+            if navigation:
+                self._finish_navigation()
             return
+
+        # Find is intentionally scoped to one displayed folder. A new remote
+        # location always starts with the complete list so it cannot look empty.
+        if navigation:
+            self._cancel_scheduled_recursive_file_search()
+            self._file_filter_query = ""
+            self._file_find_var.set("")
+            self._recursive_search_active = False
+            self._recursive_search_rows = {}
+            dialog = getattr(self, "_browser_find_dialog", None)
+            try:
+                if dialog is not None and dialog.winfo_exists():
+                    dialog.destroy()
+            except Exception:
+                pass
+            self._browser_find_dialog = None
+
+        # The visible list belongs to the previous request until this one ends.
+        # It must not be used to build another remote path in the meantime.
+        self._file_list_path = None
+        self._set_file_list_loading(True)
 
         if getattr(self, "_refresh_running", False):
             if not getattr(self, "_refresh_pending", False):
                 self.log("[FILES] Refresh already in progress, queued.")
             self._refresh_pending = True
+            self._refresh_pending_navigation = (
+                self._refresh_pending_navigation or navigation
+            )
             return
 
         self._refresh_running = True
@@ -1729,27 +2540,74 @@ class RemoteBorneApp:
             self.current_path = self.default_path
 
         requested_path = self.current_path
-        cmd = f'ls -Ap "{requested_path}"'
+        if hasattr(self, "path_entry"):
+            self.path_entry.delete(0, "end")
+            self.path_entry.insert(0, requested_path)
+        cmd = f"ls -Ap {shlex.quote(requested_path)}"
         self.log(f"[FILES] Listing {requested_path}")
 
         self._file_refresh_seq += 1
         req_id = self._file_refresh_seq
 
+        def recover_stalled_refresh():
+            # A queued command should always complete within its SSH timeout.
+            # If its UI callback never arrives, invalidate that request and
+            # retry the latest requested folder instead of leaving the browser
+            # permanently in "refresh in progress" state.
+            if (
+                self._closing
+                or not self.connected
+                or req_id != self._file_refresh_seq
+                or not self._refresh_running
+            ):
+                return
+            self._file_refresh_seq += 1
+            self._refresh_running = False
+            self._refresh_pending = False
+            retry_navigation = navigation or self._refresh_pending_navigation
+            self._refresh_pending_navigation = False
+            self.log("[FILES] Refresh timeout recovered; retrying latest path.")
+            try:
+                self.root.after(
+                    0,
+                    lambda nav=retry_navigation: self.refresh_file_list(
+                        navigation=nav
+                    ),
+                )
+            except Exception:
+                if retry_navigation:
+                    self._finish_navigation()
+                pass
+
+        try:
+            self.root.after((self.ssh_timeout + 5) * 1000, recover_stalled_refresh)
+        except Exception:
+            pass
+
         def cb(res):
             def apply_ui():
+                # A timed-out or superseded response must not clear the state
+                # of a newer refresh request.
+                if req_id != self._file_refresh_seq:
+                    return
+
                 self._refresh_running = False
                 rerun_needed = bool(getattr(self, "_refresh_pending", False))
+                rerun_navigation = bool(
+                    getattr(self, "_refresh_pending_navigation", False)
+                )
                 self._refresh_pending = False
+                self._refresh_pending_navigation = False
 
                 try:
-                    if req_id != self._file_refresh_seq:
-                        return
-
                     if self.current_path != requested_path:
                         rerun_needed = True
+                        rerun_navigation = rerun_navigation or navigation
                         return
 
-                    self.file_list.delete(0, "end")
+                    # A disabled Tk Listbox rejects programmatic insertions.
+                    # Re-enable it before populating the refreshed directory.
+                    self._set_file_list_loading(False)
 
                     if not res.get("success"):
                         msg = (
@@ -1760,34 +2618,54 @@ class RemoteBorneApp:
                             or ""
                         ).strip()
                         self.log(f"[FILES] Error: {msg}")
+                        self._file_entries = []
+                        self.file_list.delete(0, "end")
+                        self.file_list.insert(
+                            "end", "[Unable to load folder - click Refresh]"
+                        )
                         return
 
                     lines = (res.get("stdout") or res.get("out") or "").splitlines()
-
-                    if requested_path.rstrip("/") != self.default_path.rstrip("/"):
-                        self.file_list.insert("end", "[.] (Parent)")
-
-                    count = 0
-                    for e in lines:
-                        e = e.strip()
-                        if e:
-                            self.file_list.insert("end", e)
-                            count += 1
+                    self._file_entries = [entry.strip() for entry in lines if entry.strip()]
+                    count = len(self._file_entries)
+                    shown, _total = self._render_file_entries()
 
                     if hasattr(self, "path_entry"):
                         self.path_entry.delete(0, "end")
                         self.path_entry.insert(0, requested_path)
 
-                    self.log(f"[FILES] {count} entries in {requested_path}")
+                    self._file_list_path = requested_path
+                    self._navigation_pending_logged = False
+                    if self._file_filter_query:
+                        self.log(
+                            f"[FILES] {count} entries in {requested_path}; "
+                            f"Find shows {shown} match(es)."
+                        )
+                    else:
+                        self.log(f"[FILES] {count} entries in {requested_path}")
 
                 except Exception as ex:
                     self.log(f"[FILES ERROR] {ex}")
                 finally:
+                    # The refresh queue already coalesces successive requests.
+                    # Do not keep the navigation controls disabled while a
+                    # queued refresh is waiting for the latest path.
                     if rerun_needed and self.connected and not self._closing:
                         try:
-                            self.root.after(0, self.refresh_file_list)
+                            self.root.after(
+                                0,
+                                lambda nav=rerun_navigation: self.refresh_file_list(
+                                    navigation=nav
+                                ),
+                            )
                         except Exception:
-                            pass
+                            self._set_file_list_loading(False)
+                            if rerun_navigation:
+                                self._finish_navigation()
+                    else:
+                        self._set_file_list_loading(False)
+                        if navigation:
+                            self._finish_navigation()
 
             try:
                 if not self._closing and self.root.winfo_exists():
@@ -1795,9 +2673,15 @@ class RemoteBorneApp:
                 else:
                     self._refresh_running = False
                     self._refresh_pending = False
+                    self._refresh_pending_navigation = False
+                    if navigation:
+                        self._finish_navigation()
             except Exception:
                 self._refresh_running = False
                 self._refresh_pending = False
+                self._refresh_pending_navigation = False
+                if navigation:
+                    self._finish_navigation()
 
         self.ssh_queue.execute(
             cmd,
@@ -1809,13 +2693,13 @@ class RemoteBorneApp:
         )
 
     def _go_root(self):
-        if not self.connected:
+        if not self._begin_navigation():
             return
         self.current_path = self.default_path
-        self.refresh_file_list()
+        self.refresh_file_list(navigation=True)
 
     def _go_to_path(self):
-        if not self.connected:
+        if not self._begin_navigation():
             return
         target = (
             self.path_entry.get().strip()
@@ -1828,12 +2712,13 @@ class RemoteBorneApp:
         def cb(res):
             if res["success"]:
                 self.current_path = target
-                self.refresh_file_list()
+                self.refresh_file_list(navigation=True)
             else:
+                self._finish_navigation()
                 self._popup_error("Path", f"Remote folder not found:\n{target}")
 
         self.ssh_queue.execute(
-            f'test -d "{target}"',
+            f"test -d {shlex.quote(target)}",
             callback=cb,
             timeout=self.ssh_timeout,
             auto_retry=False,
@@ -1844,11 +2729,14 @@ class RemoteBorneApp:
         )
 
     def _go_parent(self):
+        if not self._begin_navigation():
+            return
         if self.current_path.rstrip("/") == self.default_path.rstrip("/"):
+            self._finish_navigation()
             return
         import posixpath
         self.current_path = posixpath.dirname(self.current_path.rstrip("/")) or "/"
-        self.refresh_file_list()
+        self.refresh_file_list(navigation=True)
     
     def _remote_join(self, base: str, name: str) -> str:
         """
@@ -1870,9 +2758,64 @@ class RemoteBorneApp:
         if not base:
             return "/" + name
         return posixpath.join(base, name)
-   
+
+    @staticmethod
+    def _terminal_command_for_script(remote_path: str):
+        """Return the command prefilled for a supported remote test script."""
+        lower_path = remote_path.lower()
+        if lower_path.endswith(".py"):
+            return f"python3 {shlex.quote(remote_path)}"
+        if lower_path.endswith(".sh"):
+            return f"sh {shlex.quote(remote_path)}"
+        return None
+
+    def _selected_recursive_search_target(self):
+        """Return the mapped remote item for the selected recursive Find row."""
+        if not self._recursive_search_active:
+            return None
+        try:
+            selection = self.file_list.curselection()
+            if not selection:
+                return None
+            return self._recursive_search_rows.get(selection[0])
+        except (tk.TclError, AttributeError):
+            return None
+
+    def _open_recursive_search_folder(self, folder: str):
+        """Navigate to a Find result's parent folder with normal file actions."""
+        if not self._begin_navigation():
+            return
+        self.current_path = folder or "/"
+        self.refresh_file_list(navigation=True)
+
     def on_file_double_click(self, event):
         if not self.connected:
+            return
+
+        # Recursive results carry their original remote path. Files therefore
+        # behave exactly like normal list entries; folder headings navigate.
+        if self._recursive_search_active:
+            target = self._selected_recursive_search_target()
+            if target is None:
+                return
+            kind, remote_path = target
+            if kind == "folder":
+                self._open_recursive_search_folder(remote_path)
+                return
+
+            script_cmd = self._terminal_command_for_script(remote_path)
+            if script_cmd:
+                self.open_terminal(initial_command=script_cmd)
+                return
+            self.open_file_editor(remote_path)
+            return
+
+        # A delayed double-click can still target the old list. Ignore it
+        # rather than appending its folder name to the current remote path.
+        if getattr(self, "_file_list_path", None) != self.current_path:
+            if not self._navigation_pending_logged:
+                self.log("[FILES] Navigation pending; wait for the folder list to load.")
+                self._navigation_pending_logged = True
             return
 
         # Anti-spam : un seul download à la fois
@@ -1897,11 +2840,20 @@ class RemoteBorneApp:
 
         # Dossier (ls -Ap met un "/" à la fin)
         if item.endswith("/"):
+            if not self._begin_navigation():
+                return
+            self._file_list_path = None
+            self._set_file_list_loading(True)
             self.current_path = full_path.rstrip("/")
-            self.refresh_file_list()
+            self.refresh_file_list(navigation=True)
             return
 
         # Fichier → ouvre l’éditeur
+        script_cmd = self._terminal_command_for_script(full_path)
+        if script_cmd:
+            self.open_terminal(initial_command=script_cmd)
+            return
+
         self._edit_in_progress = True
         try:
             self.open_file_editor(full_path)
@@ -1919,6 +2871,42 @@ class RemoteBorneApp:
         except Exception:
             return
 
+        if self._recursive_search_active:
+            target = self._selected_recursive_search_target()
+            if target is None:
+                return
+            kind, remote_path = target
+            menu = tk.Menu(self.root, tearoff=0)
+            if kind == "folder":
+                menu.add_command(
+                    label="Open folder",
+                    command=lambda path=remote_path: self._open_recursive_search_folder(path),
+                )
+            else:
+                script_cmd = self._terminal_command_for_script(remote_path)
+                if script_cmd:
+                    menu.add_command(
+                        label="Run in Terminal",
+                        command=lambda command=script_cmd: self.open_terminal(
+                            initial_command=command
+                        ),
+                    )
+                    menu.add_separator()
+                menu.add_command(
+                    label="Edit", command=lambda path=remote_path: self.open_file_editor(path)
+                )
+                menu.add_command(label="Download", command=self._menu_download)
+                menu.add_command(label="Print", command=self._menu_print)
+                menu.add_separator()
+                menu.add_command(
+                    label="Copy to GridCodes.properties",
+                    command=self.copy_selected_to_gridcodes,
+                )
+                menu.add_separator()
+                menu.add_command(label="Delete", command=self.delete_selected_remote)
+            menu.post(event.x_root, event.y_root)
+            return
+
         item = self._get_selected_item()
         if not item or item.startswith("[.]"):
             return
@@ -1926,6 +2914,17 @@ class RemoteBorneApp:
 
         menu = tk.Menu(self.root, tearoff=0)
         if not is_dir:
+            script_cmd = self._terminal_command_for_script(
+                self._join_remote(self.current_path, item)
+            )
+            if script_cmd:
+                menu.add_command(
+                    label="Run in Terminal",
+                    command=lambda command=script_cmd: self.open_terminal(
+                        initial_command=command
+                    ),
+                )
+                menu.add_separator()
             menu.add_command(
                 label="Edit", command=lambda: self._edit_file_from_context()
             )
@@ -1969,31 +2968,35 @@ class RemoteBorneApp:
         return self.file_list.get(sel[0])
 
     def _edit_file_from_context(self):
-        item = self._get_selected_item()
-        if not item or item.startswith("[.]"):
+        full_path = self._selected_remote_file()
+        if not full_path:
             return
-        full_path = posixpath.join(self.current_path, item)
         self.open_file_editor(full_path)
 
 
     def _download_from_context(self):
-        item = self._get_selected_item()
-        if not item or item.startswith("[.]"):
+        full_path = self._selected_remote_file()
+        if not full_path:
             return
-        full_path = posixpath.join(self.current_path, item)
         self.download_file(full_path)
 
     def _print_from_context(self):
-        item = self._get_selected_item()
-        if not item or item.startswith("[.]"):
+        full_path = self._selected_remote_file()
+        if not full_path:
             return
-        full_path = posixpath.join(self.current_path, item)
         self.print_file(full_path)
 
     # ==================================================================
     # COPY / DOWNLOAD / PRINT / EDIT
     # ==================================================================
     def _selected_remote_file(self):
+        target = self._selected_recursive_search_target()
+        if target is not None:
+            kind, remote_path = target
+            if kind == "file":
+                return remote_path
+            self._popup_warning("GridCodes", "Please select a file, not a folder heading.")
+            return None
         item = self._get_selected_item()
         if not item or item.startswith("[.]"):
             self._popup_warning("GridCodes", "Please select a file.")
@@ -2001,18 +3004,29 @@ class RemoteBorneApp:
         return posixpath.join(self.current_path, item)
 
     def delete_selected_remote(self):
+        if self._sequence_operation_blocked("Deleting a remote file"):
+            return
         if self._closing:
             return
         if not self.connected:
             self._popup_warning("Delete", "Please connect first.")
             return
 
-        item = self._get_selected_item()
-        if not item or item.startswith("[.]"):
-            return
-
-        remote_path = self._join_remote(self.current_path, item.rstrip("/"))
-        is_dir = item.endswith("/")
+        target = self._selected_recursive_search_target()
+        if target is not None:
+            kind, remote_path = target
+            # Recursive Find lists files only. A folder heading is navigation,
+            # never an implicit delete target.
+            if kind != "file":
+                self._popup_warning("Delete", "Open the folder before deleting it.")
+                return
+            is_dir = False
+        else:
+            item = self._get_selected_item()
+            if not item or item.startswith("[.]"):
+                return
+            remote_path = self._join_remote(self.current_path, item.rstrip("/"))
+            is_dir = item.endswith("/")
         target_type = "directory" if is_dir else "file"
 
         confirm = messagebox.askyesno(
@@ -2027,7 +3041,8 @@ class RemoteBorneApp:
         if not confirm:
             return
 
-        cmd = f'rm -rf "{remote_path}"' if is_dir else f'rm -f "{remote_path}"'
+        quoted_path = shlex.quote(remote_path)
+        cmd = f"rm -rf -- {quoted_path}" if is_dir else f"rm -f -- {quoted_path}"
         self.log(f"[DELETE] {remote_path}")
 
         def cb(res):
@@ -2052,9 +3067,12 @@ class RemoteBorneApp:
             command_type="delete",
             label="Delete remote item",
             silent=False,
+            dedupe_key=f"delete_remote:{remote_path}",
         )
 
     def copy_selected_to_gridcodes(self):
+        if self._sequence_operation_blocked("Applying a Grid Code"):
+            return
         if not self.connected:
             self._popup_warning("GridCodes", "Please connect first.")
             return
@@ -2072,9 +3090,9 @@ class RemoteBorneApp:
             )
             return
 
-        cmd = f"cp '{src}' '{dst}'"
+        cmd = f"cp -- {shlex.quote(src)} {shlex.quote(dst)}"
         def _copy_cb(res):
-            self.ssh_queue.pause_monitoring = False
+            self._unlock_file_actions()
             if not res["success"]:
                 err = (res["err"] or res["out"] or "").strip()
                 self.log(f"[GRID ERROR] {err}")
@@ -2088,14 +3106,17 @@ class RemoteBorneApp:
             ):
                 self.restart_initd_services()
 
-        self.ssh_queue.execute(
+        queued = self.ssh_queue.execute(
             cmd,
             callback=_copy_cb,
             timeout=self.ssh_timeout,
             critical=True,
             label="Copy GridCodes.properties",
             silent=False,
+            dedupe_key="copy_gridcodes",
         )
+        if queued:
+            self._lock_file_actions("Loading Grid Code configuration")
 
     def _menu_download(self):
         self._safe_mark_user_command()
@@ -2106,6 +3127,8 @@ class RemoteBorneApp:
 
 
     def download_file(self, remote_path: str):
+        if self._sequence_operation_blocked("Downloading a file"):
+            return
         if not self.connected:
             self._popup_warning("Download", "Please connect first.")
             return
@@ -2130,10 +3153,9 @@ class RemoteBorneApp:
             title="Save file as",
             initialfile=filename,
             initialdir=save_dir,
-            filetypes=[
-                ("Properties files", "*.properties"),
-                ("All files", "*.*"),
-            ],
+            # Keep the name and extension returned by the target. A type-specific
+            # filter would make Windows append .properties to scripts such as .sh.
+            filetypes=[("All files", "*.*")],
             defaultextension="",
         )
         if not local:
@@ -2325,6 +3347,8 @@ class RemoteBorneApp:
         threading.Thread(target=worker, daemon=True).start()
                 
     def upload_files_to_current_path(self):
+        if self._sequence_operation_blocked("Uploading a file"):
+            return
         self._safe_mark_user_command()
         if not self.connected:
             self._popup_warning("Upload", "Not connected.")
@@ -2384,7 +3408,8 @@ class RemoteBorneApp:
                     fail_count += 1
                     self.log(f"[UPLOAD ERROR] {filename}: failed after 3 attempts ({last_err})")
                 else:
-                    check_cmd = f'test -f "{remote_path}" && wc -c < "{remote_path}"'
+                    quoted_remote = shlex.quote(remote_path)
+                    check_cmd = f"test -f {quoted_remote} && wc -c < {quoted_remote}"
                     size_res = self.ssh.execute_sync(
                         check_cmd,
                         timeout=self.ssh_timeout,
@@ -2417,32 +3442,541 @@ class RemoteBorneApp:
             return
         self.open_file_editor(remote)
 
-    def _ensure_edit_authorized(self) -> bool:
-        password = getattr(self, "edit_password", "").strip()
-        if not password:
-            return True
+    def edit_current_gridcodes_properties(self):
+        """Open the active GridCodes.properties without requiring selection."""
+        if self._sequence_operation_blocked("Editing active GridCodes.properties"):
+            return
+        if not self.connected:
+            self._popup_warning("Edit", "Please connect first.")
+            return
+        remote_path = posixpath.join(self.default_path, self.remote_file)
+        self.log(f"[EDIT] Opening active configuration: {remote_path}")
+        self.open_file_editor(remote_path)
 
-        entered = simpledialog.askstring(
-            "Edit authentication",
-            "Enter the edit password to modify this file:",
-            show="*",
-            parent=self.root,
+    def open_netlogger_download(self):
+        """List NetLogger files and let the operator download several at once."""
+        if self._sequence_operation_blocked("Downloading NetLogger files"):
+            return
+        self._safe_mark_user_command()
+        if not self.connected:
+            self._popup_warning("NetLogger", "Please connect first.")
+            return
+
+        remote_dir = (self.netlogger_path or NETLOGGER_DEFAULT_PATH).rstrip("/")
+        if not remote_dir:
+            remote_dir = NETLOGGER_DEFAULT_PATH
+
+        dialog = tk.Toplevel(self.root)
+        dialog.withdraw()
+        dialog.title("NetLogger logs")
+        dialog.transient(self.root)
+        # This window must never lock the main application. A missing log
+        # directory is a normal EVSE configuration difference, not an error
+        # that should prevent the operator from continuing to work.
+        # Transient keeps this non-modal window above RBM, without forcing it
+        # above unrelated applications on the desktop.
+        dialog.minsize(650, 420)
+        self._center_toplevel(dialog, 760, 520, parent=self.root)
+
+        frame = ttk.Frame(dialog, padding=12)
+        frame.pack(fill="both", expand=True)
+        frame.grid_columnconfigure(0, weight=1)
+        frame.grid_rowconfigure(2, weight=1)
+
+        ttk.Label(frame, text="Remote folder:").grid(
+            row=0, column=0, sticky="w"
         )
-        if entered is None:
-            self.log("[AUTH] Edit authentication cancelled.")
+        folder_var = tk.StringVar(value=remote_dir)
+        folder_entry = ttk.Entry(frame, textvariable=folder_var)
+        folder_entry.grid(row=1, column=0, sticky="ew", pady=(3, 8))
+
+        files_frame = ttk.Frame(frame)
+        files_frame.grid(row=2, column=0, sticky="nsew")
+        files_frame.grid_columnconfigure(0, weight=1)
+        files_frame.grid_rowconfigure(0, weight=1)
+        file_list = tk.Listbox(files_frame, selectmode="extended", exportselection=False)
+        file_list.grid(row=0, column=0, sticky="nsew")
+        file_scroll = ttk.Scrollbar(
+            files_frame, orient="vertical", command=file_list.yview
+        )
+        file_scroll.grid(row=0, column=1, sticky="ns")
+        file_list.configure(yscrollcommand=file_scroll.set)
+
+        status_var = tk.StringVar(value="Loading file list...")
+        ttk.Label(frame, textvariable=status_var).grid(
+            row=3, column=0, sticky="w", pady=(8, 4)
+        )
+
+        actions = ttk.Frame(frame)
+        actions.grid(row=4, column=0, sticky="ew")
+        actions.grid_columnconfigure(0, weight=1)
+
+        def list_files():
+            requested_dir = folder_var.get().strip().rstrip("/")
+            if not requested_dir:
+                status_var.set("Enter an absolute remote folder, then refresh the list.")
+                folder_entry.focus_set()
+                return
+            file_list.delete(0, "end")
+            status_var.set("Loading file list...")
+            reload_button.configure(state="disabled")
+            download_button.configure(state="disabled")
+            cmd = (
+                f"if [ -d {shlex.quote(requested_dir)} ]; then "
+                f"cd {shlex.quote(requested_dir)} && "
+                "for item in ./*; do "
+                '[ -f "$item" ] || continue; '
+                'printf "%s\\n" "${item#./}"; '
+                "done | sort; "
+                "else echo 'NetLogger directory not found' >&2; exit 2; fi"
+            )
+
+            def listed(res):
+                reload_button.configure(state="normal" if self.connected else "disabled")
+                if not res.get("success"):
+                    error = (res.get("err") or res.get("out") or "Unknown error").strip()
+                    status_var.set(
+                        "Folder not found. Use Detect folder or enter the NetLogger path for this EVSE."
+                    )
+                    self.log(f"[NETLOGGER ERROR] {error}")
+                    folder_entry.focus_set()
+                    folder_entry.selection_range(0, tk.END)
+                    return
+
+                names = [
+                    name.strip()
+                    for name in (res.get("out") or "").splitlines()
+                    if name.strip()
+                    and posixpath.basename(name.strip()) == name.strip()
+                ]
+                for name in names:
+                    file_list.insert("end", name)
+                status_var.set(
+                    f"{len(names)} file(s) in {requested_dir}. Select one or more files."
+                )
+                download_button.configure(
+                    state="normal" if names and self.connected else "disabled"
+                )
+                self.netlogger_path = requested_dir
+                self.log(f"[NETLOGGER] {len(names)} file(s) listed in {requested_dir}")
+
+            self.ssh_queue.execute(
+                cmd,
+                callback=listed,
+                timeout=self.ssh_timeout,
+                auto_retry=False,
+                log_errors=False,
+                label="List NetLogger files",
+                silent=True,
+                dedupe_key="list_netlogger_files",
+            )
+
+        def detect_folder():
+            """Find common NetLogger directories without blocking the UI."""
+            status_var.set("Searching for a NetLogger folder...")
+            detect_button.configure(state="disabled")
+            reload_button.configure(state="disabled")
+            search_cmd = (
+                "find /var/aux /var/log -type d 2>/dev/null | "
+                "grep -iE '/net-?logger' | head -n 20"
+            )
+
+            def detected(res):
+                detect_button.configure(state="normal" if self.connected else "disabled")
+                if not res.get("success"):
+                    status_var.set("NetLogger folder was not detected. Enter its path manually.")
+                    reload_button.configure(state="normal" if self.connected else "disabled")
+                    folder_entry.focus_set()
+                    return
+                candidates = [
+                    line.strip()
+                    for line in (res.get("out") or "").splitlines()
+                    if line.strip().startswith("/")
+                ]
+                if not candidates:
+                    status_var.set("NetLogger folder was not detected. Enter its path manually.")
+                    reload_button.configure(state="normal" if self.connected else "disabled")
+                    folder_entry.focus_set()
+                    return
+                folder_var.set(candidates[0])
+                status_var.set(f"Detected {candidates[0]}. Loading files...")
+                self.log(f"[NETLOGGER] Detected folder: {candidates[0]}")
+                list_files()
+
+            self.ssh_queue.execute(
+                search_cmd,
+                callback=detected,
+                timeout=min(self.ssh_timeout, 10),
+                auto_retry=False,
+                log_errors=False,
+                label="Detect NetLogger folder",
+                silent=True,
+                dedupe_key="detect_netlogger_folder",
+            )
+
+        def download_selected():
+            indexes = file_list.curselection()
+            if not indexes:
+                self._popup_warning("NetLogger", "Select at least one log file.")
+                return
+            selected = [file_list.get(index) for index in indexes]
+            selected = [
+                name
+                for name in selected
+                if posixpath.basename(name) == name and name not in (".", "..")
+            ]
+            if not selected:
+                self._popup_warning("NetLogger", "No valid file was selected.")
+                return
+
+            destination = filedialog.askdirectory(
+                parent=dialog,
+                title="Select folder for NetLogger logs",
+                initialdir=self.local_default_path,
+            )
+            if not destination:
+                return
+
+            requested_dir = folder_var.get().strip().rstrip("/")
+            reload_button.configure(state="disabled")
+            download_button.configure(state="disabled")
+            status_var.set(f"Downloading 0/{len(selected)} file(s)...")
+
+            def worker():
+                downloaded = []
+                failures = []
+                for index, name in enumerate(selected, start=1):
+                    remote_file = posixpath.join(requested_dir, name)
+                    local_file = os.path.join(destination, name)
+                    try:
+                        with self._scp_lock:
+                            result = self.ssh.scp_get(
+                                remote_file, local_file, timeout=self.ssh_timeout
+                            )
+                    except Exception as exc:
+                        result = {"success": False, "out": "", "err": str(exc)}
+
+                    if result.get("success"):
+                        downloaded.append(name)
+                        self.log(f"[NETLOGGER] Downloaded: {remote_file}")
+                    else:
+                        error = (result.get("err") or result.get("out") or "Unknown error").strip()
+                        failures.append(f"{name}: {error}")
+                        self.log(f"[NETLOGGER ERROR] {name}: {error}")
+
+                    try:
+                        self.root.after(
+                            0,
+                            lambda current=index: status_var.set(
+                                f"Downloading {current}/{len(selected)} file(s)..."
+                            ),
+                        )
+                    except Exception:
+                        pass
+
+                def done():
+                    if not dialog.winfo_exists():
+                        return
+                    reload_button.configure(state="normal" if self.connected else "disabled")
+                    download_button.configure(state="normal" if self.connected else "disabled")
+                    status_var.set(
+                        f"Download complete: {len(downloaded)} succeeded, {len(failures)} failed."
+                    )
+                    message = (
+                        f"Saved {len(downloaded)} file(s) to:\n{destination}"
+                        f"\n\nFailed: {len(failures)}"
+                    )
+                    if failures:
+                        message += "\n\n" + "\n".join(failures[:3])
+                    if failures:
+                        self._popup_warning("NetLogger", message, parent=dialog)
+                    else:
+                        self._popup_info("NetLogger", message, parent=dialog)
+
+                try:
+                    self.root.after(0, done)
+                except Exception:
+                    pass
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        detect_button = ttk.Button(actions, text="Detect folder", command=detect_folder)
+        detect_button.grid(row=0, column=0, sticky="w", padx=(0, 6))
+        reload_button = ttk.Button(actions, text="Refresh list", command=list_files)
+        reload_button.grid(row=0, column=1, padx=(0, 6))
+        download_button = ttk.Button(
+            actions,
+            text="Download selected",
+            style="Accent.TButton",
+            command=download_selected,
+            state="disabled",
+        )
+        download_button.grid(row=0, column=2, padx=(0, 6))
+        ttk.Button(actions, text="Close", command=dialog.destroy).grid(row=0, column=3)
+
+        dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
+        dialog.deiconify()
+        dialog.lift()
+        dialog.focus_force()
+        list_files()
+
+    def _on_pn_slider_changed(self, value):
+        """Convert the selected Pn percentage into an active-power value."""
+        try:
+            percent = int(round(float(value)))
+        except (TypeError, ValueError):
+            return
+        self.pn_percent_var.set(str(percent))
+        self._sync_active_power_from_percent(percent)
+
+    def _commit_manual_percent(self, _event=None):
+        """Apply a typed percentage to the slider and active-power fields."""
+        try:
+            percent = int(round(float(self.pn_percent_var.get().strip())))
+        except ValueError:
+            self._popup_warning("P [%]", "Percentage must be a numeric value between -100 and 100.")
+            self.pn_percent_var.set(str(int(round(self.pn_slider_var.get()))))
+            return "break"
+        if not -100 <= percent <= 100:
+            self._popup_warning("P [%]", "Percentage must be between -100 and 100.")
+            self.pn_percent_var.set(str(int(round(self.pn_slider_var.get()))))
+            return "break"
+        self.pn_slider_var.set(percent)
+        self._on_pn_slider_changed(percent)
+        return "break"
+
+    def _sync_active_power_from_percent(self, percent=None):
+        """Write the slider-derived P value into both available power fields."""
+        if percent is None:
+            percent = int(round(self.pn_slider_var.get()))
+        active_value = int(round(self.pn_limit_w * float(percent) / 100.0))
+        for entry in (self.active_entry, self.cosphi_active_entry):
+            if entry is None:
+                continue
+            try:
+                entry.delete(0, tk.END)
+                entry.insert(0, str(active_value))
+            except tk.TclError:
+                pass
+
+    def _set_pn_limit(self, value, source: str = "", sync_active: bool = False) -> bool:
+        try:
+            pn_value = float(value)
+        except (TypeError, ValueError):
+            self._popup_warning("Pn", "Pn must be a valid numeric value.")
             return False
-        if entered != password:
-            self.log("[AUTH] Edit authentication failed.")
-            self._popup_error(
-                "Edit authentication",
-                "Invalid password.\nEdit access denied.",
+        if not (0 < pn_value <= MAX_PN_LIMIT_W):
+            self._popup_warning(
+                "Pn",
+                f"Pn must be greater than 0 and no more than {int(MAX_PN_LIMIT_W)} W.",
             )
             return False
 
-        self.log("[AUTH] Edit authentication granted.")
+        pn_value = float(int(round(pn_value)))
+        self.pn_limit_w = pn_value
+        self.pn_value_var.set(str(int(pn_value)))
+        if sync_active:
+            self._sync_active_power_from_percent()
+        if source:
+            self.log(f"[PN] Pn set to {int(pn_value)} W ({source}).")
         return True
 
+    def _commit_manual_pn(self, _event=None):
+        """Accept a manually entered Pn without a separate Apply button."""
+        if self._set_pn_limit(
+            self.pn_value_var.get(), "manual input", sync_active=True
+        ):
+            return "break"
+        self.pn_value_var.set(str(int(self.pn_limit_w)))
+        return "break"
+
+    def _get_pn_limit(self) -> float:
+        """Return a validated Pn, falling back to the current safe default."""
+        raw_value = self.pn_value_var.get().strip()
+        try:
+            value = float(raw_value)
+        except ValueError:
+            return self.pn_limit_w
+        return value if 0 < value <= MAX_PN_LIMIT_W else self.pn_limit_w
+
+    def read_pn_from_gridcodes_properties(self, on_complete=None, parent=None):
+        """Read the active-power limit from GridTopology and PowerMax values."""
+        def complete(success: bool):
+            if callable(on_complete):
+                try:
+                    on_complete(bool(success))
+                except Exception as exc:
+                    self.log(f"[PN] Completion callback ignored: {exc}")
+
+        if not self.connected:
+            self._popup_warning("Pn", "Please connect first.", parent=parent)
+            complete(False)
+            return False
+        remote_path = posixpath.join(self.default_path, self.remote_file)
+        if self.btn_read_pn:
+            self.btn_read_pn.configure(state="disabled")
+        self.log(f"[PN] Reading limit from {remote_path}")
+
+        def received(res):
+            if self.btn_read_pn:
+                self.btn_read_pn.configure(state="normal" if self.connected else "disabled")
+            if not res.get("success"):
+                error = (res.get("err") or res.get("out") or "Unknown error").strip()
+                self.log(f"[PN ERROR] Unable to read {remote_path}: {error}")
+                self._popup_error(
+                    "Pn", f"Unable to read GridCodes.properties:\n{error}", parent=parent
+                )
+                complete(False)
+                return
+
+            content = res.get("out") or ""
+
+            def property_value(name):
+                return re.search(
+                    rf"(?im)^\s*{re.escape(name)}\s*[:=]\s*"
+                    r"([-+]?\d+(?:\.\d+)?)\b",
+                    content,
+                )
+
+            topology_match = re.search(
+                r"(?im)^\s*GridTopology\s*[:=]\s*(SinglePhase|ThreePhase)\b",
+                content,
+            )
+            topology = topology_match.group(1).lower() if topology_match else ""
+            power_key = {
+                "singlephase": "PowerMax_1Ph_VAr",
+                "threephase": "PowerMax_3Ph_VAr",
+            }.get(topology)
+
+            if power_key:
+                match = property_value(power_key)
+                if match:
+                    self._set_pn_limit(
+                        match.group(1),
+                        f"{power_key} ({topology_match.group(1)})",
+                        sync_active=True,
+                    )
+                    complete(True)
+                    return
+                self.log(
+                    f"[PN] {power_key} is missing for GridTopology={topology_match.group(1)}."
+                )
+                self._popup_warning(
+                    "Pn",
+                    f"GridTopology is {topology_match.group(1)}, but {power_key} is missing.\n"
+                    "Enter Pn manually or correct GridCodes.properties.",
+                    parent=parent,
+                )
+                complete(False)
+                return
+
+            # Legacy files can still expose a direct Pn/Pmax value. Do not
+            # guess between 1Ph and 3Ph values if GridTopology is unavailable.
+            generic_match = re.search(
+                r"(?im)^\s*(?:pn(?:_w)?|pmax(?:_w)?|nominalpower(?:_w)?)\s*[:=]\s*"
+                r"([-+]?\d+(?:\.\d+)?)\b",
+                content,
+            )
+            if generic_match:
+                self._set_pn_limit(
+                    generic_match.group(1),
+                    "legacy Pn/Pmax property",
+                    sync_active=True,
+                )
+                complete(True)
+                return
+
+            has_1ph = property_value("PowerMax_1Ph_VAr") is not None
+            has_3ph = property_value("PowerMax_3Ph_VAr") is not None
+            if has_1ph or has_3ph:
+                self.log("[PN] GridTopology is missing or invalid; Pn was not changed.")
+                self._popup_warning(
+                    "Pn",
+                    "PowerMax values were found, but GridTopology is missing or invalid.\n"
+                    "Use GridTopology=SinglePhase or GridTopology=ThreePhase, or enter Pn manually.",
+                    parent=parent,
+                )
+                complete(False)
+                return
+
+            self.log("[PN] No compatible Pn property found in GridCodes.properties.")
+            self._popup_warning(
+                "Pn",
+                "No GridTopology / PowerMax_1Ph_VAr / PowerMax_3Ph_VAr value was found.",
+                parent=parent,
+            )
+            complete(False)
+
+        return self.ssh_queue.execute(
+            f"cat -- {shlex.quote(remote_path)}",
+            callback=received,
+            timeout=self.ssh_timeout,
+            auto_retry=False,
+            log_errors=False,
+            label="Read Pn from GridCodes.properties",
+            silent=True,
+            dedupe_key="read_gridcodes_pn",
+        )
+
+    def read_last_active_power_from_energy_log(self):
+        """Read the most recent active-power setpoint accepted by GridCodes."""
+        if self._sequence_operation_blocked("Reading the last active power"):
+            return
+        if not self.connected:
+            self._popup_warning("Last P", "Please connect first.")
+            return
+
+        if self.btn_read_last_active_power:
+            self.btn_read_last_active_power.configure(state="disabled")
+        self.log("[POWER] Reading the last confirmed active setpoint from EnergyManager.log...")
+
+        def received(res):
+            if self.btn_read_last_active_power:
+                self.btn_read_last_active_power.configure(
+                    state="normal" if self.connected else "disabled"
+                )
+            if not res.get("success"):
+                error = (res.get("err") or res.get("out") or "Unknown error").strip()
+                self.last_active_power_var.set("N/A")
+                self.log(f"[POWER ERROR] Unable to read EnergyManager.log: {error}")
+                return
+
+            # GridCodes records the active command as
+            # "Request to accept setpoint ... { P: {power_W: value} }".
+            values = re.findall(
+                r"Request to accept setpoint.*?\{\s*P:\s*\{\s*power_W:\s*"
+                r"([-+]?\d+(?:\.\d+)?)",
+                res.get("out") or "",
+                flags=re.IGNORECASE,
+            )
+            if not values:
+                self.last_active_power_var.set("--")
+                self.log("[POWER] No confirmed active setpoint found in EnergyManager.log.")
+                return
+
+            value = float(values[-1])
+            display = str(int(value)) if value.is_integer() else f"{value:g}"
+            self.last_active_power_var.set(display)
+            self.log(f"[POWER] Last active setpoint confirmed by GridCodes: {display} W.")
+
+        queued = self.ssh_queue.execute(
+            "tail -n 600 /var/aux/EnergyManager/EnergyManager.log",
+            callback=received,
+            timeout=self.ssh_timeout,
+            auto_retry=False,
+            log_errors=False,
+            label="Read last active P from EnergyManager.log",
+            silent=True,
+            dedupe_key="read_last_active_power",
+        )
+        if not queued and self.btn_read_last_active_power:
+            self.btn_read_last_active_power.configure(
+                state="normal" if self.connected else "disabled"
+            )
+
     def open_file_editor(self, remote_path: str):
+        if self._sequence_operation_blocked("Editing a remote file"):
+            return
         self._safe_mark_user_command()
         if not self.connected:
             self._popup_warning("Edit", "Not connected.")
@@ -2466,9 +4000,6 @@ class RemoteBorneApp:
                 pass
             self._editor_window = None
             self._editor_remote_path = None
-
-        if not self._ensure_edit_authorized():
-            return
 
         self.log(f"[EDIT] Downloading {remote_path}...")
         self._lock_file_actions("Editor opening")
@@ -2549,12 +4080,10 @@ class RemoteBorneApp:
             self.btn_edit.configure(text="Edit")
         # ----- Fenêtre d’édition -----
         win = tk.Toplevel(self.root)
+        win.withdraw()
         win.title(f"Edit: {remote_path}")
         self._center_toplevel(win, 960, 680, parent=self.root)
         win.minsize(820, 560)
-        win.transient(self.root)   # attachée à la fenêtre principale
-        win.grab_set()             # bloque la fenêtre principale
-        win.focus_force()
         self._editor_window = win
         self._editor_remote_path = remote_path
 
@@ -2591,6 +4120,7 @@ class RemoteBorneApp:
         def close_editor():
             if getattr(self, "_find_dialog", None) and self._find_dialog.winfo_exists():
                 try:
+                    self._find_dialog.grab_release()
                     self._find_dialog.destroy()
                 except Exception:
                     pass
@@ -2605,9 +4135,14 @@ class RemoteBorneApp:
             # Réactiver les boutons fichier à la fermeture de l'éditeur
             self._unlock_file_actions()
             try:
+                win.grab_release()
                 win.destroy()
             except Exception:
                 pass
+
+        # Keep the real close routine so a disconnect or application exit
+        # releases the editor modal grab and cleans its temporary file too.
+        self._close_editor_window = close_editor
 
         # Alias de compatibilité: certains builds/appels réfèrent encore "on_close"
         on_close = close_editor
@@ -2620,17 +4155,33 @@ class RemoteBorneApp:
                 return
 
             dialog = tk.Toplevel(win)
+            dialog.withdraw()
             self._find_dialog = dialog
             dialog.title("Find (Ctrl+F)")
             dialog.transient(win)
-            dialog.grab_set()
             dialog.resizable(False, False)
             self._center_toplevel(dialog, 520, 170, parent=win)
             dialog.grid_columnconfigure(0, weight=0)
             dialog.grid_columnconfigure(1, weight=1)
             dialog.grid_rowconfigure(0, weight=0)
             dialog.grid_rowconfigure(1, weight=0)
-            dialog.protocol("WM_DELETE_WINDOW", lambda: (setattr(self, "_find_dialog", None), dialog.destroy()))
+            def close_find_dialog():
+                try:
+                    dialog.grab_release()
+                    dialog.destroy()
+                except Exception:
+                    pass
+                self._find_dialog = None
+                # Restore the editor's modal ownership after closing Find.
+                try:
+                    if win.winfo_exists():
+                        win.grab_set()
+                        win.lift()
+                        win.focus_force()
+                except Exception:
+                    pass
+
+            dialog.protocol("WM_DELETE_WINDOW", close_find_dialog)
 
             ttk.Label(dialog, text="Search text:").grid(row=0, column=0, padx=10, pady=(12, 8), sticky="w")
             q_var = tk.StringVar()
@@ -2699,10 +4250,11 @@ class RemoteBorneApp:
             q_entry.bind("<Return>", run_find)
             dialog.bind("<F3>", next_match)
             dialog.bind("<Shift-F3>", prev_match)
-            dialog.bind(
-                "<Escape>",
-                lambda _e: (setattr(self, "_find_dialog", None), dialog.destroy()),
-            )
+            dialog.bind("<Escape>", lambda _e: close_find_dialog())
+            dialog.deiconify()
+            dialog.lift()
+            dialog.focus_force()
+            dialog.grab_set()
 
         def _write_local_and_upload(target_remote: str, check_existing: bool = True):
             content = txt.get("1.0", "end-1c")
@@ -2711,7 +4263,7 @@ class RemoteBorneApp:
                 with open(tmp_local, "w", encoding="utf-8", newline="\n") as f:
                     f.write(content)
             except Exception as e:
-                self._popup_error("Save", f"Local save error:\n{e}")
+                self._popup_error("Save", f"Local save error:\n{e}", parent=win)
                 return
 
             def do_upload():
@@ -2732,7 +4284,7 @@ class RemoteBorneApp:
                         if not res2["success"]:
                             err2 = (res2["err"] or res2["out"] or "").strip()
                             self.log(f"[EDIT ERROR] Save upload failed: {err2}")
-                            self._popup_error("Save", f"Upload failed:\n{err2}")
+                            self._popup_error("Save", f"Upload failed:\n{err2}", parent=win)
                             return
 
                         self.log("[EDIT] Save upload done.")
@@ -2743,9 +4295,13 @@ class RemoteBorneApp:
                             and messagebox.askyesno(
                                 "Services",
                                 "GridCodes.properties modified.\nRestart services now?",
+                                parent=win,
                             )
                         ):
-                            self.restart_initd_services()
+                            # The editor owns a modal grab. Release it before
+                            # showing the mandatory cable safety confirmation.
+                            close_editor()
+                            self.root.after_idle(self.restart_initd_services)
 
                     try:
                         if not self._closing and self.root.winfo_exists():
@@ -2770,7 +4326,7 @@ class RemoteBorneApp:
                 return
 
             self.ssh_queue.execute(
-                f'test -e "{target_remote}"',
+                f"test -e {shlex.quote(target_remote)}",
                 callback=on_exists_check,
                 timeout=self.ssh_timeout,
                 auto_retry=False,
@@ -2801,7 +4357,7 @@ class RemoteBorneApp:
 
             user_name = user_name.strip()
             if not user_name:
-                self._popup_warning("Save", "Filename cannot be empty.")
+                self._popup_warning("Save", "Filename cannot be empty.", parent=win)
                 return
 
             if "/" in user_name:
@@ -2829,11 +4385,20 @@ class RemoteBorneApp:
         txt.bind("<Control-f>", lambda e: (open_find_dialog(), "break"))
         txt.bind("<Escape>", lambda e: (clear_find_highlight(), "break"))
         txt.bind("<Control-w>", lambda e: (close_editor(), "break"))
+        # Display the finished modal editor in one operation. This avoids a
+        # temporary empty window while the text and toolbar are being built.
+        win.transient(self.root)
+        win.deiconify()
+        win.lift()
+        win.focus_force()
+        win.grab_set()
 
     # ==================================================================
     # ENERGY MANAGER – P/Q (ULTIMATE)
     # ==================================================================
     def send_power_command(self):
+        if self._sequence_operation_blocked("Sending a P/Q setpoint"):
+            return
         self._safe_mark_user_command()
         if not self.connected:
             messagebox.showwarning(
@@ -2852,66 +4417,98 @@ class RemoteBorneApp:
         active = self.active_entry.get().strip()
         reactive = self.reactive_entry.get().strip()
 
-        # Valeur par défaut = 0 si vide
+        # Active defaults to zero; an empty reactive field deliberately means
+        # "leave reactive power unchanged" on the target.
         if active == "":
             active = "0"
-        if reactive == "":
-            reactive = "0"
 
         try:
             active_val = float(active)
-            reactive_val = float(reactive)
         except ValueError:
             messagebox.showwarning(
-                "Energy Manager", "Active and Reactive must be valid numeric values."
+                "Energy Manager", "Active power must be a valid numeric value."
             )
             return
 
-        # Plage [-11000 ; 11000]
-        for label, value in (("Active (P)", active_val), ("Reactive (Q)", reactive_val)):
-            if value < -11000 or value > 11000:
+        reactive_val = None
+        if reactive:
+            try:
+                reactive_val = float(reactive)
+            except ValueError:
                 messagebox.showwarning(
-                    "Energy Manager",
-                    f"{label} must be between -11000 and 11000.",
+                    "Energy Manager", "Reactive power must be a valid numeric value."
                 )
                 return
 
+        if not self._set_pn_limit(self.pn_value_var.get()):
+            return
+        pn_limit = self._get_pn_limit()
+        if abs(active_val) > pn_limit:
+            messagebox.showwarning(
+                "Energy Manager",
+                f"Active (P) must be between -{int(pn_limit)} and {int(pn_limit)} W (Pn).",
+            )
+            return
+        if reactive_val is not None and (reactive_val < -11000 or reactive_val > 11000):
+            messagebox.showwarning(
+                "Energy Manager",
+                "Reactive (Q) must be between -11000 and 11000 var.",
+            )
+            return
+
         # On envoie des entiers
         active_int = int(round(active_val))
-        reactive_int = int(round(reactive_val))
+        reactive_int = int(round(reactive_val)) if reactive_val is not None else None
 
-        self.log(
-            f"Sending setpoint: Active={active_int} W, Reactive={reactive_int} var"
-        )
+        if reactive_int is None:
+            self.log(f"Sending setpoint: Active={active_int} W, Reactive omitted")
+            reactive_option = ""
+        else:
+            self.log(
+                f"Sending setpoint: Active={active_int} W, Reactive={reactive_int} var"
+            )
+            reactive_option = f" --reactive-power {reactive_int}"
 
         remote_cmd = (
             "cd /var/aux/EnergyManager && "
             "export LD_LIBRARY_PATH=/usr/local/lib && "
             f"{ENERGY_TOOL_RESOLVE}"
             f"\"$EM_TOOL\" -S -s ocpp -a "
-            f"--power {active_int} --reactive-power {reactive_int} "
+            f"--power {active_int}{reactive_option} "
             "-m CentralSetpoint"
         )
 
         def cb(res):
-            if res["success"]:
-                self.log("Power command sent successfully.")
-            else:
-                err = res["err"] or res["out"] or "unknown error"
-                self.log(f"[ERROR] {err}")
+            try:
+                if res["success"]:
+                    self.log("Power command sent successfully.")
+                else:
+                    err = res["err"] or res["out"] or "unknown error"
+                    self.log(f"[ERROR] {err}")
+            finally:
+                if self.connected:
+                    self._on_cosphi_toggle(update_only=True)
 
-        self.ssh_queue.execute(
+        queued = self.ssh_queue.execute(
             remote_cmd,
             callback=cb,
             timeout=self.ssh_timeout,
             label="Power setpoint",
             silent=False,
+            dedupe_key="power_setpoint",
         )
+        if queued:
+            if self.btn_send_power:
+                self.btn_send_power.configure(state="disabled")
+        else:
+            self.log("[POWER] Setpoint already queued or running.")
 
     # ==================================================================
     # ENERGY MANAGER – CosPhi (ULTIMATE)
     # ==================================================================
     def send_cosphi_command(self):
+        if self._sequence_operation_blocked("Sending a CosPhi setpoint"):
+            return
         self._safe_mark_user_command()
         if not self.connected:
             messagebox.showwarning(
@@ -2931,13 +4528,12 @@ class RemoteBorneApp:
         if active == "":
             active = "0"
 
-        # CosPhi : obligatoire
+        # An empty field means unity power factor, which is a safe neutral default.
         if cosphi == "":
-            messagebox.showwarning(
-                "Energy Manager",
-                "CosPhi must not be empty.\nPlease enter a value in (-1, 0) or (0, 1].",
-            )
-            return
+            cosphi = "1"
+            self.cosphi_entry.delete(0, tk.END)
+            self.cosphi_entry.insert(0, cosphi)
+            self.log("[COSPHI] Empty value defaulted to 1.")
 
         try:
             active_val = float(active)
@@ -2949,19 +4545,20 @@ class RemoteBorneApp:
             )
             return
 
-        # P dans la plage [-11000 ; 11000]
-        if active_val < -11000 or active_val > 11000:
+        if not self._set_pn_limit(self.pn_value_var.get()):
+            return
+        pn_limit = self._get_pn_limit()
+        if abs(active_val) > pn_limit:
             messagebox.showwarning(
                 "Energy Manager",
-                "Active (P) must be between -11000 and 11000.",
+                f"Active (P) must be between -{int(pn_limit)} and {int(pn_limit)} W (Pn).",
             )
             return
 
-        # CosPhi dans (-1, 1] et ≠ 0
-        if not (-1.0 < cosphi_val <= 1.0) or abs(cosphi_val) < 1e-9:
+        if not self._is_valid_cosphi(cosphi_val):
             messagebox.showwarning(
                 "Energy Manager",
-                "CosPhi must be in (-1, 0) or (0, 1].\n"
+                "CosPhi must be between -0.99 and 1.00.\n"
                 "Value 0 is not allowed.",
             )
             return
@@ -2990,27 +4587,107 @@ class RemoteBorneApp:
             f"\"$EM_TOOL\" -S -s ocpp -a "
             f"--power {active_int} -m CentralSetpoint"
         )
+        request_id = f"{int(time.time() * 1000)}_{id(self)}"
+        result_path = f"/tmp/rbm_cosphi_{request_id}.status"
+        output_path = f"/tmp/rbm_cosphi_{request_id}.log"
+        started_at = time.monotonic()
+
+        # Keep the UI responsive while the target executes both tool calls.
+        # The status file lets us report the real result without guessing.
         remote_cmd = (
-            "cd /var/aux/EnergyManager && "
+            "(cd /var/aux/EnergyManager && "
             "export LD_LIBRARY_PATH=/usr/local/lib && "
-            f"{ENERGY_TOOL_RESOLVE}"
-            f"({grid_opt_cmd} && {setpoint_cmd}) >/dev/null 2>&1 &"
+            'EM_TOOL="$(command -v EnergyManagerTestingTool 2>/dev/null || true)"; '
+            'if [ -z "$EM_TOOL" ]; then '
+            'for p in /usr/local/bin/EnergyManagerTestingTool /usr/bin/EnergyManagerTestingTool; do '
+            '[ -x "$p" ] && EM_TOOL="$p" && break; '
+            "done; "
+            "fi; "
+            'if [ -z "$EM_TOOL" ]; then '
+            "echo 'EnergyManagerTestingTool not found on target' >&2; status=127; "
+            "else "
+            f"{grid_opt_cmd} && {setpoint_cmd}; status=$?; "
+            "fi; "
+            f'echo "$status" > "{result_path}") > "{output_path}" 2>&1 &'
         )
+
+        def restore_button():
+            if self.connected:
+                self._on_cosphi_toggle(update_only=True)
+
+        def poll_result(attempt=0):
+            if not self.connected:
+                restore_button()
+                self.log("[COSPHI] Result unavailable: SSH disconnected.")
+                return
+            if attempt >= 15:
+                restore_button()
+                self.log("[COSPHI] Result not received after 30 s; check Debug logs.")
+                return
+
+            poll_cmd = (
+                f'if [ -f "{result_path}" ]; then '
+                f'echo "===RBM_STATUS===$(cat "{result_path}")"; '
+                f'cat "{output_path}"; '
+                f'rm -f "{result_path}" "{output_path}"; '
+                "fi"
+            )
+
+            def poll_cb(res):
+                output = (res.get("out") or res.get("stdout") or "").strip()
+                match = re.search(r"===RBM_STATUS===(\d+)", output)
+                if not res.get("success") or not match:
+                    try:
+                        self.root.after(2000, lambda: poll_result(attempt + 1))
+                    except Exception:
+                        restore_button()
+                    return
+
+                restore_button()
+                elapsed = time.monotonic() - started_at
+                if match.group(1) == "0":
+                    self.log(f"[COSPHI] Command confirmed in {elapsed:.1f} s.")
+                else:
+                    detail = output.split("===RBM_STATUS===", 1)[-1].split("\n", 1)
+                    detail = detail[1].strip() if len(detail) > 1 else "unknown error"
+                    self.log(f"[COSPHI ERROR] Command failed after {elapsed:.1f} s: {detail}")
+
+            self.ssh_queue.execute(
+                poll_cmd,
+                callback=poll_cb,
+                timeout=self.ssh_timeout,
+                auto_retry=False,
+                log_errors=False,
+                label="CosPhi result check",
+                silent=True,
+            )
 
         def cb(res):
             if res["success"]:
-                self.log("CosPhi command sent successfully.")
+                self.log("[COSPHI] Command sent. Applying on the target...")
+                try:
+                    self.root.after(1000, poll_result)
+                except Exception:
+                    restore_button()
             else:
                 err = res["err"] or res["out"] or "unknown error"
-                self.log(f"[ERROR] {err}")
+                restore_button()
+                self.log(f"[COSPHI ERROR] Command was not sent: {err}")
 
-        self.ssh_queue.execute(
+        if self.btn_send_cosphi:
+            self.btn_send_cosphi.configure(state="disabled")
+
+        queued = self.ssh_queue.execute(
             remote_cmd,
             callback=cb,
             timeout=self.ssh_timeout,
             label="CosPhi setpoint",
             silent=False,
+            dedupe_key="cosphi_setpoint",
         )
+        if not queued:
+            restore_button()
+            self.log("[COSPHI] Command already queued or running.")
 
 
     def _on_cosphi_toggle(self, update_only: bool = False):
@@ -3031,6 +4708,8 @@ class RemoteBorneApp:
             self.cosphi_active_entry.configure(state=cos_state)
         if self.cosphi_entry:
             self.cosphi_entry.configure(state=cos_state)
+            if use_cosphi and not self.cosphi_entry.get().strip():
+                self.cosphi_entry.insert(0, "1")
         if self.btn_send_cosphi:
             self.btn_send_cosphi.configure(state=cos_state if self.connected else "disabled")
 
@@ -3038,6 +4717,8 @@ class RemoteBorneApp:
     # SERVICES / REBOOT
     # ==================================================================
     def restart_initd_services(self):
+        if self._sequence_operation_blocked("Restarting services"):
+            return
         if not self.connected:
             self._popup_warning("Services", "Please connect first.")
             return
@@ -3051,37 +4732,55 @@ class RemoteBorneApp:
 
         services = ["S39ConfigManager", "S91energy-manager", "S95chargerapp"]
 
-        cmd_parts = []
+        cmd_parts = ["status=0"]
         for s in services:
             cmd_parts.append(f'echo "Stopping {s}"')
-            cmd_parts.append(f"/etc/init.d/{s} stop || echo 'Error stopping {s}'")
+            cmd_parts.append(
+                f"/etc/init.d/{s} stop || {{ echo 'Error stopping {s}'; status=1; }}"
+            )
             cmd_parts.append(f'echo \"Starting {s}\"')
-            cmd_parts.append(f"/etc/init.d/{s} start || echo 'Error starting {s}'")
+            cmd_parts.append(
+                f"/etc/init.d/{s} start || {{ echo 'Error starting {s}'; status=1; }}"
+            )
             cmd_parts.append('echo "--------------------------------"')
 
-        cmd = " ; ".join(cmd_parts)
+        cmd = " ; ".join(cmd_parts) + " ; exit $status"
         self.log("[SERVICES] Restarting services.")
 
         def cb(res):
-            if res["out"]:
-                for line in res["out"].splitlines():
-                    self.log(line)
-            if not res["success"]:
-                self.log(f"[SERVICES ERROR] {res['err'] or res['out']}")
-                self._popup_error("Services", "Restart failed.")
-            else:
-                self.log("[SERVICES] Restart sequence finished.")
-                self._popup_info("Services", "Restart sequence finished.")
+            try:
+                if res["out"]:
+                    for line in res["out"].splitlines():
+                        self.log(line)
+                if not res["success"]:
+                    self.log(f"[SERVICES ERROR] {res['err'] or res['out']}")
+                    self._popup_error("Services", "Restart failed.")
+                else:
+                    self.log("[SERVICES] Restart sequence finished.")
+                    self._popup_info("Services", "Restart sequence finished.")
+            finally:
+                if self.btn_restart_services:
+                    self.btn_restart_services.configure(
+                        state="normal" if self.connected else "disabled"
+                    )
 
-        self.ssh_queue.execute(
+        queued = self.ssh_queue.execute(
             cmd,
             callback=cb,
-            timeout=max(60, self.ssh_timeout),
+            timeout=max(SERVICE_RESTART_TIMEOUT, self.ssh_timeout),
             label="Restart services",
             silent=False,
+            dedupe_key="restart_services",
         )
+        if queued:
+            if self.btn_restart_services:
+                self.btn_restart_services.configure(state="disabled")
+        else:
+            self.log("[SERVICES] Restart already queued or running.")
 
     def reboot_device(self):
+        if self._sequence_operation_blocked("Rebooting the device"):
+            return
         if not self.connected:
             self._popup_warning("Reboot", "Please connect first.")
             return
@@ -3106,20 +4805,32 @@ class RemoteBorneApp:
             if not res["success"]:
                 self.log(f"[REBOOT ERROR] {res['err'] or res['out']}")
                 self._popup_error("Reboot", "Reboot command failed.")
+                if self.btn_reboot:
+                    self.btn_reboot.configure(
+                        state="normal" if self.connected else "disabled"
+                    )
             else:
                 self.log("[REBOOT] Command sent. Device will reboot.")
                 self._popup_info("Reboot", "Reboot command sent.")
 
-        self.ssh_queue.execute(
+        queued = self.ssh_queue.execute(
             "reboot",
             callback=cb,
             timeout=15,
             auto_retry=False,
             label="Reboot device",
             silent=False,
+            dedupe_key="reboot_device",
         )
+        if queued:
+            if self.btn_reboot:
+                self.btn_reboot.configure(state="disabled")
+        else:
+            self.log("[REBOOT] Reboot already queued or running.")
 
     def open_energy_manager(self):
+        if self._sequence_operation_blocked("Opening Energy Manager PRO"):
+            return
         if not self.connected:
             self._popup_warning(
                 "Energy Manager",
@@ -3133,8 +4844,10 @@ class RemoteBorneApp:
                     win.deiconify()
                     win.lift()
                     win.focus_force()
+                    self.log("[UI] Energy Manager brought to foreground.")
                     return
 
+            self.log("[UI] Opening Energy Manager...")
             self._energy_win = energy_manager.EnergyManagerWindow(
                 self.root,
                 self.ssh,
@@ -3143,10 +4856,8 @@ class RemoteBorneApp:
             )
             try:
                 win = getattr(self._energy_win, "win", self._energy_win)
-                win.transient(self.root)
-                win.grab_set()
-                win.focus_force()
                 win.update_idletasks()
+                self.log("[UI] Energy Manager opened.")
             except Exception:
                 pass
         except Exception as e:
@@ -3156,7 +4867,713 @@ class RemoteBorneApp:
                 f"Unable to open Energy Manager:\n{e}",
             )
 
-    def open_terminal(self):
+    def _normalise_test_sequence_step(self, step):
+        """Return a safe, portable representation of one saved plateau."""
+        if not isinstance(step, dict):
+            raise ValueError("Step must be an object.")
+
+        mode = str(step.get("mode", "")).strip()
+        if mode not in ("P/Q", "CosPhi"):
+            raise ValueError("Unsupported sequence mode.")
+
+        active = int(round(float(step.get("active"))))
+        hold = int(round(float(step.get("hold"))))
+        if not (test_sequence.TestSequenceWindow.MIN_HOLD_SECONDS <= hold <=
+                test_sequence.TestSequenceWindow.MAX_HOLD_SECONDS):
+            raise ValueError("Hold time is outside the supported range.")
+
+        saved = {
+            "mode": mode,
+            "active": active,
+            "hold": hold,
+            "status": str(step.get("status", "Ready"))[:80] or "Ready",
+        }
+        if mode == "P/Q":
+            reactive = step.get("reactive")
+            if reactive in (None, ""):
+                saved["reactive"] = None
+            else:
+                reactive = int(round(float(reactive)))
+                if abs(reactive) > test_sequence.TestSequenceWindow.MAX_REACTIVE_VAR:
+                    raise ValueError("Reactive Q is outside the supported range.")
+                saved["reactive"] = reactive
+        else:
+            cosphi = float(step.get("cosphi", 1))
+            if not self._is_valid_cosphi(cosphi):
+                raise ValueError("CosPhi is outside the supported range.")
+            saved["cosphi"] = cosphi
+        return saved
+
+    def _load_test_sequence_steps(self):
+        """Restore steps from the current RBM session only."""
+        try:
+            raw_steps = getattr(self, "_test_sequence_session_steps", [])
+            steps = [
+                self._normalise_test_sequence_step(step)
+                for step in raw_steps
+            ]
+            if steps:
+                self.log(f"[SEQUENCE] Restored {len(steps)} step(s) from this session.")
+            return steps
+        except Exception as exc:
+            self.log(f"[SEQUENCE] Session steps ignored: {exc}")
+            return []
+
+    def _save_test_sequence_steps(self, sequence, announce: bool = False):
+        """Keep editable steps in memory until this RBM session ends."""
+        try:
+            steps = [
+                self._normalise_test_sequence_step(step)
+                for step in getattr(sequence, "steps", [])
+            ]
+            self._test_sequence_session_steps = steps
+            if announce:
+                self.log(f"[SEQUENCE] Kept {len(steps)} step(s) for this session.")
+            return True
+        except Exception as exc:
+            self.log(f"[SEQUENCE] Unable to keep session steps: {exc}")
+            return False
+
+    def _export_test_sequence_to_path(self, sequence, path: str) -> bool:
+        """Write a portable Test Sequence CSV compatible with RBM export."""
+        try:
+            steps = [
+                self._normalise_test_sequence_step(step)
+                for step in getattr(sequence, "steps", [])
+            ]
+            with open(path, "w", newline="", encoding="utf-8") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(
+                    [
+                        "step",
+                        "mode",
+                        "active_w",
+                        "reactive_var",
+                        "cosphi",
+                        "hold_seconds",
+                        "status",
+                    ]
+                )
+                for index, step in enumerate(steps, start=1):
+                    writer.writerow(
+                        [
+                            index,
+                            step["mode"],
+                            step["active"],
+                            step.get("reactive", ""),
+                            step.get("cosphi", ""),
+                            step["hold"],
+                            step.get("status", ""),
+                        ]
+                    )
+            return True
+        except Exception as exc:
+            self.log(f"[SEQUENCE] Export failed: {exc}")
+            self._popup_error("Test Sequence", f"Unable to save sequence:\n{exc}", parent=sequence.win)
+            return False
+
+    def _import_test_sequence_from_path(self, path: str):
+        """Read and validate an RBM Test Sequence CSV without contacting the EVSE."""
+        required_columns = {
+            "step",
+            "mode",
+            "active_w",
+            "reactive_var",
+            "cosphi",
+            "hold_seconds",
+            "status",
+        }
+        with open(path, "r", newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            if not reader.fieldnames or not required_columns.issubset(reader.fieldnames):
+                raise ValueError("The CSV does not match the RBM Test Sequence format.")
+            steps = []
+            for row in reader:
+                mode = (row.get("mode") or "").strip()
+                step = {
+                    "mode": mode,
+                    "active": row.get("active_w"),
+                    "hold": row.get("hold_seconds"),
+                    "status": row.get("status") or "Ready",
+                }
+                if mode == "P/Q":
+                    step["reactive"] = row.get("reactive_var") or None
+                else:
+                    step["cosphi"] = row.get("cosphi") or "1"
+                steps.append(self._normalise_test_sequence_step(step))
+        return steps
+
+    def _save_test_sequence_as(self, sequence):
+        if bool(getattr(sequence, "running", False)):
+            self._popup_warning(
+                "Test Sequence",
+                "Stop the running sequence before saving it.",
+                parent=sequence.win,
+            )
+            return
+        path = filedialog.asksaveasfilename(
+            parent=sequence.win,
+            title="Save Test Sequence As",
+            initialdir=EXPORTS_DIR,
+            initialfile="RBM_Test_Sequence.csv",
+            defaultextension=".csv",
+            filetypes=[("RBM Test Sequence CSV", "*.csv"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        if self._export_test_sequence_to_path(sequence, path):
+            self.log(f"[SEQUENCE] Exported {len(sequence.steps)} step(s): {path}")
+            self._popup_info("Test Sequence", "Sequence saved successfully.", parent=sequence.win)
+
+    def _import_test_sequence(self, sequence):
+        if bool(getattr(sequence, "running", False)):
+            self._popup_warning(
+                "Test Sequence",
+                "Stop the running sequence before importing another one.",
+                parent=sequence.win,
+            )
+            return
+        path = filedialog.askopenfilename(
+            parent=sequence.win,
+            title="Import Test Sequence",
+            initialdir=EXPORTS_DIR,
+            filetypes=[("RBM Test Sequence CSV", "*.csv"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            steps = self._import_test_sequence_from_path(path)
+        except Exception as exc:
+            self.log(f"[SEQUENCE] Import failed: {exc}")
+            self._popup_error("Test Sequence", f"Unable to import sequence:\n{exc}", parent=sequence.win)
+            return
+        if sequence.steps and not messagebox.askyesno(
+            "Import Test Sequence",
+            "Replace the current sequence with the imported steps?",
+            parent=sequence.win,
+        ):
+            return
+        sequence.steps = steps
+        if steps:
+            sequence._render_steps(select_index=0)
+        else:
+            sequence._render_steps()
+        self._save_test_sequence_steps(sequence)
+        self.log(f"[SEQUENCE] Imported {len(steps)} step(s): {path}")
+
+    def _add_test_sequence_file_actions(self, sequence):
+        """Add import/export next to the sequencer's visible footer controls."""
+        if getattr(sequence, "_rbm_file_actions_added", False):
+            return
+
+        footer = None
+        export_button = None
+
+        def visit(widget):
+            nonlocal footer, export_button
+            try:
+                if widget.cget("text") == "Export CSV":
+                    footer = widget.master
+                    export_button = widget
+                    return
+            except Exception:
+                pass
+            try:
+                for child in widget.winfo_children():
+                    visit(child)
+                    if footer is not None:
+                        return
+            except Exception:
+                pass
+
+        visit(sequence.win)
+        if footer is None:
+            self.log("[SEQUENCE] Import/export controls could not be added to the footer.")
+            return
+
+        # Save sequence now produces the same CSV format, so the former
+        # one-way Export CSV control would only duplicate the user workflow.
+        try:
+            export_button.destroy()
+        except Exception:
+            pass
+
+        ttk.Button(
+            footer,
+            text="Import sequence",
+            command=lambda: self._import_test_sequence(sequence),
+        ).pack(side="right", padx=(6, 0))
+        ttk.Button(
+            footer,
+            text="Save as CSV",
+            bootstyle="primary",
+            command=lambda: self._save_test_sequence_as(sequence),
+        ).pack(side="right", padx=(6, 0))
+        sequence._rbm_file_actions_added = True
+
+    def _add_test_sequence_pn_helper(self, sequence):
+        """Add a Pn/percentage helper without changing the sequencer engine."""
+        if getattr(sequence, "_rbm_pn_helper_added", False):
+            return
+
+        editor = None
+
+        def find_editor(widget):
+            nonlocal editor
+            try:
+                if widget.cget("text") == "Plateau editor":
+                    editor = widget
+                    return
+            except Exception:
+                pass
+            try:
+                for child in widget.winfo_children():
+                    find_editor(child)
+                    if editor is not None:
+                        return
+            except Exception:
+                pass
+
+        find_editor(sequence.win)
+        if editor is None:
+            self.log("[SEQUENCE] Pn helper could not find the plateau editor.")
+            return
+
+        container = editor.master
+        # The original sequence UI uses rows 0..4. Make a dedicated, compact
+        # Pn row just above its editor and preserve every existing widget.
+        try:
+            for child in container.winfo_children():
+                info = child.grid_info()
+                row = info.get("row")
+                if row is not None and int(row) >= 1:
+                    child.grid_configure(row=int(row) + 1)
+            container.grid_rowconfigure(2, weight=0)
+            container.grid_rowconfigure(3, weight=1)
+        except (tk.TclError, TypeError, ValueError) as exc:
+            self.log(f"[SEQUENCE] Pn helper layout could not be prepared: {exc}")
+            return
+
+        helper = ttk.Labelframe(container, text="Active Power Helper (Pn)", padding=(8, 4))
+        helper.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        helper.grid_columnconfigure(5, weight=1)
+
+        pn_var = tk.StringVar(value=str(int(round(self._get_pn_limit()))))
+        percent_var = tk.StringVar(value="0")
+        slider_var = tk.DoubleVar(value=0.0)
+        vcmd_float = (self.root.register(self._validate_float_key), "%P")
+
+        ttk.Label(helper, text="Pn max [W]:").grid(row=0, column=0, sticky="w")
+        pn_entry = ttk.Entry(
+            helper,
+            textvariable=pn_var,
+            width=9,
+            justify="right",
+            validate="key",
+            validatecommand=vcmd_float,
+        )
+        pn_entry.grid(row=0, column=1, sticky="w", padx=(6, 6))
+
+        ttk.Label(helper, text="P [%]:").grid(row=0, column=3, sticky="w")
+        percent_entry = ttk.Entry(
+            helper,
+            textvariable=percent_var,
+            width=6,
+            justify="right",
+            validate="key",
+            validatecommand=vcmd_float,
+        )
+        percent_entry.grid(row=0, column=4, sticky="w", padx=(6, 6))
+        percent_scale = tk.Scale(
+            helper,
+            from_=-100,
+            to=100,
+            resolution=1,
+            orient="horizontal",
+            showvalue=False,
+            variable=slider_var,
+            highlightthickness=0,
+        )
+        percent_scale.grid(row=0, column=5, sticky="ew", padx=(0, 8))
+
+        ttk.Label(
+            helper,
+            text="Sets Active P from Pn x percentage; exact manual values remain possible.",
+            bootstyle="secondary",
+        ).grid(row=1, column=0, columnspan=6, sticky="w", pady=(3, 0))
+
+        def set_editor_active(percent):
+            try:
+                percent = int(round(float(percent)))
+            except (TypeError, ValueError):
+                return False
+            if not -100 <= percent <= 100:
+                return False
+            try:
+                pn = float(pn_var.get().strip())
+            except ValueError:
+                return False
+            if not (0 < pn <= MAX_PN_LIMIT_W):
+                return False
+            active = int(round(pn * percent / 100.0))
+            percent_var.set(str(percent))
+            if int(round(slider_var.get())) != percent:
+                slider_var.set(percent)
+            sequence.active_var.set(str(active))
+            return True
+
+        def commit_pn(_event=None):
+            try:
+                pn_value = float(pn_var.get().strip())
+            except ValueError:
+                pn_value = 0
+            if not (0 < pn_value <= MAX_PN_LIMIT_W):
+                self._popup_warning(
+                    "Test Sequence",
+                    f"Pn must be greater than 0 and no more than {int(MAX_PN_LIMIT_W)} W.",
+                    parent=sequence.win,
+                )
+                pn_var.set(str(int(round(self._get_pn_limit()))))
+                return "break"
+            self._set_pn_limit(pn_value, "Test Sequence", sync_active=False)
+            pn_var.set(str(int(round(self.pn_limit_w))))
+            set_editor_active(slider_var.get())
+            return "break"
+
+        def commit_percent(_event=None):
+            if not set_editor_active(percent_var.get()):
+                self._popup_warning(
+                    "Test Sequence",
+                    "P [%] must be a numeric value between -100 and 100, and Pn must be valid.",
+                    parent=sequence.win,
+                )
+                percent_var.set(str(int(round(slider_var.get()))))
+            return "break"
+
+        def on_slider(value):
+            if not set_editor_active(value):
+                percent_scale.set(0)
+
+        def read_pn():
+            read_button.configure(state="disabled")
+
+            def refreshed(success):
+                try:
+                    if sequence.win.winfo_exists():
+                        read_button.configure(
+                            state=(
+                                "normal"
+                                if self.connected and not bool(sequence.running)
+                                else "disabled"
+                            )
+                        )
+                        if success:
+                            pn_var.set(str(int(round(self.pn_limit_w))))
+                            set_editor_active(slider_var.get())
+                except tk.TclError:
+                    pass
+
+            self.read_pn_from_gridcodes_properties(
+                on_complete=refreshed,
+                parent=sequence.win,
+            )
+
+        read_button = ttk.Button(
+            helper,
+            text="Read Pn",
+            bootstyle="primary",
+            command=read_pn,
+        )
+        read_button.grid(row=0, column=2, sticky="w", padx=(0, 14))
+        pn_entry.bind("<Return>", commit_pn)
+        pn_entry.bind("<FocusOut>", commit_pn)
+        percent_entry.bind("<Return>", commit_percent)
+        percent_entry.bind("<FocusOut>", commit_percent)
+        percent_scale.configure(command=on_slider)
+
+        sequence._rbm_pn_helper_added = True
+        sequence._rbm_pn_widgets = (pn_entry, percent_entry, percent_scale, read_button)
+
+        # Keep the helper read-only while an automated sequence is executing,
+        # exactly like the native plateau editor fields.
+        original_set_editing_enabled = sequence._set_editing_enabled
+
+        def set_editing_enabled(enabled):
+            result = original_set_editing_enabled(enabled)
+            state = "normal" if enabled else "disabled"
+            for widget in sequence._rbm_pn_widgets:
+                try:
+                    widget.configure(state=state)
+                except tk.TclError:
+                    pass
+            return result
+
+        sequence._set_editing_enabled = set_editing_enabled
+
+    def _bind_test_sequence_persistence(self, sequence):
+        """Save only after a successful user edit, without changing command flow."""
+        for method_name in (
+            "add_step",
+            "update_selected",
+            "remove_selected",
+            "move_selected",
+            "clear_steps",
+        ):
+            original = getattr(sequence, method_name, None)
+            if not callable(original):
+                continue
+
+            def save_after_edit(*args, _original=original, **kwargs):
+                result = _original(*args, **kwargs)
+                self._save_test_sequence_steps(sequence)
+                return result
+
+            setattr(sequence, method_name, save_after_edit)
+
+        # The legacy UI captured the original bound methods while it was built.
+        # Rebind its edit controls so button clicks use the autosave wrappers.
+        for button_name, command in (
+            ("btn_add", sequence.add_step),
+            ("btn_update", sequence.update_selected),
+            ("btn_remove", sequence.remove_selected),
+            ("btn_up", lambda: sequence.move_selected(-1)),
+            ("btn_down", lambda: sequence.move_selected(1)),
+        ):
+            try:
+                getattr(sequence, button_name).configure(command=command)
+            except Exception:
+                pass
+
+        def _rebind_clear_button(widget):
+            try:
+                if widget.cget("text") == "Clear":
+                    widget.configure(command=sequence.clear_steps)
+            except Exception:
+                pass
+            try:
+                for child in widget.winfo_children():
+                    _rebind_clear_button(child)
+            except Exception:
+                pass
+
+        _rebind_clear_button(sequence.win)
+
+    def _bind_test_sequence_numeric_validation(self, sequence):
+        """Apply the Energy Manager numeric rules to every sequencer input."""
+        last_valid_values = {}
+        for variable_name in ("active_var", "reactive_var", "cosphi_var"):
+            variable = getattr(sequence, variable_name, None)
+            if variable is None:
+                continue
+            last_valid_values[variable_name] = variable.get()
+            changing = [False]
+
+            def validate_value(
+                *_args, _name=variable_name, _variable=variable, _changing=changing
+            ):
+                if _changing[0]:
+                    return
+                proposed = _variable.get()
+                if self._validate_float_key(proposed):
+                    last_valid_values[_name] = proposed
+                    return
+                # StringVar traces also catch pastes and scripted changes that
+                # bypass Tk's usual validate="key" callback.
+                _changing[0] = True
+                try:
+                    _variable.set(last_valid_values[_name])
+                finally:
+                    _changing[0] = False
+
+            variable.trace_add("write", validate_value)
+
+        # The restored sequence module validates CosPhi only at execution.
+        # Apply the EVSE operating range before a plateau can be added or edited.
+        for method_name in ("add_step", "update_selected"):
+            original = getattr(sequence, method_name, None)
+            if not callable(original):
+                continue
+
+            def validate_cosphi_step(*args, _original=original, **kwargs):
+                mode = str(sequence.mode_var.get()).strip()
+                raw_cosphi = sequence.cosphi_var.get().strip() or "1"
+                if mode == "CosPhi" and not self._is_valid_cosphi(raw_cosphi):
+                    sequence._popup(
+                        "showwarning",
+                        "Test Sequence",
+                        "CosPhi must be between -0.99 and 1.00.\n"
+                        "Value 0 is not allowed.",
+                    )
+                    return None
+                return _original(*args, **kwargs)
+
+            setattr(sequence, method_name, validate_cosphi_step)
+
+    def _save_and_close_test_sequence(self):
+        """Persist steps before releasing the modal Test Sequence window."""
+        sequence = getattr(self, "_sequence_win", None)
+        if sequence is not None:
+            self._save_test_sequence_steps(sequence, announce=True)
+        self._on_test_sequence_closed()
+
+    def _size_test_sequence_window(self, sequence_window):
+        """Apply the final adaptive Test Sequence geometry in one operation."""
+        screen_width = sequence_window.winfo_screenwidth()
+        screen_height = sequence_window.winfo_screenheight()
+        sequence_width = min(1180, max(900, screen_width - 100))
+        sequence_height = min(800, max(650, screen_height - 130))
+        sequence_window.minsize(
+            min(900, sequence_width), min(650, sequence_height)
+        )
+        self._center_toplevel(
+            sequence_window,
+            sequence_width,
+            sequence_height,
+            parent=self.root,
+        )
+
+    def open_test_sequence(self):
+        """Open the isolated P/Q and CosPhi plateau sequencer."""
+        if not self.connected:
+            self._popup_warning(
+                "Test Sequence",
+                "Please connect before opening Test Sequence.",
+            )
+            return
+        try:
+            if self._sequence_win is not None:
+                win = getattr(self._sequence_win, "win", None)
+                if win is not None and win.winfo_exists():
+                    win.deiconify()
+                    win.lift()
+                    win.focus_force()
+                    self.log("[UI] Test Sequence brought to foreground.")
+                    return
+
+            # The restored sequencer has its own default geometry. Override
+            # its centering callback before construction so Windows renders
+            # only the final size, rather than flashing the old size first.
+            original_center_window = test_sequence.center_window
+            original_toplevel = test_sequence.ttk.Toplevel
+
+            def center_sequence_window(_master, win, _width, _height):
+                self._size_test_sequence_window(win)
+
+            def hidden_sequence_toplevel(*args, **kwargs):
+                """Prevent the sequencer's legacy default size from flashing."""
+                win = original_toplevel(*args, **kwargs)
+                win.withdraw()
+                return win
+
+            test_sequence.center_window = center_sequence_window
+            test_sequence.ttk.Toplevel = hidden_sequence_toplevel
+            try:
+                self._sequence_win = test_sequence.TestSequenceWindow(
+                    self.root,
+                    ssh_queue=self.ssh_queue,
+                    is_connected=lambda: bool(
+                        self.connected and getattr(self.ssh, "connected", False)
+                    ),
+                    pn_limit_provider=self._get_pn_limit,
+                    on_close=self._save_and_close_test_sequence,
+                )
+            finally:
+                test_sequence.center_window = original_center_window
+                test_sequence.ttk.Toplevel = original_toplevel
+            saved_steps = self._load_test_sequence_steps()
+            if saved_steps:
+                self._sequence_win.steps = saved_steps
+                self._sequence_win._render_steps(select_index=0)
+            self._bind_test_sequence_numeric_validation(self._sequence_win)
+            self._bind_test_sequence_persistence(self._sequence_win)
+            self._add_test_sequence_file_actions(self._sequence_win)
+            self._add_test_sequence_pn_helper(self._sequence_win)
+            self._sequence_modal_open = True
+            sequence_window = self._sequence_win.win
+            sequence_window.transient(self.root)
+            # The complete layout is ready: map the window only once, at its
+            # final size, then make it modal above the RBM main window.
+            sequence_window.deiconify()
+            sequence_window.lift()
+            sequence_window.focus_force()
+            sequence_window.grab_set()
+            sequence_start = self._sequence_win.start
+
+            def start_and_lock():
+                sequence_start()
+                self._watch_test_sequence_state()
+
+            self._sequence_win.btn_start.configure(command=start_and_lock)
+            self._update_controls_state()
+            self._watch_test_sequence_state()
+            self.log("[UI] Test Sequence opened: main application locked until close.")
+        except Exception as exc:
+            self.log(f"[ERROR] Unable to open Test Sequence: {exc}")
+            self._popup_error(
+                "Test Sequence",
+                f"Unable to open Test Sequence:\n{exc}",
+            )
+
+    def _on_test_sequence_closed(self):
+        """Restore main-window access after the modal sequencer is closed."""
+        sequence_window = getattr(getattr(self, "_sequence_win", None), "win", None)
+        try:
+            if sequence_window is not None:
+                sequence_window.grab_release()
+        except Exception:
+            pass
+        self._sequence_win = None
+        self._sequence_modal_open = False
+        self._sequence_running = False
+        try:
+            self.ssh_queue.pause_monitoring = False
+        except Exception:
+            pass
+        self._update_controls_state()
+        self.log("[UI] Test Sequence closed: main application unlocked.")
+
+    def _watch_test_sequence_state(self):
+        """Mirror the sequencer state without changing its tested command flow."""
+        sequence = getattr(self, "_sequence_win", None)
+        sequence_window = getattr(sequence, "win", None)
+        exists = False
+        try:
+            exists = sequence_window is not None and sequence_window.winfo_exists()
+        except Exception:
+            pass
+
+        if not exists and bool(getattr(self, "_sequence_modal_open", False)):
+            self._on_test_sequence_closed()
+            return
+
+        running = bool(exists and getattr(sequence, "running", False))
+        if running != bool(getattr(self, "_sequence_running", False)):
+            self._on_sequence_running_changed(running)
+
+        if exists and not self._closing:
+            try:
+                self.root.after(150, self._watch_test_sequence_state)
+            except Exception:
+                pass
+
+    def _on_sequence_running_changed(self, running: bool):
+        """Lock concurrent remote actions for the duration of a test sequence."""
+        self._sequence_running = bool(running)
+        try:
+            self.ssh_queue.pause_monitoring = self._sequence_running
+        except Exception:
+            pass
+        self._update_controls_state()
+        if self._sequence_running:
+            self.log("[SEQUENCE] Remote actions locked while the test sequence is running.")
+        elif bool(getattr(self, "_sequence_modal_open", False)):
+            self.log("[SEQUENCE] Sequence stopped; main application remains locked until close.")
+        else:
+            self.log("[SEQUENCE] Remote actions unlocked.")
+
+    def open_terminal(self, initial_command: str = None):
+        if self._sequence_operation_blocked("Opening the terminal"):
+            return
         if self._closing:
             return
         if not self.connected:
@@ -3172,6 +5589,8 @@ class RemoteBorneApp:
                     self._terminal_window.deiconify()
                     self._terminal_window.lift()
                     self._terminal_window.focus_force()
+                    if initial_command and callable(self._terminal_prefill_command):
+                        self._terminal_prefill_command(initial_command)
                     return
             except Exception:
                 pass
@@ -3245,11 +5664,60 @@ class RemoteBorneApp:
             btn_frame,
             text="Close",
             style="Danger.TButton",
-            command=win.destroy,
+            command=lambda: _on_close(),
         ).pack(side="right", padx=5, pady=5)
 
         history = []
         history_index = [-1]
+        terminal_busy = [False]
+        script_running = [False]
+        completion_pending = [False]
+
+        def cancel_script():
+            if not script_running[0]:
+                return
+            if not messagebox.askyesno(
+                "Stop script",
+                "Stop the running script?\n\n"
+                "RBM will stop the local SSH process. The target command may "
+                "continue if it has already detached on the EVSE.",
+                parent=win,
+            ):
+                return
+            if self.ssh_queue.cancel_active_stream("terminal_script"):
+                stop_script_btn.configure(state="disabled")
+                append("[INFO] Stop requested for the running script.\n")
+            else:
+                append("[INFO] No running terminal script could be stopped.\n")
+
+        stop_script_btn = ttk.Button(
+            btn_frame,
+            text="Stop script",
+            style="Warning.TButton",
+            command=cancel_script,
+            state="disabled",
+        )
+        stop_script_btn.pack(side="left", padx=5, pady=5)
+
+        def set_terminal_busy(is_busy):
+            terminal_busy[0] = is_busy
+            entry.configure(state="disabled" if is_busy else "normal")
+            stop_script_btn.configure(
+                state="normal" if is_busy and script_running[0] else "disabled"
+            )
+            if not is_busy:
+                entry.focus_force()
+
+        def prefill_command(command):
+            if terminal_busy[0]:
+                append("[INFO] Wait for the current command before preparing another script.\n")
+                return
+            entry.configure(state="normal")
+            entry.delete(0, "end")
+            entry.insert(0, command)
+            entry.focus_force()
+
+        self._terminal_prefill_command = prefill_command
 
         def show_help():
             append(
@@ -3266,7 +5734,10 @@ class RemoteBorneApp:
                 "  rm <file>\n\n"
                 "Scripts:\n"
                 "  python3 script.py\n"
-                "  sh script.sh\n\n"
+                "  sh script.sh\n"
+                "  Tab completes commands and remote paths\n\n"
+                "A running script has SSH priority; RBM commands wait until it ends.\n"
+                "Use Stop script only when the script must be interrupted.\n\n"
                 "Logs:\n"
                 "  grep\n"
                 "  tail\n"
@@ -3281,6 +5752,10 @@ class RemoteBorneApp:
         def run_command(cmd):
             nonlocal current_dir
 
+            if terminal_busy[0]:
+                append("[INFO] A command is already running. Wait for it to finish.\n")
+                return
+
             if cmd.startswith("cd"):
                 parts = cmd.split(maxsplit=1)
                 if len(parts) == 1:
@@ -3291,7 +5766,7 @@ class RemoteBorneApp:
                 if not new_dir.startswith("/"):
                     new_dir = current_dir.rstrip("/") + "/" + new_dir
 
-                test_cmd = f'test -d "{new_dir}"'
+                test_cmd = f"test -d {shlex.quote(new_dir)}"
 
                 def cb(res):
                     def _ui():
@@ -3337,8 +5812,30 @@ class RemoteBorneApp:
                 )
                 return
 
-            full_cmd = f'cd "{current_dir}" && {cmd}'
+            is_script = (
+                cmd.startswith("python ")
+                or cmd.startswith("python3 ")
+                or cmd.startswith("sh ")
+                or cmd.startswith("bash ")
+                or cmd.endswith(".sh")
+                or ".sh " in cmd
+                or cmd.endswith(".py")
+                or ".py " in cmd
+            )
+            # Test scripts often invoke EnergyManagerTestingTool directly.
+            # Give them the same standard PATH and library setup as RBM Send.
+            script_environment = ""
+            if is_script:
+                script_environment = (
+                    "export PATH=/usr/local/bin:/usr/bin:/bin:$PATH; "
+                    "export LD_LIBRARY_PATH=/usr/local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}; "
+                )
+            full_cmd = f"cd {shlex.quote(current_dir)} && {script_environment}{cmd}"
             append(f"\n{current_dir} $ {cmd}\n")
+            if is_script:
+                append("[INFO] Script started. Output will appear as it is received.\n")
+            script_running[0] = is_script
+            set_terminal_busy(True)
 
             def cb(res):
                 try:
@@ -3347,12 +5844,25 @@ class RemoteBorneApp:
                     success = res.get("success", False)
 
                     def _ui():
-                        if stdout:
+                        if stdout and not is_script:
                             append(stdout + "\n")
                         if stderr:
                             append("[ERROR] " + stderr + "\n")
                         if success and not stdout and not stderr:
                             append("[OK]\n")
+                        if is_script:
+                            if success:
+                                append("[INFO] Script finished.\n")
+                            else:
+                                if not stderr:
+                                    code = res.get("returncode")
+                                    append(
+                                        "[ERROR] Script stopped"
+                                        f" (exit code {code}).\n"
+                                    )
+                                append("[INFO] Script stopped with an error.\n")
+                        script_running[0] = False
+                        set_terminal_busy(False)
 
                     try:
                         if not self._closing and self.root.winfo_exists():
@@ -3361,20 +5871,108 @@ class RemoteBorneApp:
                         pass
                 except Exception as e:
                     try:
-                        self.root.after(0, lambda: append(f"[ERROR] {e}\n"))
+                        self.root.after(
+                            0,
+                            lambda: (
+                                append(f"[ERROR] {e}\n"),
+                                script_running.__setitem__(0, False),
+                                set_terminal_busy(False),
+                            ),
+                        )
                     except Exception:
                         pass
+
+            def on_stream(chunk):
+                append(chunk)
 
             self.ssh_queue.execute(
                 full_cmd,
                 callback=cb,
-                timeout=self.ssh_timeout,
+                timeout=None if is_script else self.ssh_timeout,
                 auto_retry=False,
                 log_errors=False,
                 command_type="terminal_cmd",
                 silent=False,
                 label=f"Terminal: {cmd[:60]}",
+                stream_callback=on_stream if is_script else None,
+                cancel_token="terminal_script" if is_script else None,
             )
+
+        def complete_token(event=None):
+            """Complete a command name or a remote file path with the Tab key."""
+            if terminal_busy[0]:
+                append("[INFO] Completion is unavailable while a command is running.\n")
+                return "break"
+            if completion_pending[0]:
+                return "break"
+
+            value = entry.get()
+            stripped = value.lstrip()
+            if not stripped:
+                append("[INFO] Type a command or path before pressing Tab.\n")
+                return "break"
+
+            words = stripped.split()
+            if len(words) == 1 and " " not in stripped:
+                commands = [
+                    "ls", "cd", "pwd", "cat", "cp", "mv", "rm",
+                    "python3", "sh", "bash", "grep", "tail", "journalctl",
+                    "clear", "help",
+                ]
+                matches = [command for command in commands if command.startswith(stripped)]
+                if len(matches) == 1:
+                    entry.delete(0, "end")
+                    entry.insert(0, matches[0] + " ")
+                elif len(matches) > 1:
+                    append("[TAB] " + "  ".join(matches) + "\n")
+                else:
+                    append(f"[TAB] No command starts with '{stripped}'.\n")
+                return "break"
+
+            token = words[-1]
+            value_prefix = value[: len(value) - len(token)]
+            completion_cmd = (
+                f"cd {shlex.quote(current_dir)} && "
+                f"for item in {shlex.quote(token)}*; do "
+                '[ -e "$item" ] || continue; '
+                'if [ -d "$item" ]; then printf "%s/\\n" "$item"; '
+                'else printf "%s\\n" "$item"; fi; '
+                "done"
+            )
+            requested_value = value
+            completion_pending[0] = True
+
+            def completion_callback(res):
+                completion_pending[0] = False
+                candidates = [
+                    line.strip()
+                    for line in (res.get("out") or "").splitlines()
+                    if line.strip()
+                ]
+                error = (res.get("err") or "").strip()
+                if error:
+                    append("[ERROR] " + error + "\n")
+                    return
+                if not candidates:
+                    append(f"[TAB] No match for '{token}'.\n")
+                    return
+                if len(candidates) == 1 and entry.get() == requested_value:
+                    entry.delete(0, "end")
+                    entry.insert(0, value_prefix + candidates[0])
+                    return
+                append("[TAB] " + "  ".join(candidates) + "\n")
+
+            self.ssh_queue.execute(
+                completion_cmd,
+                callback=completion_callback,
+                timeout=min(self.ssh_timeout, 5),
+                auto_retry=False,
+                log_errors=False,
+                command_type="terminal_completion",
+                silent=True,
+                label="Terminal completion",
+            )
+            return "break"
 
         def on_enter(event=None):
             cmd = entry.get().strip()
@@ -3408,6 +6006,7 @@ class RemoteBorneApp:
                     entry.insert(0, history[history_index[0]])
 
         entry.bind("<Return>", on_enter)
+        entry.bind("<Tab>", complete_token)
         entry.bind("<Up>", history_up)
         entry.bind("<Down>", history_down)
         entry.focus_force()
@@ -3419,9 +6018,16 @@ class RemoteBorneApp:
         )
 
         def _on_close():
+            if script_running[0]:
+                self._popup_warning(
+                    "Terminal",
+                    "A script is still running. Stop it or wait for completion before closing the terminal.",
+                )
+                return
             try:
                 self._close_terminal_window = None
                 self._terminal_window = None
+                self._terminal_prefill_command = None
             except Exception:
                 pass
             try:
@@ -3431,6 +6037,9 @@ class RemoteBorneApp:
 
         self._close_terminal_window = _on_close
         win.protocol("WM_DELETE_WINDOW", _on_close)
+
+        if initial_command:
+            prefill_command(initial_command)
 
     
     def open_network_config(self):
@@ -3444,7 +6053,6 @@ class RemoteBorneApp:
                 self.config.read(CONFIG_PATH, encoding="utf-8")
                 ssh_cfg = self.config["SSH"]
                 paths_cfg = self.config["PATHS"]
-                security_cfg = self.config["SECURITY"]
 
                 self.host = ssh_cfg.get("host", "")
                 self.user = ssh_cfg.get("username", "")
@@ -3457,7 +6065,9 @@ class RemoteBorneApp:
                 self.local_default_path = _ensure_local_export_dir(
                     paths_cfg.get("local_path", EXPORTS_DIR)
                 )
-                self.edit_password = security_cfg.get("edit_password", "").strip()
+                self.netlogger_path = paths_cfg.get(
+                    "netlogger_path", NETLOGGER_DEFAULT_PATH
+                ).strip() or NETLOGGER_DEFAULT_PATH
                 self.current_path = self.default_path
 
                 # Mise à jour des labels
@@ -3477,7 +6087,19 @@ class RemoteBorneApp:
                 )
 
                 if ssh_changed:
-                    self.log("[NETWORK] SSH target changed, restarting application.")
+                    target_changed = (
+                        previous_ssh[0] != self.host
+                        or previous_ssh[3] != self.port
+                    )
+                    if target_changed:
+                        # A new EVSE can legitimately reuse an old test IP.
+                        # Remove only this target's stale PuTTY key before the
+                        # application restarts and verifies the new target.
+                        self.ssh.clear_cached_host_keys(self.host, self.port)
+                    # Close the active session first so the former EVSE cannot
+                    # remain connected while the replacement process starts.
+                    self.log("[NETWORK] SSH target changed, closing current session.")
+                    self._manual_disconnect()
                     self._popup_info(
                         "Network",
                         "Network configuration updated.\nThe application will restart now."
@@ -3525,6 +6147,8 @@ class RemoteBorneApp:
        
     def open_debug_logs(self):
         """Ouvre la fenÃªtre Debug Logs seulement si SSH connectÃ©."""
+        if self._sequence_operation_blocked("Opening Debug logs"):
+            return
         if not self.connected:
             self._popup_warning(
                 "Debug logs",
@@ -3586,33 +6210,33 @@ class RemoteBorneApp:
     # --------------------------------------------------------------
     # Helpers pour popups MODALES et toujours au premier plan
     # --------------------------------------------------------------
-    def _popup_info(self, title: str, message: str, parent=None):
-        # parent = fenêtre parente (Toplevel) si fournie, sinon root
+    def _show_popup(self, popup, title: str, message: str, parent=None):
+        """Show a native dialog without lowering an already-modal parent."""
         win = parent or self.root
-        win.lift()
-        win.attributes("-topmost", True)
         try:
-            messagebox.showinfo(title, message, parent=win)
+            was_topmost = bool(int(win.attributes("-topmost")))
+        except (tk.TclError, TypeError, ValueError):
+            was_topmost = False
+        try:
+            win.lift()
+            win.attributes("-topmost", True)
+            popup(title, message, parent=win)
         finally:
-            win.attributes("-topmost", False)
+            try:
+                win.attributes("-topmost", was_topmost)
+                if was_topmost:
+                    win.lift()
+            except tk.TclError:
+                pass
+
+    def _popup_info(self, title: str, message: str, parent=None):
+        self._show_popup(messagebox.showinfo, title, message, parent)
 
     def _popup_warning(self, title: str, message: str, parent=None):
-        win = parent or self.root
-        win.lift()
-        win.attributes("-topmost", True)
-        try:
-            messagebox.showwarning(title, message, parent=win)
-        finally:
-            win.attributes("-topmost", False)
+        self._show_popup(messagebox.showwarning, title, message, parent)
 
     def _popup_error(self, title: str, message: str, parent=None):
-        win = parent or self.root
-        win.lift()
-        win.attributes("-topmost", True)
-        try:
-            messagebox.showerror(title, message, parent=win)
-        finally:
-            win.attributes("-topmost", False)
+        self._show_popup(messagebox.showerror, title, message, parent)
 
 # ----------------------------------------------------------------------
 # ENTRY POINT

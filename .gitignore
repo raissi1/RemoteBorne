@@ -1,13 +1,59 @@
-# Python cache/bytecode
+# ============================
+# Python cache / bytecode
+# ============================
 __pycache__/
 *.py[cod]
+*.pyo
 
-# Local runtime/config artifacts
+# ============================
+# Virtual environments
+# ============================
+venv/
+.env/
+.venv/
+
+# ============================
+# Local runtime / config artifacts
+# ============================
 config/config.ini
 logs/
 exports/
 documents/
 
+# ============================
 # Build artifacts
+# ============================
 build/
 dist/
+*.egg-info/
+
+# ============================
+# PowerShell build scripts
+# ============================
+*.ps1
+
+# ============================
+# IDE / Editor files
+# ============================
+.vscode/
+.idea/
+
+# ============================
+# OS-specific files
+# ============================
+Thumbs.db
+.DS_Store
+
+# ============================
+# Simulator tools
+# ============================
+tools/simulator/__pycache__/
+tools/simulator/*.log
+tools/simulator/*.tmp
+
+# ============================
+# Test / temporary files
+# ============================
+*.tmp
+*.log
+*.bak

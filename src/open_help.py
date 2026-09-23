@@ -22,21 +22,12 @@ def open_help(parent=None):
             pass
 
     win = tk.Toplevel(parent)
+    win.withdraw()
     win.title("RBM Help")
     win.geometry("1000x800")
     win.minsize(850, 600)
 
-    try:
-        if parent is not None:
-            win.transient(parent)
-            win.grab_set()
-            win.focus_force()
-            win.lift()
-    except Exception:
-        pass
-
     center_window(parent, win, 980, 760)
-    win.after(30, lambda: center_window(parent, win, 980, 760))
 
     def _close():
         try:
@@ -112,7 +103,9 @@ def open_help(parent=None):
         "SSH connection and session monitoring",
         "GridCodes browser with full right-click menu",
         "remote editing, upload, download, and PDF print",
+        "direct access to the active GridCodes.properties and NetLogger log downloads",
         "Energy Manager PRO in P/Q and CosPhi modes",
+        "automated P/Q and CosPhi Test Sequence with CSV import and save",
         "Restart services, Reboot device, and Debug logs",
         "Network config with clean restart when SSH settings change",
         "temperature and Battery SoC monitoring",
@@ -128,9 +121,10 @@ def open_help(parent=None):
     text.insert(
         "end",
         "The Connect button opens the SSH session and initializes the remote interface. Disconnect closes the session and prevents an immediate auto reconnect.\n\n"
-        "When the IP address, port, or credentials are changed from Network config, the application saves the new settings and restarts cleanly. This replaces the older hot reconnect approach.\n\n"
+        "When the IP address, port, or credentials are changed from Network config, RBM closes the active SSH session before restarting with the new settings.\n\n"
+        "While connected, RBM monitors the SSH transport and attempts recovery after repeated communication failures. Disconnect intentionally stops automatic reconnection.\n\n"
         "Practical notes:\n"
-        "- if PuTTY / Plink reports a host key mismatch, verify the charger identity before accepting the new key\n"
+        "- a new SSH host key requires explicit operator confirmation; a changed cached key blocks the connection\n"
         "- Network config also stores the default GridCodes paths used by the browser and editor\n"
         "- after an application restart, reconnect normally from the main window\n",
         "normal",
@@ -143,7 +137,12 @@ def open_help(parent=None):
         "- double-click a folder to enter it\n"
         "- double-click [.] (Parent) to go up\n"
         "- remote list refresh\n"
-        "- current path update\n\n"
+        "- Find filters the current folder locally while typing; after a short pause, RBM searches the current folder and all subfolders\n"
+        "- Find or Enter starts that recursive search immediately; use a word or a wildcard such as *Power*. Results are grouped by folder and a double-click opens the result folder\n"
+        "- Clear or a folder navigation restores the full list\n"
+        "- current path update\n"
+        "- one navigation action at a time; repeated clicks are ignored until the remote action completes\n"
+        "- the previous valid listing remains visible while the next folder loads\n\n"
         "File context menu:\n"
         "- Edit\n"
         "- Download\n"
@@ -169,11 +168,14 @@ def open_help(parent=None):
         "normal",
     )
 
+    add_subtitle("Active GridCodes.properties\n", "Use Edit current GridCodes.properties to open the active configuration directly, without searching for it in the browser.")
+    add_subtitle("NetLogger logs\n", "Use NetLogger logs to list the files in the configured NetLogger folder, select multiple files, and download them to one local folder. The remote NetLogger folder can be changed in Network configuration.")
+
     text.insert("end", "\n6. TEMPERATURE / BATTERY SOC MONITORING\n", "section")
     text.insert(
         "end",
         "The Temperature / Derating panel shows charger temperature and Battery SoC.\n"
-        "The manual refresh button performs an immediate refresh of both values.\n"
+        "The manual refresh button performs an immediate refresh of both values. Temperature remains available when no SoC is present in the charger log.\n"
         "Automatic updates continue while the SSH session remains healthy.\n",
         "normal",
     )
@@ -183,6 +185,8 @@ def open_help(parent=None):
         "end",
         "Energy Manager PRO is used for energy control through a dedicated window.\n\n"
         "P/Q mode:\n"
+        "- Pn max: type a value or read it from GridCodes.properties; use either the -100% to +100% slider or the P [%] field to write the calculated value into Active Power P\n"
+        "  (PowerMax_1Ph_VAr for GridTopology=SinglePhase; PowerMax_3Ph_VAr for GridTopology=ThreePhase)\n"
         "- Active Power P\n"
         "- Reactive Power Q\n"
         "- Send P/Q\n\n"
@@ -191,6 +195,7 @@ def open_help(parent=None):
         "- CosPhi\n"
         "- Calculate Q\n"
         "- Send CosPhi\n\n"
+        "CosPhi returns immediately as sent, prevents repeated clicks while execution is pending, then reports confirmation or error after the target completes the command.\n\n"
         "The lower area provides command history export and a service monitor / restart panel.\n\n",
         "normal",
     )
@@ -203,10 +208,14 @@ def open_help(parent=None):
         "Features:\n"
         "- Up / Down history\n"
         "- persistent cd\n"
+        "- Tab completion for commands and remote paths\n"
         "- clear\n"
         "- help\n"
         "- simple shell commands\n"
         "- Python and shell script execution\n\n"
+        "Double-click a .py or .sh file in the GridCodes browser to open this terminal with its command prefilled. Add any required options, then press Enter.\n\n"
+        "A running script has SSH priority: other RBM commands wait until it completes.\n"
+        "Use Stop script only when interruption is required; a detached target process may continue on the EVSE.\n\n"
         "Typical safe examples:\n"
         "- pwd\n"
         "- ls\n"
@@ -224,12 +233,29 @@ def open_help(parent=None):
         "normal",
     )
 
-    text.insert("end", "\n9. DEBUG LOGS AND MAINTENANCE\n", "section")
+    text.insert("end", "\n9. TEST SEQUENCE\n", "section")
+    text.insert(
+        "end",
+        "Open Test Sequence from Tests > Test Sequence in the main menu. It runs a controlled list of P/Q and CosPhi plateaus in the configured order.\n\n"
+        "For each step:\n"
+        "- use Active Power Helper (Pn): Read Pn reads the active GridCodes.properties limit, then P [%] automatically fills Active Power P from -100% to +100%\n"
+        "- select P/Q or CosPhi mode\n"
+        "- enter Active Power P and the hold duration in seconds\n"
+        "- in P/Q mode, Reactive Power Q is optional; leave it blank to send P without a reactive option\n"
+        "- in CosPhi mode, leave CosPhi blank to use 1\n"
+        "- use Add, Update, Remove, and Move controls to prepare the scenario\n\n"
+        "Test Sequence is a modal window: while it remains open, RBM blocks access to the main application, including GridCodes changes, manual setpoints, maintenance, Terminal, and Debug logs. Close Test Sequence to restore main-window access. Start sends one plateau at a time. Pause freezes the remaining hold time, Resume continues it, and Stop prevents all remaining plateaus from being sent. A remote command error or SSH disconnection stops the sequence automatically. Use Save as CSV to choose the sequence file name and location; use Import sequence to reload a saved scenario. Steps are kept only for the current RBM session, so import the saved CSV again after a full application restart.\n\n"
+        "Validate the full scenario and the EVSE test conditions before starting. Monitor the main logs during execution; the sequence does not replace the protected Restart services or Reboot device procedures.\n",
+        "normal",
+    )
+
+    text.insert("end", "\n10. DEBUG LOGS AND MAINTENANCE\n", "section")
     text.insert(
         "end",
         "The Debug logs menu opens the remote log follow window.\n\n"
         "Debug log window features:\n"
         "- live follow of the main remote logs\n"
+        "- uses the host key already approved for the current RBM connection\n"
         "- local save of the captured output\n"
         "- safer close behavior while readers are still stopping\n\n"
         "Available maintenance actions:\n"
@@ -239,7 +265,7 @@ def open_help(parent=None):
         "normal",
     )
 
-    text.insert("end", "\n10. ARCHITECTURE AND STABILITY\n", "section")
+    text.insert("end", "\n11. ARCHITECTURE AND STABILITY\n", "section")
     text.insert(
         "end",
         "RBM relies on a centralized architecture with SSHQueue for critical commands, explicit SCP timeouts, protected Tkinter callbacks, and cleaner transport failure handling.\n",
@@ -247,7 +273,7 @@ def open_help(parent=None):
     )
     text.insert("end", "Recommended for controlled local industrial networks.\n", "warning")
 
-    text.insert("end", "\n11. KNOWN LIMITS\n", "section")
+    text.insert("end", "\n12. KNOWN LIMITS\n", "section")
     text.insert(
         "end",
         "- Battery SoC depends on the latest value available in charger logs and current vehicle activity\n"
@@ -256,7 +282,7 @@ def open_help(parent=None):
         "normal",
     )
 
-    text.insert("end", "\n12. VERSION\n", "section")
+    text.insert("end", "\n13. VERSION\n", "section")
     text.insert(
         "end",
         f"Remote Borne Control Interface\nHelp snapshot date: {today}\n\nAuthor: Nabil RAISSI\n",
@@ -294,3 +320,9 @@ def open_help(parent=None):
     ttk.Button(bottom, text="Close", command=_close).pack(side="right")
 
     text.configure(state="disabled")
+    # Map the completed help window once, above RBM but not above other apps.
+    if parent is not None:
+        win.transient(parent)
+    win.deiconify()
+    win.lift()
+    win.focus_force()
