@@ -4,6 +4,14 @@ This developer-only tool simulates an EVSE over real SSH and SCP. RBM connects
 to it through the same Plink and PSCP executables used for a physical charger.
 It does not modify the RBM application or send any command to real equipment.
 
+## In RBM
+
+Use `Tools > Start local simulator and connect`. RBM starts the simulator,
+connects the current session to `127.0.0.1:2222`, and displays the
+`SIMULATION MODE` banner. The configured charger settings in `config.ini` are
+not changed. Use `Return to configured charger` before stopping it, or close
+RBM to stop the local simulator automatically.
+
 ## Start
 
 From the project root, run:
@@ -13,6 +21,9 @@ powershell -ExecutionPolicy Bypass -File .\tools\simulator\start_rbm_simulator.p
 ```
 
 Keep the simulator window open. Its command prompt controls the simulated EVSE.
+The launcher uses `python` from `PATH`, then the Windows `py` launcher. On a
+managed industrial PC, set `RBM_PYTHON` to the approved Python executable when
+neither command is available.
 
 ## RBM Network Configuration
 

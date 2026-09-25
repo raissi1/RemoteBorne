@@ -1,135 +1,751 @@
-"""V14 Test Sequence module restored from the validated portable build.
+"""V16 automated P/Q and CosPhi test sequencer.
 
-The embedded payload preserves the exact V14 sequencer behavior after its source
-file was lost from the working tree. Keep this module tracked so future portable
-builds remain reproducible.
+This module is intentionally plain Python. The V15 delivery embedded the
+sequencer as compressed bytecode, which made reviews, maintenance, and
+endpoint-security checks unnecessarily difficult. The public API remains
+compatible with :mod:`RemoteBorneManager`.
 """
 
-import base64 as _base64
-import marshal as _marshal
-import zlib as _zlib
+from __future__ import annotations
+
+import csv
+import math
+import re
+import time
+import tkinter as tk
+from tkinter import filedialog, messagebox
+
+import ttkbootstrap as ttk
+
+try:
+    from .energy_manager import ENERGY_TOOL_RESOLVE
+    from .setpoint_validation import (
+        MAX_REACTIVE_VAR as MAX_REACTIVE_VAR_LIMIT,
+        finite_number,
+        validate_active_power,
+        validate_cosphi,
+        validate_reactive_power,
+    )
+    from .utils_ui import center_window
+except ImportError:
+    try:
+        from energy_manager import ENERGY_TOOL_RESOLVE
+        from setpoint_validation import (
+            MAX_REACTIVE_VAR as MAX_REACTIVE_VAR_LIMIT,
+            finite_number,
+            validate_active_power,
+            validate_cosphi,
+            validate_reactive_power,
+        )
+        from utils_ui import center_window
+    except ImportError:
+        from src.energy_manager import ENERGY_TOOL_RESOLVE
+        from src.setpoint_validation import (
+            MAX_REACTIVE_VAR as MAX_REACTIVE_VAR_LIMIT,
+            finite_number,
+            validate_active_power,
+            validate_cosphi,
+            validate_reactive_power,
+        )
+        from src.utils_ui import center_window
 
 
-_PAYLOAD = """c-obG3ve7qcG&!Oc6PB?EI<$hK@uEMB*mqO<wrW5Oi`355)>tq5Jf<wZY6qeu{{75SnMo&1_Uu#$d0Kh@h-+i@i|I4IwlM25=YME
-cTV{df8wfCoH&=W9hc)&WpYVem7kfaBrYeFa?y8E-h16My9+FJXF=?l{!D+~d;Na>djGSs<-b1o_aglB{w5?$DJo25T1_pg^wf$P
-J@ukaPotQCr(QFb&7!%SEGAXa-YTYo95Yy=mR{~F_NmGZrT&tkIGMGts0#i;t=d&PPPO+$E!Fjlx-
-Teo?SxF3S<Jqyuq3nIRhV^GD-JMiTFIw^&rdtIR-AgpVfNMIuiNE1v(LNU)rG3<JDzVhYGvOkuXy&H%k68<vg<o9xxDTa9^jIv@>
--altJWM=E!W)nFum+}UU}Y`b?-b-p+2vM{S~L~JG``7tuuGE{3;YrUMbDI_S)s=4;(yFahI2I$cfwbWZmKOYgfv3_@2+e*wy;{jO
-*6yQ)iDe=l1dXO08x$o3_taocw|3?CPBTmOT;J2M)^q4%j!Jv;769PIGP8)w+Fr#pB0oZlzp1K3lCHf8-F<?z37vXEPUvy92{DU?
-BVOVY|HyD1rPecgjoHu<kr(&s9HjhE8R{wV!z8eCn<bi&z1`xOLkv^LfXA!ajTW)N{6Tr|R1$PkmmDP}xd@dPIXcfU~0j?I}oiKy
-zBrU^>v8Q8d{(X0qhFY7wY`rQTJF7E7}}c&1o}^}{pGvTOjJeNKku*x<X$UA5THhS&}$%d%m%6P^QXgzbW7j=jW2*>31<kd3iDP%
-^~!vVHK}!N%Escn&k0JqFL6>;QWlo+IoaI|R>N>^wWno`5e$*%6k9lHKemdlH^w>=>JX=N?vI$Kkn`onR;7xsRP<Pr-AXJ<UD`&;
-9Hf_IY^P>{<3B@O+G&X3xR%06W8;hv(z$0(*hI2qPS13841La0sCsQTz=e$>8NHE^}%?xJ2<2o~*TjsC^(Lf1&IH*qzD>R0BR7d-
-D49WVA7Cs4Uxlb=fIY|KzBma08%U{fXCAWvXI!AO_zP@b5e#rw+(zs!gS&G&M-orVgprG$7TR2}q531yW!TkeZYx8Md@2O;MU=*r
-t!tjNjkNHq}jRInY!V2U<C%Z>p+7?}Jz)--nR3Y-+0F@4y)>4j?JqHDv8D5QK%bl-s$f$hVRBZ5K<ybCi16y*P%1vw@@Tp<G7h_W
-HY9W1Bd$eN^5r%f~5~mAU<t8<07hR`M972Pl1<(u0&9qVzDOPf&V<(mbU{DSeXCV@;(sA?DjE;FBqU`rH&phIH{^KT?1lkwEob*f
-G_b2FVy;uKKUxZKjyJaiw%&^77=&Wa-8$Qx{&l@lXfe2+S;TyIfmwLiI$bo-
-Ar7PXy0gbINSZp0H<Esx?O36Pi>R&<2o2OiHs3uq4O!U@PMuFXWGh=5pBsz8I!FZ=nRupxaE<D^=Wj-KqEv3kMtZQmwjN^-B%z-m
-WreJ5+M(rAp29oD#6K+HAS96eggTh8LQArCzEsV7Dur1IH}^Z98|uBox<S#L#R26Ng^2p6@nF94F@CDB042TVo{#%cxcBPB>Vih9
-#P+!%Ag8)O~-cXwA5dnseK!g*tHZFyUAIno~^qyj=IHFkUgaT!pv5;Yj7h6n7v~o~=2dQLE1R#lAVWvf`Bh3>Bwn!HRsh;?}|htt
-Ql9gw(XpVW!v1JhYZ!N0x5GTe@8FtGC5_2KZ|`m#(;8W1&j#7OjCwVctHBgYSmV9VfIvE|q-ejvpp(m0+TLEzHPIMJ_q(*Gpx_!Z
-g0DG!S><orAc$?S!T%4=sEG!>ETTd?N^nR|1)+NAQNJ5|Kk`r5ffCWwe~iLb*Qgu)G->o>QCS8GsY-$0Uo%0D{em@cXgCpN4{m!y
-d1^jclnD(NdwY7Fs1hFAzrQ2y&Ad<S&+~KH^WysQ8yvbMP+>e>p8nZ<uDaM}23h!Jh5RvJj12Q9GC$&OIrmkN0&T0AE>D?<tF<@o
-Z@8YExa*nU1Vy1DT7uXdv5RmdqtsD$4mvOGS3It~Iqqli?q*7?#;U7NvE52V*3g8n70SRU5i&3({&skLy5Uv0<u9Qr%9`kEn(DSt
-!Hgw@H`-$T3-;YN{yB*xn6&U2jG`#53{JY|mZwf^u_w-GEvHShvCU-B$P~ELqo}CC%{GAJRxV%E1jSo*_s>IZ9tshgoD$F2Yy`Hx
-lcKW<t&;%?^on%|xr89ez)lQ`r;j$h*XzWxx5j-&9w>S?YHHpnp`Z?#Xt4^4nwaw-Y_S&53XCDWyTk4N|+pwmy!>eVpjg#}KSZ^s
-xhSJE+~sZGD`I`*^BHAHz@@t>J0-wvAn#eXa|;d*Ex(1~w9shCuwSn@w{OVS}}4_N?rAXVYXq!cIf)BkZ{i1Ln62-gg0og4V#!O4
-`C!FF^Sydy&?#8{T(Qn-g7a&as!EW=!_92j2JeXmy_OcLDJy``ZgG_x5NxNi8pSwA=?R_w{J`GDEnI<H%cTk$Nuy<dAxk&7_3ED*
-}3u@7#S!*nM%1y}E9}_xqd4rp0~~pmv#7WwR?l!+ACZ*m{k<`ZaSs#jdi~*)=u|=?s;mn-=Vcv+I2@CwuX+W?wVa?Axs%c2$MS4n
-SEN%bI=cjV1kkgCAqpVYlSi4V>5e`mH~qc4D8r665;uW|F;0H3!)jU`3f`M(&ZKXhU^}p!6_%YeN-z*fVd#^NGz)p3>j!U&OtDJN
-ahJ3wAd9*^d!D9FbVe!+U-kJ@kW^{36sGWo0(Ik$`qjLhi|JnCWK~qKRX1y9vlm^k~PRyntASI)}}5)y)%jk4x-2Td=zTdBkqEnO
-(#k+_|C?izk~|*sY+2uti$WDd_1`CkG~#Xld#}M%ZY{2FO2<y+vcz^%rKqs58K*tA(a>rvWMrX-=fr=GCIP>Qv_!{0AD!E6rKWYg
-GNf!fGSbxw{&gAlg@!>!Ar2O=W2<G@$>rVAr`7-(3dj%Iq#3EUyRFv@`EI_8YG}ATbEjs4<)c%I%^t=hppDUCrzKd7Q{uOkRK_xI
-9^|EX104)dPjA?t_Y6TeHh^pj@G?WjDBUyXt}k8`+xp4;2Q|+OZTA8{a7uQ=S9b7c28MSkp_;KL~f%^*w*B=0M4FI4mwTG^+JE7p
-9lN>4BzEMLmaKz$(?r8|_&ZlK>45Kq#i0y((uaEQ<$e1eq9$KTF^vAU{Ac`T*6a2T6hk+9w~Y)GmUyA)0r?gW!AznjkJhQ<(9g1!
-@yRm_YlBR6$Cthngd*I*HXP^A}{t{1Q%d_{^E}?((b)X8bf*MyQUSJ=-Pm@f|5(2TFV#?w-<8Hj%2-sl3Wh3A!>%pfT2cnEO-
-MH)=Heb2tU-Os%{;%gSf(Lhk=yhe4s2vJt6Kg)?NtduI#Lhe75X>4NrE`>h){VfMH*K8?vM*j?_LR2J>m?Y96&H~AH;dli${5Q1o
-s@gK#e)+Ho{x4fJD3|6GD?B&Z&nZ9+F8~&Q@yGU9<I-<*ly9&gGFfG{U>avaWnlNXsyi)T${N`i<CWf8zHxVF-Hoj1O#VryO2Y+!
-ZMvF0-_nl)bqVh25tyC&ttio;}!XdItO4<fx+nMttT+*Om_j_nOOkqz0Z;*NmixF6jsPAp0GxHkhyG4_sqRNBh70B5ujh;>hLVQ{
-xo&j?O)N4}@K8622R>OYms1%JN5dTIO3GnNXe1tDIaAGMM3zh3X!)UZycq#6;#|VET8ljjtUvtn@h)Aqx)IH!{sEvaG6&k3cho(R
-<0NL@;Pzw!Y6v)TWswi3uu$7<~fR7+21Oj*$kmW59TYRWK9^@p&*~cYK6wPV+{=o#&7vlB79ZXv2DgchH@Oj#o!czt~nI?3U>y-t
-U7p>b47>z*vfJ)QlXlxO_LapurKhCas74Ft*k^+LEGiPSN?zvrcR>j^udp06Mm6*^p+AXnZ8YZry@ls5#mN^-U7OQ&5&lnJ6Okgx
-1zlPtBO@oCa*{ifQBhDJ6C+{>|==}Wj^)SH^9x(KqG2a9ffN2wCA{5x@GBj3Q&VZP!#K2a0xk2OPpW?d-Z5MfY+2Lc7y;YWq0|M~
-Cs^_ZnE8Hn&fXTLV#yqdGV&Zan)~WG>*hQM&=dd4`71DOmir5?9FXRpIn_^-T?Lltid>_N)2}}-Pf_4^voUroJitoGi&;p5BLdxN
-JoZ5h}8`~s*luCsK*)Dw&`#FXQl0w*5L7Jp)fVd*G@k1m!B&`WSlA0zY&z5;Hv4)MpRJ`O+2WkaFzUG!$JQQ(v?(+hUlkwg8`I;l
-_RDPUbiH0gaL9ECjtd%O>ZN3lZHcl{^0pZ3EBPs@neTN1IX^4bg26lo{nJ)`Yg<H0mL7@f=8=(V>iRg<j#EWsb2igM)8!t5KfDMq
-i@v1CXjt?2Hm_mb{u+_1vX+xic<j0T`e1}9(PFk>ObqJn@s^Q=FO~d@2nP}%M$PKC1r>2pEb{TcAwwKz<7Jq6chty#x6K(dY!;};
-0xYq6`{XNsfkw#$LVfcs7G5K#?%gNao@EusspO^;p2knl)7uXv9wCL+m`EM_MhxNhU&k}xJf>)Cqk^G3bE1Sw9sJENI6_?P^2BUj
-XZ>oGR(?GQbg>OT6{tPNT#dIjuWU1=C2{j4)x@B%EGM8it^cIqeXiiC8q7KL|*Eoj^NORnv9FIHl7HyzVpLcw*UDo66a)7qH=ksc
-Vzavzar)Wo4y;9?rz-^mZqsH)C5tmm0k|Xdpqy~@og3K0|N=4fuF02SZfufN1&xA(-Jrc@_!bfp&!6gAK0EaGtq_qsxkek|v3NxE
-3q{;gU=?>Le31&z)Dt={&uWl&yVMFoF#pIeVPGIDD3xY2-6<CKZoj!Es^r30~9xn49K?_ughw58_cGC{kGyyelfwBwgXlMbz=J1W
-S9)UA7t01blUxa<`(B=%SnM!SvbC(0-q`jGx2QNk3_REbe&<zb>4)gy8Au>$hMK=(Vb{2>*L)$0V)eF$@RmJE4ZlcqReXxW2!0ga
-`ps>5zIyyr%^k^>vO>XEUsZkeflu=fIR6$<O_tLC^Y|6gRxh~Wrq7P#U2IqUQ(N7b-G~C9@wiTHrD*gkUh#9Xb*xhRt)N&h<q@s0
-@Sj+k7FNT%e1wsL&9yDl0bK2U|0<E|@APDuoc31sLRUp|nT0ktDsy8KTHBsBdqcwdh7_^sHz|fg>?D`5|v|1?yxwvQ!9cfMhG?2s
-`ux_7!8P}CP2k@u@8+8c3Vfs2M>*C!2<7uI2RXy=3;66nFnyWgfq;SUr#d9m5k|h{>*5UsZmzpIOq7g$HCKq5Z)(c|dlWmMA-dCr
-#f=mUFjUdR@4oByZ>k*J(haq7QNam@p=5M_C-$k!~^a2pXUy1ymVQTVD#cB9e5U~1k`A*C-$Pd1CWvNo+A^+cP#(`_gASLu<snG{
-rD@)1a8CqFQZ4))J(-v|KT`<^94S5Ka7*wJ`2@-musT)93ODewzIde(%X6tCHCmGcOVHj8r&&2%%5{Pd#fl#2Y)TXjz@GnD4(@%^
-1UBP#BA|%yM`+eB<u6Wb&4NvX9X23>MS$au(U*%coJwt4~A7-6sCZNoqnI>2t%+ZALOdM}93#0upjF!Q77^h#1Lw%drchg|mGfLf
-JihL{5v5)NgeYIh;f%PQyon$%a+hT)Fi&hV{{307#QsMb#9rW6I7RI$;zB{Pyi!kmmt;&MFcb<U}fF?$OM@FVxkh&Dv<-u6|8t<4
-{$6s}vx*a6Qh7VG<u-LsqurIa-
-sWC9YHG8${FI4OHlgB3l%f4YBxmwQ`!UP@I0MVh+!WkxWiqybK)&=Rd<rwVmup)bQoUlRDFOZE*?MNz;fjKV;{MY$?%>Ctmd-xCg
-3WH~ZgVIin76lz0nK*gOK9RRwZXY>u%szRufF2Y)qR8h+zVa_&@-<BCND~cnS6-PaU3%^Eh0^ro`PZf{Ohd`JH@iys&yu()&w9K?
-Z`HaFDli@_3k~<nq9ge1+T^+OGp}5qEL}f$jYM}oC5-khaGIt4$jhsxTm0upyT*4hTmDhJLEF1Djb}c~q~rcS++fEfvmS!KG18t!
-wQ*uaCY@41xt7+3;r%FRP?j3(>$Q>NJ|E4aE=cjjbJ2bV)knp%2yZXR|Ev#uiD|oG$K8NDa4&uBY$U_6g_Pp@lvs``Ec8RfdxV}1
-jEes}*8OZ-!Qp?q2NVWk#atZB4XP1020m;^S)5UW1HBg8{b`pVL%x-bRy-tm7wI@zoO`tL3(CzL=|8w{HPm8mjrz!&3_8X5%G<!l
-P;fJKH*mEjjTf6B+VBXO`YJM`ezc?3_syvOu3FE5#)LT&S|>j=?rXq-V5CKgE`XN6VVXKi?@~k$kfIM5zF`^6!I%9kyQ$5YYykb2
-x1Mg|sK`aKEZ0;eXZ;_*OK85tOR~gYY+4bH0rQZ$nbJzP^Mt>_DM7?Y8AP)WQ?J`DNC5z8kd)hzXg5^nLxul^$lJM<J!}epie9ZU
-{(4LieZpSLfGz_HDX8qA=7c6j6!=b<a!B%nX~+kojSTi0s66k}Tg|B#`(s)HO#2|t@uW0w3dJrXD&=vm0b+kSOi+flB6oTaTYm|r
-0Opo3EXR=4Y`N<UvQma%$HC6~zLp?c=99E>6!u|Y_aeT|uDVFi=+p&I<7QL2#Z<H}1gXJ4vPV#WBI@Q6M22{r23nI)pKl!`6d6-O
-J?4>)49iEmn#|}eRx|0uun$QyNIG?LR**?jG==%O6&}L~*Am*NU{9Ci7ZYl%If7BB22b?fdE370VmPQrrXv{qRK#%7#9oGR{irOo
-^i5?`m<rDVlQGt=tDst_N&w{B!XPkB60DAGkoByq@2J>^csl`%$WLN#AWHR7g`f)xL}c5wQjFlaOF^^cz8({Paw_aY=ah8q@MJ{T
-V8Z=F@&%n^%!yr#V2l*<X^s{G5o>6c8x6od|AmOd@eeThCMLg#$+s~1DxyQ0Av&-p{!80QlCME>N{#IglQ`ZmvHMZM`Fb5TM?RKE
-!~Cyx!Mqu%ZGvrKBnTZr1EbOfOoAbS52VMYdM3h2V(m8IM3XqtBu=z0oM`W85-0G6IBDWBq#9$v0xYP^BrGI5uwYH`e~chN=m&d*
-PtGpKK=)l+_>Kzvmr1J@F4{I$1S|R#A(9C>--uE13lXjadcN5UDFPqA)&nVM9iK&{jKxSni7R|5LlQZU5K3G8UE9QP%o)D;Sr{6Z
-LP~4tag37T0~`VRPzv;}jw*M7qevK|LJegEW1|Dc3F!;|W$F4yuUiKMe?_<|+Q1|7*1;|$Xo0O!tqY3&YKI)}MaO>*k}C+ZTo=d;
-!9#ihYKseS8w)i$eHGgP1=2bKR2>Mi2}?%?ie=sfc!D&<r%y~4WMhI~k|2dvyTubU98JERku_(;2G9jyBP~abKnSLI8&<y<)7ZD#
-j5kcNDwhh-FA=X0QHopPh1kEb6<)*YI6M#Z7C7C|+Ir>`lhs)XEe|aj)yqkk#oL{qCibh#Krll-r4L6EO=y+9r8UQ^yJB}fL1zTE
-1A6>gOg(elUA95t_hO&<3&CLQ!X^){!@!JhGfvu@7}^9??d{lcJkf?v6OuB*CnF`1L7_RI_Kx>}O^3U98yzJh$o%SO(2;kfsddoG
-v6xnXM#z#yhlY+?n%s<LE8%0T1!>8$%)&MxbRzALgLat3R#*n`)#8?E@ihu4&<@+>eX`eNyVq7G4%M@!I*bm~*ZAMV<fF*xNE%tb
-zbA>3we(JGD19^b<$o#m<v$*|8zm|8nRv6$_Q24O;~@=VXtaZZM<7j;59KJZ$YC{jthe{9!y(^=Fssv0`6JSuV&(dFQ*9{-+<5aJ
-003LUEeXoCj;=`r9q>TwzAoEbWT|?ZrO9>KcOP_tbx^N;bS3mht(!XJviD7N5HyWBZ5l@%0K}W<>GBQH?yl-5S|<EUHbJ4^REHIG
-3#=zQM$I)%Hu#~zhMGwlEg6rsgS>zy8x~(d$<FwzEVPS92D5*QQcg$?hU|%n$d;ZE$E<;N^?9O&z_4!|v-#h_SMBxZAq%#5aIwPd
-<M494ymF^Id>do3#nFZhCh_H0Ub=Sf+80V!&&^zVz9TNYR-MI$!DAg!+7r|EglD^zM#G*c!;IuacGwfk_IW&iE7ztSzu|&8O=KDL
-;mm|3@jU;#bf9_6e%&sw`0n$;L}$+vcsw=Xl8?(i5cMKHEnThn&p)809;S%$A2=ltYGhIDn4Frt_VO2~EtvAtuU)=ADGbxUg$Z6r
-;C~f0WZf^<i$)pjb@=qDnC8inw{Dfhyuv=_coklyj5zxHh}7#_C0x-~^*U3M=YMFGud32LsE`|OL_MNus`ja&nV)Ey_KEqamasHS
-J*bY$^6V#uZhjxi&0v48P1Mo%HZ?HbLVrJ!23a3A68f0t$$PhmmhVpq&wmTIiWYM=qow<#Hg|9~6Wf52VMxyQCQATkONcTIo9^I&
-x-2(YvZFjDd$r<T)fW2o`h*E^YgB}NN2ddMJlQY%Ht==Nr`YmH>THb|{$W^Rrb89{VHx4CMrx$g7K^DUewp=Rhv85us*fX5zk(<q
-k=)VR!WqG=Jk$%V+j@Dlj(<SiF3`M#J#_nw(Cs@ct%VLtOKA0pA7p7YL7Fa_%=kPgO(l~hDE8hYq$Mc=A5)BhPXlRX)&bRk?$jCO
-)&~O3LYM(j2!iNe%!(L!5kC*P47xiu#Gz7-@=@(zYlsc_JFsu$o%b~<8i!e~UCIXU%gFxLP9)h_of+!1Gmf7ZapY)TU=S2tS=d5T
-9RcbEp*|xDW-b=Z*D)NO38zPFk_!v{7MhQmI03})fMC}(5n*mm#I$?TcIWJ1B-W8+EIIj2?I07iJL2UF`4J(;v$09@o88vT5GEM@
-!FOUZ(xr^@e}qXPK6k{EZ93DYgMUH(v05LdN*E(wckcL+W%O&068b*@$%k!DCWOAQi-eDIRLjPZ(rHrI(lWw&6#jzI9wbjt=+Xj`
-l7&&&^l25NTkffg%98Ho;Hi4Uh*x;i_>p^{%Cgv{1!V?*6;hDYOnXmxPo1N)UJ)EDTC|d|OTGwCt9_meU!?prq<y6Ry+gg49kqSf
-0yF}RVfeIl2Fo&7#!?hmsV?@nfS#$OkF2mv)F03*sn*cv0J<23OA&H8*5A=S+ce^qG@m&QW)FG@%e|XgPe94w;!sm>CfFc`Z@0g^
-kKx?I8zu(zzOQ=E(8_kk)IT!ya0f=FG=R=#*KD_ePB)i7cnGll0U<@8ZrxKTq=;hIz8#SQkU3G`Q`^Ie{)rj|F7*ssi|DLJ*xEDG
-)0b>{$pck@n(O%myjWMR(k_bc+ktp@=pGoxG!}xPw#6X>7FjSb?bI<uB#OTg8&=rBQB{{00aPZ~nGdZf4l&S9+ZBBaU=k5<hGe`I
-h%6AG5tk((g@bLm4D<FD91P+4kjx(6U2=p`xFsMfw4zHZzl~dqc7poD0x<gY0iJ(f>@dKh1%l1`yW|nXBO`akFQ!pfDRHn#*NTZ6
-h5!{!uUZ3W2IpoLoH!hm?%vqkStK=GSbDP4g5ANx1Z{ccIj6Q($nOxeF&r_aFexD+_!Pw}B`8XYcw1<e%Cn$}3Rc!_Qg<+`e-Rst
-{ldE`uASwRf(VCVenm>zKgZ;Eg=Qu=Ho^M0Vp2s?{+24OWek`xh+SbiN-PcEbC_xwVsHmBB0w9~O%e7&rxMyj(=s1%o*Ln)D@efX
-JWu^Z5m()at&O8i&d0lK&;wmIr~%fZfsD?3m)?MpG%nMdj&BU?Q#|3s69;CJ7sCWbm5kj(B#epCq??I|(Z~@j{tedG^SczwMD4&_
-GFX-jmH{xXwzc-tDC9+(U3B#hg*^XXvRo-;p}zs#G7&4rt7mTs=P2i)4x}0MzfoVRyQ_8Ep>zEN9q+eyFaPbxQ5&S}xiVg_J#7a&
-r!mxSf+*3BFK`9>BCgjnB<~>ww<04T74e~Fd-+@k>9#5HOVN3tpvm8lrS0!w@)Z)G%Pue^w_dIAU9m(S6^DGQ<*H9t$>hO>7=yUL
-hw-_g$s8Y+vsK#u4kX`2GCe|MI!-ENTHOmInNi1xTrILD40V{oRgj2-gP&<FNUqey-Hc9oTR?fM-qWPK)na+8fxLZ*VU2!IL7V&x
-mKpaHabj^#>vSSPjmhUAO`@DdN&KERr_=S?SQh&!X5j&QD+BHN{cLMsQyEq8=<F_r59s{Au@u?n>HGSlM_tUd23a5EGeq9~(wZmP
-F2^5;$Io?+&jvqZEkhlB4hhXt<nL*v9Z)}fuYHiVW2%^x)Yd_){|b}u^b)g1BuUV@1$`mBl}(Lg$j2)GZY*eZK`4)swtpH++vB}(
-9+Td7aVuP!{|=L|dt)W(3czVpM?Kh0Qv6o`uli?P2mcT8eE;M2nQK}UevA>PB({Te`^rIn=N2i_AryWu-eD9kg~40=uVeD_u`zE{
-9N0{|qW#JLeYY_AYOFecyTjWR?@PR+DVN<bf0{aC=8x6*uwKZGtlWYoZAsjuBTzC<IjkGOO}Xzg5wy*n8#}-MATr>kjkl;~6uKEL
-;u%qF9294Zaj>4s@AxDR@QyT|#n1t93J-|+A_d%_m6immPY?@FV~&{{kqc7VX!Wzm-toYhe;rwQ^afU7f7Jh?IjWF7*w3QT@Ow+z
-VOg5ZKVvDFpDY7z@?8=HVB^L6Cq0ER_8uMxqZ!376Hlc0>rUOx7A3&yBW6ywRX{D7<8I*83mw`Ir|wt*6~0IzqOS}2K|xkKW5Z~@
-n@~n$@_3{=vMVN|Z^xw5%ZvTz(OlQiRFBQ2G-wzmc>*XfRvV^#1{gT#61^NfogvEG=tS>~)gxa3x&1l0{po(ZN_XN(tynZV;$9P7
-IWvlGrSm$o<D_)vV%yRUo}TWKv4DxXYvUCuRN2e5Sm#`=)@m5TBUJR4yT1ah{-rB6(!Tid3^c<dgbE`-=$~Mr3uzVWmZ=Vgumyc5
-dTjAt82L#^#<lp|B}4nxq{IJA?^sV%E4r-Hu2a0j1b4IrB=l4kz0sa*s<C}wOa;5Qsm*Sr>!k2NnqJ9K0an9TV{Z3B`|u5;8Oz?b
-qkK|Jj%Ytb%qMBvk6sU+)idFW6V!vLM!Q?5)Sy^sGhT0!X_4!1G1Wm)=|wu+0Oe44bowYC)n@#D47Br!4`ARPoo1$_+9`jRLGp%+
-Gwl#zL5svB{$(7ELML-W9lLrY-lL=4WbsJ12<`7*@3HYa&pqdR&=cZkLhCpMiT*ON<7500v7~~yyS8+)GivFGbnkhif~-1SdcI)(
-6qSuYo(BfIVNeX$v*hw?p+k?QqMO-&vAM4Ku*uN@fvQ!@ng><s=LpPxiejViwzzgdxq0DjZQWSMlPs%gG!ra`F-dF?(^i@dvGk@!
-Z#%>r8<sUYF+WeD;}(c^27<y+?!tWQxs!_bofAqFK}K%KGlt^#y|1nftIE2mD!~C-;|Q#ASJNaHU)vRFzGF&PB)kb%B(xocw!7oa
-HP-3m+Ye?ecTh0Y-S%%y06!6@9))07-p8R|@`)M*Mxo-}&TB#H{PcAjf4s*F5=W!5bHLF=nSQiz6qJUa!Qn6(yO@(#+rZv)>K<^y
-VhUUOYYoTa=i?)s#EL&R@oZiTlXYj6epAANVO=yrz>b}bFN|37#~fCLUz$!BGW0_ZGOAM$qPTWS9=WYP@Q=E~v;Gr~KJo^I>9nDM
-myu4Vix%=7ytf(bkC~HbfJVKzQa86!L-w0#AL4Sl<vLjQmb~(9U`V*$diy?-+i>ck4v-7YRbB=2t7wU*yUPDT9PX8TZCb?YC*?hw
-M%iBo%>`ioH4&HHar)RRP6IDVK8Ks{gxq{t3K<l4Q_Sy~rXeFX(sXaa08u;k$x#EH@T0v|vi6Oii=TaYf@JMM44LfQoFae{dB5;?
-gRZ1YkGW1Bb2?yI7yK0CIkdYfzXmD(d{tJ+Vd<yG%M-v+dt9C{r}#gON&N`PRurKzoulle-^vg!8}a*6FA%+4jKY{ch-9JAU2?G(
-if-(Vk&lG|c(}Vp7c2N*>Np8W(2tdngJmm5@S4;cS{zr0_Nn=)p$ji@^!phmxlgjay}>kd@}-IYFXj*7&w3znl}cbw;{}(M8op;r
-rCTfInyg8dO3ba4O8jG-$Ja5TJC4sp7o_NDTL{$;L;#^*_N$d;$6s)nh#_vpp+n#3_N1>xQ9%^vLctppp+JY=!a4Puk$YUIgufG+
-3#0=IQ2%}`(C<dD>VRJxh$zBw>w9>0*HR6Qh}u#frk}A~D`{n{gr=rb@V3WFrFU2fC>gNQ@Mop7)-J2x+G`!MMyye57|Ie>)*7Qe
-^Ev)MvH$-P8A`%?k@T0Uc)wC08mXSHorD?RUlRAc@$MmAI<!{&YRxOHRO!cT!oF9Qal6naE@nJlDa7@^5iO+G3PbCRz#;}&30g5U
-OBH`P&C<kW1(A*#+NWCo{|9vj=fe""".replace("\n", "")
-exec(_marshal.loads(_zlib.decompress(_base64.b85decode(_PAYLOAD))), globals(), globals())
+class TestSequenceWindow:
+    """Create and execute an ordered list of EVSE power plateaus."""
+
+    MAX_REACTIVE_VAR = MAX_REACTIVE_VAR_LIMIT
+    MIN_HOLD_SECONDS = 1
+    MAX_HOLD_SECONDS = 86400
+
+    def __init__(
+        self,
+        master,
+        ssh_queue,
+        is_connected,
+        pn_limit_provider,
+        on_close=None,
+        on_steps_changed=None,
+    ):
+        self.master = master
+        self.ssh_queue = ssh_queue
+        self.is_connected = is_connected
+        self.pn_limit_provider = pn_limit_provider
+        self._on_close_callback = on_close
+        self._on_steps_changed = on_steps_changed
+        self._extra_editable_widgets = []
+        self.steps = []
+        self.run_id = 0
+        self._active_queue_token = None
+        self.current_index = 0
+        self.running = False
+        self.paused = False
+        self.stop_requested = False
+        self._hold_deadline = None
+        self._pause_started_at = None
+
+        # RBM applies its final adaptive geometry before this dialog is mapped.
+        self.win = ttk.Toplevel(master)
+        self.win.withdraw()
+        self.win.title("Test Sequence")
+        self.win.minsize(900, 650)
+        self.win.resizable(True, True)
+        center_window(master, self.win, 980, 700)
+        self.win.transient(master)
+        self.win.protocol("WM_DELETE_WINDOW", self.close)
+
+        self.mode_var = tk.StringVar(value="P/Q")
+        self.active_var = tk.StringVar(value="0")
+        self.reactive_var = tk.StringVar(value="")
+        self.cosphi_var = tk.StringVar(value="1")
+        self.hold_var = tk.StringVar(value="10")
+        self.status_var = tk.StringVar(
+            value="Ready - build and validate a sequence before starting."
+        )
+        self.tree = self.log_text = self.q_entry = self.cosphi_entry = None
+        self.btn_add = self.btn_update = self.btn_remove = self.btn_clear = None
+        self.btn_up = self.btn_down = self.btn_start = None
+        self.btn_pause = self.btn_stop = self.btn_import = None
+
+        self._build_ui()
+        self._install_numeric_validation()
+        self._on_mode_changed()
+
+    def _build_ui(self):
+        root = ttk.Frame(self.win, padding=10)
+        root.pack(fill="both", expand=True)
+        root.columnconfigure(0, weight=1)
+        root.rowconfigure(2, weight=1)
+        root.rowconfigure(4, weight=1)
+
+        header = ttk.Frame(root)
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        header.columnconfigure(0, weight=1)
+        ttk.Label(
+            header, text="Automated Test Sequence", font=("Segoe UI", 16, "bold")
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(header, textvariable=self.status_var, bootstyle="info").grid(
+            row=0, column=1, sticky="e"
+        )
+        ttk.Label(
+            header,
+            text="Each plateau is sent only after the previous command and hold time complete.",
+            bootstyle="secondary",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 0))
+
+        editor = ttk.Labelframe(root, text="Plateau editor", padding=8)
+        editor.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        for column in (1, 3, 5, 7, 9):
+            editor.columnconfigure(column, weight=1)
+
+        ttk.Label(editor, text="Mode").grid(row=0, column=0, sticky="w")
+        mode = ttk.Combobox(
+            editor,
+            textvariable=self.mode_var,
+            values=("P/Q", "CosPhi"),
+            width=10,
+            state="readonly",
+        )
+        mode.grid(row=0, column=1, sticky="ew", padx=(5, 10))
+        mode.bind("<<ComboboxSelected>>", lambda _event: self._on_mode_changed())
+        ttk.Label(editor, text="Active P [W]").grid(row=0, column=2, sticky="w")
+        ttk.Entry(editor, textvariable=self.active_var, width=12, justify="right").grid(
+            row=0, column=3, sticky="ew", padx=(5, 10)
+        )
+        ttk.Label(editor, text="Reactive Q [var]").grid(row=0, column=4, sticky="w")
+        self.q_entry = ttk.Entry(
+            editor, textvariable=self.reactive_var, width=12, justify="right"
+        )
+        self.q_entry.grid(row=0, column=5, sticky="ew", padx=(5, 10))
+        ttk.Label(editor, text="CosPhi").grid(row=0, column=6, sticky="w")
+        self.cosphi_entry = ttk.Entry(
+            editor, textvariable=self.cosphi_var, width=9, justify="right"
+        )
+        self.cosphi_entry.grid(row=0, column=7, sticky="ew", padx=(5, 10))
+        ttk.Label(editor, text="Hold [s]").grid(row=0, column=8, sticky="w")
+        ttk.Entry(editor, textvariable=self.hold_var, width=8, justify="right").grid(
+            row=0, column=9, sticky="ew", padx=(5, 0)
+        )
+        ttk.Label(
+            editor,
+            text="Leave Q empty to send active power only. An empty CosPhi defaults to 1.",
+            bootstyle="secondary",
+        ).grid(row=1, column=0, columnspan=10, sticky="w", pady=(5, 2))
+
+        edits = ttk.Frame(editor)
+        edits.grid(row=2, column=0, columnspan=10, sticky="w")
+        self.btn_add = ttk.Button(edits, text="Add plateau", command=self.add_step)
+        self.btn_add.pack(side="left", padx=(0, 6))
+        self.btn_update = ttk.Button(
+            edits, text="Update selected", command=self.update_selected
+        )
+        self.btn_update.pack(side="left", padx=(0, 6))
+        self.btn_remove = ttk.Button(
+            edits, text="Remove", bootstyle="danger", command=self.remove_selected
+        )
+        self.btn_remove.pack(side="left", padx=(0, 6))
+        self.btn_up = ttk.Button(
+            edits, text="Move up", command=lambda: self.move_selected(-1)
+        )
+        self.btn_up.pack(side="left", padx=(0, 6))
+        self.btn_down = ttk.Button(
+            edits, text="Move down", command=lambda: self.move_selected(1)
+        )
+        self.btn_down.pack(side="left", padx=(0, 6))
+        self.btn_clear = ttk.Button(
+            edits, text="Clear", bootstyle="secondary", command=self.clear_steps
+        )
+        self.btn_clear.pack(
+            side="left"
+        )
+
+        sequence = ttk.Labelframe(root, text="Sequence", padding=6)
+        sequence.grid(row=2, column=0, sticky="nsew", pady=(0, 6))
+        sequence.columnconfigure(0, weight=1)
+        sequence.rowconfigure(0, weight=1)
+        columns = ("step", "mode", "active", "detail", "hold", "status")
+        self.tree = ttk.Treeview(sequence, columns=columns, show="headings", height=8)
+        headers = {
+            "step": "#",
+            "mode": "Mode",
+            "active": "Active P [W]",
+            "detail": "Q [var] / CosPhi",
+            "hold": "Hold [s]",
+            "status": "Status",
+        }
+        widths = {"step": 45, "mode": 90, "active": 130, "detail": 170, "hold": 90, "status": 180}
+        for name in columns:
+            self.tree.heading(name, text=headers[name])
+            self.tree.column(name, width=widths[name], anchor="center", stretch=True)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        scroll = ttk.Scrollbar(sequence, orient="vertical", command=self.tree.yview)
+        scroll.grid(row=0, column=1, sticky="ns")
+        self.tree.configure(yscrollcommand=scroll.set)
+        self.tree.bind("<<TreeviewSelect>>", self._load_selected)
+
+        controls = ttk.Frame(root)
+        controls.grid(row=3, column=0, sticky="ew", pady=(0, 8))
+        self.btn_start = ttk.Button(
+            controls, text="Start sequence", bootstyle="success", command=self.start
+        )
+        self.btn_start.pack(side="left", padx=(0, 6))
+        self.btn_pause = ttk.Button(
+            controls, text="Pause", command=self.toggle_pause, state="disabled"
+        )
+        self.btn_pause.pack(side="left", padx=(0, 6))
+        self.btn_stop = ttk.Button(
+            controls,
+            text="Stop after current command",
+            bootstyle="secondary",
+            command=self.stop,
+            state="disabled",
+        )
+        self.btn_stop.pack(side="left")
+        ttk.Button(controls, text="Close", bootstyle="danger", command=self.close).pack(
+            side="right"
+        )
+        self.btn_import = ttk.Button(
+            controls, text="Import sequence", command=self.import_csv
+        )
+        self.btn_import.pack(
+            side="right", padx=(0, 6)
+        )
+        ttk.Button(controls, text="Save as CSV", command=self.export_csv).pack(
+            side="right", padx=(0, 6)
+        )
+
+        log_frame = ttk.Labelframe(root, text="Sequence log", padding=5)
+        log_frame.grid(row=4, column=0, sticky="nsew")
+        log_frame.columnconfigure(0, weight=1)
+        log_frame.rowconfigure(0, weight=1)
+        self.log_text = tk.Text(log_frame, height=6, wrap="word", state="disabled")
+        self.log_text.grid(row=0, column=0, sticky="nsew")
+        log_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
+        log_scroll.grid(row=0, column=1, sticky="ns")
+        self.log_text.configure(yscrollcommand=log_scroll.set)
+
+    def _on_mode_changed(self):
+        is_pq = self.mode_var.get() == "P/Q"
+        self.q_entry.configure(state="normal" if is_pq else "disabled")
+        self.cosphi_entry.configure(state="disabled" if is_pq else "normal")
+        if not is_pq and not self.cosphi_var.get().strip():
+            self.cosphi_var.set("1")
+
+    def _log(self, message):
+        try:
+            self.log_text.configure(state="normal")
+            self.log_text.insert("end", f"[{time.strftime('%H:%M:%S')}] {message}\n")
+            self.log_text.see("end")
+            self.log_text.configure(state="disabled")
+        except tk.TclError:
+            pass
+
+    def _popup(self, kind, title, message):
+        self.win.lift()
+        return getattr(messagebox, kind)(title, message, parent=self.win)
+
+    @staticmethod
+    def _number(value, field):
+        return finite_number(value, field)
+
+    @staticmethod
+    def _is_partial_number(value):
+        """Allow normal typing states while rejecting non-numeric pasted text."""
+        raw = str(value).strip()
+        return raw in ("", "-", ".", "-.") or bool(
+            re.fullmatch(r"-?(?:\d+(?:\.\d*)?|\.\d+)", raw)
+        )
+
+    def _install_numeric_validation(self):
+        """Reject non-numeric text for all setpoint fields, including paste."""
+        for variable in (
+            self.active_var,
+            self.reactive_var,
+            self.cosphi_var,
+            self.hold_var,
+        ):
+            last_valid = [variable.get()]
+            changing = [False]
+
+            def validate(*_args, _variable=variable, _last_valid=last_valid, _changing=changing):
+                if _changing[0]:
+                    return
+                proposed = _variable.get()
+                if self._is_partial_number(proposed):
+                    _last_valid[0] = proposed
+                    return
+                _changing[0] = True
+                try:
+                    _variable.set(_last_valid[0])
+                finally:
+                    _changing[0] = False
+
+            variable.trace_add("write", validate)
+
+    def register_editable_widgets(self, *widgets):
+        """Register optional host controls that must lock during execution."""
+        self._extra_editable_widgets.extend(
+            widget for widget in widgets if widget is not None
+        )
+
+    def _notify_steps_changed(self):
+        """Let the host retain the session after a successful user edit."""
+        if callable(self._on_steps_changed):
+            self._on_steps_changed(self)
+
+    def _pn_limit(self):
+        try:
+            return max(0.0, float(self.pn_limit_provider()))
+        except Exception:
+            return 0.0
+
+    def _form_step(self):
+        return self._build_step(
+            self.mode_var.get(),
+            self.active_var.get(),
+            self.reactive_var.get(),
+            self.cosphi_var.get(),
+            self.hold_var.get(),
+        )
+
+    def _build_step(self, mode, active_value, reactive_value, cosphi_value, hold_value):
+        """Build one validated plateau from UI or imported CSV values."""
+        mode = str(mode).strip()
+        if mode not in ("P/Q", "CosPhi"):
+            raise ValueError("Select either P/Q or CosPhi mode.")
+        active = validate_active_power(active_value, self._pn_limit())
+        hold = self._number(hold_value, "Hold time")
+        if not self.MIN_HOLD_SECONDS <= hold <= self.MAX_HOLD_SECONDS:
+            raise ValueError(
+                f"Hold time must be between {self.MIN_HOLD_SECONDS} and {self.MAX_HOLD_SECONDS} seconds."
+            )
+        step = {"mode": mode, "active": active, "hold": int(round(hold)), "status": "Ready"}
+        if mode == "P/Q":
+            step["reactive"] = validate_reactive_power(reactive_value, optional=True)
+        else:
+            step["cosphi"] = validate_cosphi(cosphi_value, default=1.0)
+        return step
+
+    def _selected_index(self):
+        selection = self.tree.selection()
+        if not selection:
+            return None
+        try:
+            return int(self.tree.item(selection[0], "values")[0]) - 1
+        except (IndexError, TypeError, ValueError):
+            return None
+
+    def _render_steps(self, select_index=None):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        for index, step in enumerate(self.steps):
+            if step["mode"] == "P/Q":
+                detail = "Q omitted" if step.get("reactive") is None else f"Q = {step['reactive']} var"
+            else:
+                detail = f"CosPhi = {step.get('cosphi', 1):g}"
+            item = self.tree.insert(
+                "", "end", values=(index + 1, step["mode"], step["active"], detail, step["hold"], step.get("status", "Ready"))
+            )
+            if select_index == index:
+                self.tree.selection_set(item)
+                self.tree.focus(item)
+
+    def _set_editing_enabled(self, enabled):
+        state = "normal" if enabled else "disabled"
+        for button in (
+            self.btn_add,
+            self.btn_update,
+            self.btn_remove,
+            self.btn_clear,
+            self.btn_up,
+            self.btn_down,
+            self.btn_import,
+            *self._extra_editable_widgets,
+        ):
+            button.configure(state=state)
+
+    def add_step(self):
+        if self.running:
+            return
+        try:
+            self.steps.append(self._form_step())
+        except ValueError as exc:
+            self._popup("showwarning", "Test Sequence", str(exc))
+            return
+        self._render_steps(select_index=len(self.steps) - 1)
+        self._log(f"Added plateau {len(self.steps)}.")
+        self._notify_steps_changed()
+
+    def update_selected(self):
+        if self.running:
+            return
+        index = self._selected_index()
+        if index is None:
+            self._popup("showinfo", "Test Sequence", "Select a plateau to update.")
+            return
+        try:
+            self.steps[index] = self._form_step()
+        except ValueError as exc:
+            self._popup("showwarning", "Test Sequence", str(exc))
+            return
+        self._render_steps(select_index=index)
+        self._log(f"Updated plateau {index + 1}.")
+        self._notify_steps_changed()
+
+    def remove_selected(self):
+        if self.running:
+            return
+        index = self._selected_index()
+        if index is None:
+            self._popup("showinfo", "Test Sequence", "Select a plateau to remove.")
+            return
+        self.steps.pop(index)
+        self._render_steps(select_index=min(index, len(self.steps) - 1))
+        self._log(f"Removed plateau {index + 1}.")
+        self._notify_steps_changed()
+
+    def move_selected(self, direction):
+        if self.running:
+            return
+        index = self._selected_index()
+        if index is None:
+            self._popup("showinfo", "Test Sequence", "Select a plateau to move.")
+            return
+        target = index + direction
+        if not 0 <= target < len(self.steps):
+            return
+        self.steps[index], self.steps[target] = self.steps[target], self.steps[index]
+        self._render_steps(select_index=target)
+        self._notify_steps_changed()
+
+    def clear_steps(self):
+        if self.running or not self.steps:
+            return
+        if not self._popup("askyesno", "Test Sequence", "Clear every plateau in this sequence?"):
+            return
+        self.steps.clear()
+        self._render_steps()
+        self._log("Sequence cleared.")
+        self._notify_steps_changed()
+
+    def _load_selected(self, _event=None):
+        if self.running:
+            return
+        index = self._selected_index()
+        if index is None or index >= len(self.steps):
+            return
+        step = self.steps[index]
+        self.mode_var.set(step["mode"])
+        self.active_var.set(str(step["active"]))
+        self.reactive_var.set("" if step.get("reactive") is None else str(step.get("reactive")))
+        self.cosphi_var.set(str(step.get("cosphi", 1)))
+        self.hold_var.set(str(step["hold"]))
+        self._on_mode_changed()
+
+    def _command_for(self, step):
+        if step["mode"] == "P/Q":
+            reactive = step.get("reactive")
+            q_option = "" if reactive is None else f" --reactive-power {reactive}"
+            detail = "Q omitted" if reactive is None else f"Q={reactive} var"
+            command = (
+                "cd /var/aux/EnergyManager && export LD_LIBRARY_PATH=/usr/local/lib && "
+                f"{ENERGY_TOOL_RESOLVE}"
+                f'"$EM_TOOL" -S -s ocpp -a --power {step["active"]}{q_option} -m CentralSetpoint'
+            )
+            return command, f"P={step['active']} W, {detail}"
+        cosphi = step["cosphi"]
+        q_auto = int(round(abs(step["active"]) * math.tan(math.acos(cosphi))))
+        command = (
+            "cd /var/aux/EnergyManager && export LD_LIBRARY_PATH=/usr/local/lib && "
+            f"{ENERGY_TOOL_RESOLVE}"
+            f'"$EM_TOOL" --grid-option "SetpointCosPhi_Pct={int(round(cosphi * 100))}" '
+            f'&& "$EM_TOOL" -S -s ocpp -a --power {step["active"]} -m CentralSetpoint'
+        )
+        return command, f"P={step['active']} W, CosPhi={cosphi:g}, Q auto={q_auto} var"
+
+    def _validate_sequence(self):
+        if not self.steps:
+            raise ValueError("Add at least one plateau before starting.")
+        validated = []
+        for step in self.steps:
+            self.mode_var.set(step["mode"])
+            self.active_var.set(str(step["active"]))
+            self.reactive_var.set("" if step.get("reactive") is None else str(step.get("reactive")))
+            self.cosphi_var.set(str(step.get("cosphi", 1)))
+            self.hold_var.set(str(step["hold"]))
+            validated.append(self._form_step())
+        self.steps = validated
+
+    def start(self):
+        if self.running:
+            return
+        if not self.is_connected():
+            self._popup("showwarning", "Test Sequence", "SSH is not connected.")
+            return
+        try:
+            self._validate_sequence()
+        except ValueError as exc:
+            self._popup("showwarning", "Test Sequence", str(exc))
+            return
+        self.run_id += 1
+        self._active_queue_token = f"test-sequence:{self.run_id}"
+        self.current_index = 0
+        self.running = True
+        self.paused = self.stop_requested = False
+        self._render_steps(select_index=0)
+        self._set_editing_enabled(False)
+        self.btn_start.configure(state="disabled")
+        self.btn_pause.configure(state="normal", text="Pause")
+        self.btn_stop.configure(state="normal")
+        self.status_var.set(f"Running 0 of {len(self.steps)} plateaus")
+        self._log(f"Sequence started with {len(self.steps)} plateau(s).")
+        self._run_next(self.run_id)
+
+    def _run_next(self, run_id):
+        if run_id != self.run_id or not self.running:
+            return
+        if self.stop_requested:
+            self._finish("Stopped by operator")
+            return
+        if self.paused:
+            self.win.after(250, lambda: self._run_next(run_id))
+            return
+        if not self.is_connected():
+            self._abort("SSH connection lost. Remaining plateaus were not sent.")
+            return
+        if self.current_index >= len(self.steps):
+            self._finish("Sequence completed")
+            return
+        step = self.steps[self.current_index]
+        step["status"] = "Sending command"
+        self._render_steps(select_index=self.current_index)
+        self.status_var.set(f"Sending plateau {self.current_index + 1} of {len(self.steps)}")
+        command, description = self._command_for(step)
+        self._log(f"Plateau {self.current_index + 1}: {description}")
+        index = self.current_index
+        queued = self.ssh_queue.execute(
+            command,
+            callback=lambda result: self._command_finished(run_id, index, result),
+            timeout=30,
+            auto_retry=False,
+            label=f"Sequence plateau {index + 1}",
+            silent=False,
+            cancel_token=self._active_queue_token,
+        )
+        if not queued:
+            self._abort("The command queue rejected this plateau. Sequence stopped safely.")
+
+    def _command_finished(self, run_id, index, result):
+        if run_id != self.run_id or not self.running or index >= len(self.steps):
+            return
+        step = self.steps[index]
+        if not result.get("success"):
+            step["status"] = "Error"
+            self._render_steps(select_index=index)
+            detail = (result.get("err") or result.get("out") or "Unknown error").strip()
+            self._abort(f"Plateau {index + 1} failed: {detail}")
+            return
+        if self.stop_requested:
+            step["status"] = "Sent - stop requested"
+            self._render_steps(select_index=index)
+            self._finish("Stopped after current command")
+            return
+        step["status"] = f"Holding {step['hold']} s"
+        self._render_steps(select_index=index)
+        self._hold_deadline = time.monotonic() + step["hold"]
+        self._wait_hold(run_id, index)
+
+    def _wait_hold(self, run_id, index):
+        if run_id != self.run_id or not self.running:
+            return
+        if self.stop_requested:
+            self._finish("Stopped by operator")
+            return
+        if self.paused:
+            self.win.after(250, lambda: self._wait_hold(run_id, index))
+            return
+        remaining = max(0, int(math.ceil(self._hold_deadline - time.monotonic())))
+        if remaining:
+            self.status_var.set(f"Holding plateau {index + 1}: {remaining} s remaining")
+            self.win.after(250, lambda: self._wait_hold(run_id, index))
+            return
+        self.steps[index]["status"] = "Completed"
+        self.current_index = index + 1
+        self._render_steps(select_index=min(self.current_index, len(self.steps) - 1))
+        self._run_next(run_id)
+
+    def toggle_pause(self):
+        if not self.running:
+            return
+        if not self.paused:
+            self.paused = True
+            self._pause_started_at = time.monotonic()
+            self.btn_pause.configure(text="Resume")
+            self.status_var.set("Sequence paused")
+            self._log("Sequence paused.")
+            return
+        self.paused = False
+        if self._hold_deadline is not None and self._pause_started_at is not None:
+            self._hold_deadline += time.monotonic() - self._pause_started_at
+        self._pause_started_at = None
+        self.btn_pause.configure(text="Pause")
+        self._log("Sequence resumed.")
+        self._run_next(self.run_id)
+
+    def stop(self):
+        if not self.running:
+            return
+        self.stop_requested = True
+        self.paused = False
+        self.btn_pause.configure(state="disabled", text="Pause")
+        self.btn_stop.configure(state="disabled")
+        cancelled = self.ssh_queue.cancel_pending(self._active_queue_token)
+        if cancelled:
+            self.status_var.set("Stopped before the next queued command")
+            self._log("Stop requested: queued plateau cancelled before sending.")
+            self._finish("Stopped by operator")
+            return
+        self.status_var.set("Stopping after the current command")
+        self._log("Stop requested after the current command.")
+
+    def _abort(self, reason):
+        self._log(reason)
+        self._finish("Sequence aborted")
+        self._popup("showerror", "Test Sequence", reason)
+
+    def _finish(self, status):
+        self.running = self.paused = self.stop_requested = False
+        self._active_queue_token = None
+        self._hold_deadline = self._pause_started_at = None
+        self.status_var.set(status)
+        self._set_editing_enabled(True)
+        self.btn_start.configure(state="normal")
+        self.btn_pause.configure(state="disabled", text="Pause")
+        self.btn_stop.configure(state="disabled")
+        self._render_steps(select_index=min(self.current_index, len(self.steps) - 1))
+        self._log(status)
+
+    def export_csv(self):
+        path = filedialog.asksaveasfilename(
+            parent=self.win,
+            title="Export Test Sequence",
+            defaultextension=".csv",
+            filetypes=[("RBM Test Sequence CSV", "*.csv"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", newline="", encoding="utf-8") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(("step", "mode", "active_w", "reactive_var", "cosphi", "hold_seconds", "status"))
+                for index, step in enumerate(self.steps, start=1):
+                    writer.writerow((index, step["mode"], step["active"], step.get("reactive", ""), step.get("cosphi", ""), step["hold"], step.get("status", "")))
+        except OSError as exc:
+            self._popup("showerror", "Test Sequence", f"Unable to export sequence:\n{exc}")
+            return
+        self._log(f"Sequence exported: {path}")
+
+    def _read_csv_sequence(self, path):
+        """Read a saved sequence atomically; no partial import is possible."""
+        required_columns = {"mode", "active_w", "reactive_var", "cosphi", "hold_seconds"}
+        with open(path, "r", newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            if not reader.fieldnames or not required_columns.issubset(reader.fieldnames):
+                raise ValueError("This file is not a valid RBM Test Sequence CSV.")
+            steps = []
+            for row_number, row in enumerate(reader, start=2):
+                if not any(str(value or "").strip() for value in row.values()):
+                    continue
+                try:
+                    steps.append(
+                        self._build_step(
+                            row.get("mode", ""),
+                            row.get("active_w", ""),
+                            row.get("reactive_var", ""),
+                            row.get("cosphi", ""),
+                            row.get("hold_seconds", ""),
+                        )
+                    )
+                except ValueError as exc:
+                    raise ValueError(f"CSV row {row_number}: {exc}") from exc
+        if not steps:
+            raise ValueError("The selected CSV does not contain any sequence step.")
+        return steps
+
+    def import_csv(self):
+        if self.running:
+            self._popup("showwarning", "Test Sequence", "Stop the sequence before importing another one.")
+            return
+        path = filedialog.askopenfilename(
+            parent=self.win,
+            title="Import Test Sequence",
+            filetypes=[("RBM Test Sequence CSV", "*.csv"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            steps = self._read_csv_sequence(path)
+        except (OSError, ValueError) as exc:
+            self._popup("showerror", "Test Sequence", f"Unable to import sequence:\n{exc}")
+            return
+        self.steps = steps
+        self.current_index = 0
+        self._render_steps(select_index=0)
+        self._notify_steps_changed()
+        self.status_var.set(f"Imported {len(steps)} plateau(s) - validate before starting.")
+        self._log(f"Sequence imported: {path} ({len(steps)} plateau(s)).")
+
+    def close(self, force=False):
+        if self.running and not force:
+            self._popup("showwarning", "Test Sequence", "Stop the sequence before closing this window.")
+            return
+        if self.running:
+            self.run_id += 1
+            self.stop()
+        callback = self._on_close_callback
+        self._on_close_callback = None
+        if callable(callback):
+            callback()
+        try:
+            self.win.destroy()
+        except tk.TclError:
+            pass

@@ -87,6 +87,36 @@ class SSHQueue:
             self._active_cancel_event.set()
             return True
 
+    def cancel_pending(self, cancel_token):
+        """Remove queued commands belonging to one caller-owned token.
+
+        Commands already taken by the worker are deliberately not interrupted.
+        This lets a caller stop future work without leaving queue bookkeeping or
+        deduplication keys behind.
+        """
+        if cancel_token is None:
+            return 0
+
+        removed = []
+        with self.q.mutex:
+            pending = list(self.q.queue)
+            self.q.queue.clear()
+            for item in pending:
+                if isinstance(item, dict) and item.get("cancel_token") == cancel_token:
+                    removed.append(item)
+                else:
+                    self.q.queue.append(item)
+
+            if removed:
+                self.q.unfinished_tasks = max(0, self.q.unfinished_tasks - len(removed))
+                if self.q.unfinished_tasks == 0:
+                    self.q.all_tasks_done.notify_all()
+                self.q.not_full.notify_all()
+
+        for item in removed:
+            self._release_dedupe_key(item.get("dedupe_key"))
+        return len(removed)
+
     def _worker(self):
         while self.running:
             item = self.q.get()

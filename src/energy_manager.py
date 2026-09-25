@@ -13,11 +13,29 @@ import re
 
 try:
     from .utils_ui import center_window
+    from .setpoint_validation import (
+        finite_number,
+        validate_active_power,
+        validate_cosphi,
+        validate_reactive_power,
+    )
 except ImportError:
     try:
         from utils_ui import center_window
+        from setpoint_validation import (
+            finite_number,
+            validate_active_power,
+            validate_cosphi,
+            validate_reactive_power,
+        )
     except ImportError:
         from src.utils_ui import center_window
+        from src.setpoint_validation import (
+            finite_number,
+            validate_active_power,
+            validate_cosphi,
+            validate_reactive_power,
+        )
 
 ENERGY_TOOL_RESOLVE = (
     'EM_TOOL="$(command -v EnergyManagerTestingTool 2>/dev/null || true)"; '
@@ -36,11 +54,19 @@ ENERGY_TOOL_RESOLVE = (
 class EnergyManagerWindow:
     """Fenêtre Energy Manager PRO (plein écran, une seule vue)."""
 
-    def __init__(self, master, ssh: "SSHManager", ssh_queue=None, on_close=None):
+    def __init__(
+        self,
+        master,
+        ssh: "SSHManager",
+        ssh_queue=None,
+        on_close=None,
+        pn_limit_provider=None,
+    ):
         self.master = master
         self.ssh = ssh
         self.ssh_queue = ssh_queue
         self._on_close_callback = on_close
+        self.pn_limit_provider = pn_limit_provider or (lambda: 11000.0)
 
         # Historique : liste de tuples (timestamp, mode, cmd, status)
         self.history = []
@@ -422,23 +448,19 @@ class EnergyManagerWindow:
     # ------------------------------------------------------------
     # LOGIQUE P/Q & COSPHI
     # ------------------------------------------------------------
-    def send_pq(self):
-        p_str = self.p_var.get().strip()
-        q_str = self.q_var.get().strip()
-
+    def _pn_limit(self):
         try:
-            p_val = int(float(p_str))
+            return finite_number(self.pn_limit_provider(), "Pn")
         except ValueError:
-            self._popup_warning("Invalid value", "Active power P must be numeric.")
-            return
+            return 0.0
 
-        q_val = None
-        if q_str:
-            try:
-                q_val = int(float(q_str))
-            except ValueError:
-                self._popup_warning("Invalid value", "Reactive power Q must be numeric.")
-                return
+    def send_pq(self):
+        try:
+            p_val = validate_active_power(self.p_var.get(), self._pn_limit())
+            q_val = validate_reactive_power(self.q_var.get(), optional=True)
+        except ValueError as exc:
+            self._popup_warning("Invalid values", str(exc))
+            return
 
         reactive_option = f" --reactive-power {q_val}" if q_val is not None else ""
         display_text = f"Active Power : {p_val} W"
@@ -461,45 +483,25 @@ class EnergyManagerWindow:
         )
 
     def calculate_q_from_cosphi(self):
-        p_str = self.p_cosphi_var.get().strip()
-        cosphi_str = self.cosphi_var.get().strip()
-        if not cosphi_str:
-            cosphi_str = "1"
-            self.cosphi_var.set(cosphi_str)
-
         try:
-            p_val = float(p_str)
-            cosphi_val = float(cosphi_str)
-            if not (-1.0 < cosphi_val <= 1.0):
-                raise ValueError("CosPhi out of range")
-        except ValueError:
-            self._popup_warning(
-                "Invalid values",
-                "P must be numeric and CosPhi must be in the range (-1, 1].",
-            )
-            return
+            p_val = validate_active_power(self.p_cosphi_var.get(), self._pn_limit())
+            cosphi_val = validate_cosphi(self.cosphi_var.get(), default=1.0)
+        except ValueError as exc:
+            self._popup_warning("Invalid values", str(exc))
+            return None
+
+        self.cosphi_var.set(f"{cosphi_val:g}")
 
         q_val = abs(p_val) * math.tan(math.acos(cosphi_val))
         q_val_rounded = int(round(q_val))
         self.q_auto_var.set(str(q_val_rounded))
+        return p_val, cosphi_val, q_val_rounded
 
     def send_cosphi(self):
-        self.calculate_q_from_cosphi()
-        p_str = self.p_cosphi_var.get().strip()
-        cosphi_str = self.cosphi_var.get().strip()
-        q_str = self.q_auto_var.get().strip()
-
-        try:
-            p_val = int(float(p_str))
-            cosphi_val = float(cosphi_str)
-            q_val = int(float(q_str))
-        except ValueError:
-            self._popup_warning(
-                "Invalid values",
-                "P, CosPhi, and auto Q must be filled in with numeric values "
-                "(make sure to click 'Calculate Q').",
-            )
+        values = self.calculate_q_from_cosphi()
+        if values is None:
             return
+        p_val, cosphi_val, q_val = values
 
         cmd = (
             "cd /var/aux/EnergyManager && "

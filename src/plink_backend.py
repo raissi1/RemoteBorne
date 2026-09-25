@@ -42,17 +42,15 @@ class PlinkBackend:
     def _host_key_args(self):
         return ["-hostkey", self.host_key] if self.host_key else []
 
-        # petit check utile pour le debug
-        if not os.path.isfile(self.plink_path):
-            raise FileNotFoundError(
-                f"plink.exe introuvable : {self.plink_path}\n"
-                "Vérifie que plink.exe est bien dans le dossier tools/"
-            )
-        if not os.path.isfile(self.pscp_path):
-            raise FileNotFoundError(
-                f"pscp.exe introuvable : {self.pscp_path}\n"
-                "Vérifie que pscp.exe est bien dans le dossier tools/"
-            )
+    def _tool_error(self, *, require_pscp=False):
+        """Return a clear delivery error before attempting to start PuTTY tools."""
+        required = [("plink.exe", self.plink_path)]
+        if require_pscp:
+            required.append(("pscp.exe", self.pscp_path))
+        missing = [f"{name}: {path}" for name, path in required if not os.path.isfile(path)]
+        if missing:
+            return "Required SSH tool(s) not found:\n" + "\n".join(missing)
+        return None
 
     # ----------------------------------------------------------
     # Helpers pour lancer plink/pscp SANS fenêtre
@@ -73,6 +71,9 @@ class PlinkBackend:
     def exec(self, remote_cmd, timeout=None):
         if not remote_cmd or not str(remote_cmd).strip():
             return 1, "", "Empty remote command"
+        tool_error = self._tool_error()
+        if tool_error:
+            return 1, "", tool_error
         cmd = [
             self.plink_path,
             "-ssh",
@@ -107,6 +108,9 @@ class PlinkBackend:
         """Run a remote command while forwarding stdout/stderr line by line."""
         if not remote_cmd or not str(remote_cmd).strip():
             return 1, "", "Empty remote command"
+        tool_error = self._tool_error()
+        if tool_error:
+            return 1, "", tool_error
 
         cmd = [
             self.plink_path,
@@ -182,6 +186,9 @@ class PlinkBackend:
             return False, "", "Empty remote path"
         if not local_path:
             return False, "", "Empty local path"
+        tool_error = self._tool_error(require_pscp=True)
+        if tool_error:
+            return False, "", tool_error
 
         local_dir = os.path.dirname(local_path) or "."
         os.makedirs(local_dir, exist_ok=True)
@@ -221,6 +228,9 @@ class PlinkBackend:
             return False, "", f"Local file not found: {local_path}"
         if not remote_path:
             return False, "", "Empty remote path"
+        tool_error = self._tool_error(require_pscp=True)
+        if tool_error:
+            return False, "", tool_error
 
         cmd = [
             self.pscp_path,

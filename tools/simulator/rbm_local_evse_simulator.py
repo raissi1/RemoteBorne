@@ -56,6 +56,7 @@ class SimulatedEvse:
             f"{GRID_CODES}/GC/FR/GC_FR_Demo.properties": "GridCode=FR_DEMO\n",
             f"{GRID_CODES}/GC/DE/GC_DE_Demo.properties": "GridCode=DE_DEMO\n",
             f"{GRID_CODES}/GC/UK/GC_UK_Demo.properties": "GridCode=UK_DEMO\n",
+            "/var/aux/netlogger/netlog.demo.pcap.gz": "RBM simulated NetLogger capture\n",
         }
         for remote_path, content in files.items():
             path = self.resolve(remote_path)

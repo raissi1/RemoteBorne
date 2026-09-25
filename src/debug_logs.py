@@ -83,7 +83,7 @@ class DebugLogsWindow:
             self.host, self.user, self.password = ssh_info
             self.port = 22
         else:
-            raise ValueError("ssh_info doit Ãªtre (host, user, password[, port])")
+            raise ValueError("ssh_info must be (host, user, password[, port])")
 
         # Processus & Ã©tats
         self.processes = {}        # log_name -> subprocess.Popen

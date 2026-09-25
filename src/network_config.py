@@ -36,15 +36,16 @@ def open_network_config(parent, config_path, on_saved=None):
             "password": "",
             "port": "22",
         }
-    export_dir = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(config_path))), "exports"
-    )
+    runtime_root = os.path.dirname(os.path.dirname(os.path.abspath(config_path)))
+    export_dir = os.path.join(runtime_root, "exports")
 
     def normalize_local_dir(value: str) -> str:
         candidate = os.path.normpath(os.path.expanduser((value or "").strip()))
         if candidate and os.path.splitext(os.path.basename(candidate))[1]:
             candidate = os.path.dirname(candidate)
-        return candidate or export_dir
+        if candidate and not os.path.isabs(candidate):
+            candidate = os.path.join(runtime_root, candidate)
+        return os.path.abspath(candidate) if candidate else export_dir
 
     if "PATHS" not in cfg:
         cfg["PATHS"] = {

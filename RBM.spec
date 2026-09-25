@@ -1,18 +1,43 @@
 # -*- mode: python ; coding: utf-8 -*-
+"""PyInstaller specification for the complete RBM V16 runtime."""
+
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('BorneCommander.ico', '.')]
+
+ROOT = Path(SPECPATH)
+datas = [
+    (str(ROOT / "BorneCommander.ico"), "."),
+    (str(ROOT / "src" / "config"), "config"),
+    (str(ROOT / "src" / "tools"), "tools"),
+    (str(ROOT / "src" / "imgs"), "imgs"),
+    (str(ROOT / "tools" / "simulator"), "tools/simulator"),
+]
+for language in ("FR", "EN"):
+    for document in (ROOT / "src" / "documents" / language).glob("RBM_V16_*.docx"):
+        datas.append((str(document), f"documents/{language}"))
+
 binaries = []
-hiddenimports = ['debug_logs', 'energy_manager', 'network_config', 'plink_backend', 'ssh_manager']
-tmp_ret = collect_all('ttkbootstrap')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('reportlab')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+hiddenimports = [
+    "debug_logs",
+    "energy_manager",
+    "network_config",
+    "plink_backend",
+    "setpoint_validation",
+    "ssh_manager",
+    "test_sequence",
+]
+for package in ("ttkbootstrap", "reportlab", "paramiko"):
+    collected = collect_all(package)
+    datas += collected[0]
+    binaries += collected[1]
+    hiddenimports += collected[2]
 
 
 a = Analysis(
-    ['src\\RemoteBorneManager.py'],
-    pathex=[],
+    ["src\\RemoteBorneManager.py"],
+    pathex=[str(ROOT / "src")],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
@@ -30,7 +55,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='RBM',
+    name="RBM",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -41,7 +66,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['BorneCommander.ico'],
+    icon=["BorneCommander.ico"],
 )
 coll = COLLECT(
     exe,
@@ -50,5 +75,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='RBM',
+    name="RBM",
 )

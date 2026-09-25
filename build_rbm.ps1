@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-$root = "C:\Users\p126579\Documents\2-SOFT_Borne\RemoteBorne-main\RemoteBorne"
+$root = $PSScriptRoot
 $distRoot = Join-Path $root "dist"
 $distApp = Join-Path $distRoot "RBM"
 
@@ -13,7 +13,8 @@ if (Test-Path $distApp) {
     Remove-Item $distApp -Recurse -Force
 }
 
-pyinstaller --clean --noconfirm --name RBM --noconsole --icon=BorneCommander.ico --add-data "BorneCommander.ico;." --collect-all ttkbootstrap --collect-all reportlab --hidden-import=debug_logs --hidden-import=energy_manager --hidden-import=network_config --hidden-import=plink_backend --hidden-import=ssh_manager src/RemoteBorneManager.py
+$python = (Get-Command python -ErrorAction Stop).Source
+& $python -m PyInstaller --clean --noconfirm --name RBM --noconsole --icon=BorneCommander.ico --add-data "BorneCommander.ico;." --add-data "tools\simulator;tools\simulator" --collect-all ttkbootstrap --collect-all reportlab --collect-all paramiko --hidden-import=debug_logs --hidden-import=energy_manager --hidden-import=network_config --hidden-import=plink_backend --hidden-import=ssh_manager --hidden-import=test_sequence src/RemoteBorneManager.py
 
 Write-Host "Copying runtime folders..." -ForegroundColor Cyan
 Copy-Item "src\config" $distApp -Recurse -Force
@@ -21,10 +22,10 @@ New-Item -ItemType Directory -Path "$distApp\documents" -Force | Out-Null
 foreach ($language in @("FR", "EN")) {
     $sourceFolder = Join-Path "src\documents" $language
     $targetFolder = Join-Path "$distApp\documents" $language
-    $releaseDocuments = Get-ChildItem $sourceFolder -Filter "*V14*.docx" -File
+    $releaseDocuments = Get-ChildItem $sourceFolder -Filter "RBM_V16_*.docx" -File
 
-    if ($releaseDocuments.Count -eq 0) {
-        throw "No V14 documents found in $sourceFolder"
+    if ($releaseDocuments.Count -ne 2) {
+        throw "Expected the two V16 delivery documents in $sourceFolder; found $($releaseDocuments.Count)."
     }
 
     New-Item -ItemType Directory -Path $targetFolder -Force | Out-Null
@@ -44,13 +45,18 @@ $checks = @(
     "tools\pscp.exe"
 )
 
+$missingChecks = @()
 foreach ($item in $checks) {
     $full = Join-Path $distApp $item
     if (Test-Path $full) {
         Write-Host "[OK] $item" -ForegroundColor Green
     } else {
         Write-Host "[MISSING] $item" -ForegroundColor Red
+        $missingChecks += $item
     }
+}
+if ($missingChecks.Count -gt 0) {
+    throw "Build output is incomplete: $($missingChecks -join ', ')"
 }
 
 $docCount = 0
@@ -58,7 +64,10 @@ if (Test-Path (Join-Path $distApp "documents")) {
     $docCount = (Get-ChildItem (Join-Path $distApp "documents") -Recurse -File | Measure-Object).Count
 }
 Write-Host "Documents copied: $docCount"
-Write-Host "A local config\config.ini is created at first start."
+if ($docCount -ne 4) {
+    throw "Expected 4 V16 delivery documents in the package; found $docCount."
+}
+Write-Host "Runtime configuration copied from src\config."
 
 $imgCount = 0
 if (Test-Path (Join-Path $distApp "imgs")) {
@@ -69,9 +78,3 @@ Write-Host "Images copied: $imgCount"
 Write-Host ""
 Write-Host "RBM build completed successfully." -ForegroundColor Green
 Write-Host "Output: $distApp" -ForegroundColor Green
-if (Test-Path "src\logs") {
-    Copy-Item "src\logs" $distApp -Recurse -Force
-}
-if (Test-Path "src\exports") {
-    Copy-Item "src\exports" $distApp -Recurse -Force
-}

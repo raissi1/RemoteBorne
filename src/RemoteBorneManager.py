@@ -16,6 +16,7 @@ Interface Windows pour contrôle de borne IOTECHA :
 - Thèmes : flatly (clair) & darkly (sombre)
 """
 import sys, os
+import importlib.util
 import shutil
 import subprocess
 
@@ -72,7 +73,7 @@ except ImportError:
         from src import debug_logs
         from src import test_sequence
 
-APP_VERSION = "14.0.8"
+APP_VERSION = "16.1.0"
 
 # Operational limits used by the main P/Q and CosPhi panels.  The target still
 # validates commands; Pn is an operator-side guard that can be read from the
@@ -83,6 +84,11 @@ NETLOGGER_DEFAULT_PATH = "/var/aux/netlogger"
 # Restarting the three EVSE services can legitimately take longer than a
 # normal SSH command, especially while ChargerApp initializes.
 SERVICE_RESTART_TIMEOUT = 120
+SIMULATOR_HOST = "127.0.0.1"
+SIMULATOR_PORT = 2222
+SIMULATOR_USER = "root"
+SIMULATOR_PASSWORD = "rbm-simulator"
+SIMULATOR_GRID_CODES_PATH = "/etc/iotecha/configs/GridCodes"
 
 ENERGY_TOOL_RESOLVE = (
     'EM_TOOL="$(command -v EnergyManagerTestingTool 2>/dev/null || true)"; '
@@ -153,7 +159,9 @@ def _local_export_dir(value: str) -> str:
     candidate = os.path.normpath(os.path.expanduser((value or "").strip()))
     if candidate and os.path.splitext(os.path.basename(candidate))[1]:
         candidate = os.path.dirname(candidate)
-    return candidate or EXPORTS_DIR
+    if candidate and not os.path.isabs(candidate):
+        candidate = os.path.join(BASE_DIR, candidate)
+    return os.path.abspath(candidate) if candidate else EXPORTS_DIR
 
 
 def _ensure_local_export_dir(value: str) -> str:
@@ -317,7 +325,6 @@ class RemoteBorneApp:
         # Fenêtre ttkbootstrap, thème "flatly" comme V7
         self.root = ttk.Window(themename=self.current_theme)
         self.root.title("Remote Borne Control Interface")
-        self._set_app_icon()
 
         try:
             sw = self.root.winfo_screenwidth()
@@ -344,6 +351,7 @@ class RemoteBorneApp:
         self.soc_var = tk.StringVar(value="SoC: --")
         # ---------- VARIABLES ----------
         self.status_var = tk.StringVar(value="Disconnected")
+        self.simulation_var = tk.StringVar(value="")
         self.use_cosphi_var = tk.BooleanVar(value=False)
         
 
@@ -416,6 +424,10 @@ class RemoteBorneApp:
         self._sequence_win = None
         self._sequence_modal_open = False
         self._sequence_running = False
+        self._simulation_mode = False
+        self._simulator_module = None
+        self._local_simulator_evse = None
+        self._local_simulator_server = None
         # Steps survive closing/reopening Test Sequence in this RBM session,
         # but are deliberately discarded when the application exits.
         self._test_sequence_session_steps = []
@@ -483,15 +495,6 @@ class RemoteBorneApp:
         )
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
-
-    def _set_app_icon(self):
-        icon_path = os.path.join(BASE_DIR, "BorneCommander.ico")
-        if not os.path.isfile(icon_path):
-            return
-        try:
-            self.root.iconbitmap(icon_path)
-        except Exception:
-            pass
 
     def _confirm_new_host_key(self, host: str, details: str) -> bool:
         """Ask in Tk's thread before trusting a new or replaced EVSE key."""
@@ -691,6 +694,31 @@ class RemoteBorneApp:
         self.debug_menu.add_command(label="Debug logs", command=self.open_debug_logs)
         menubar.add_cascade(label="Debug", menu=self.debug_menu)
 
+        # LOCAL SIMULATOR
+        self.simulator_menu = tk.Menu(menubar, tearoff=0)
+        self.simulator_menu.add_command(
+            label="Start local simulator and connect",
+            command=self.start_local_simulator_and_connect,
+        )
+        self.simulator_menu.add_command(
+            label="Connect to local simulator",
+            command=self.connect_to_local_simulator,
+        )
+        self.simulator_menu.add_command(
+            label="Reset local simulator",
+            command=self.reset_local_simulator,
+        )
+        self.simulator_menu.add_separator()
+        self.simulator_menu.add_command(
+            label="Return to configured charger",
+            command=self.return_to_configured_charger,
+        )
+        self.simulator_menu.add_command(
+            label="Stop local simulator",
+            command=self.stop_local_simulator,
+        )
+        menubar.add_cascade(label="Tools", menu=self.simulator_menu)
+
         # ENERGY (nouveau)
         self.energy_menu = tk.Menu(menubar, tearoff=0)
         self.energy_menu.add_command(
@@ -824,6 +852,13 @@ class RemoteBorneApp:
             style="HeaderTitle.TLabel",
             anchor="center",
         ).pack(fill="x")
+        self.simulation_banner = ttk.Label(
+            center_fr,
+            textvariable=self.simulation_var,
+            bootstyle="warning",
+            anchor="center",
+        )
+        self.simulation_banner.pack(fill="x")
 
         right_logo_fr = ttk.Frame(header)
         right_logo_fr.grid(row=0, column=2, sticky="e")
@@ -1456,6 +1491,224 @@ class RemoteBorneApp:
         except Exception as e:
             self.log(f"[SSH ERROR] {e}")
 
+    def _simulator_directory(self):
+        return os.path.join(TOOLS_DIR, "simulator")
+
+    def _set_simulation_mode(self, enabled: bool):
+        """Show an unambiguous local-only status without changing config.ini."""
+        self._simulation_mode = bool(enabled)
+        if enabled:
+            self.simulation_var.set(
+                f"SIMULATION MODE - Local EVSE {SIMULATOR_HOST}:{SIMULATOR_PORT}"
+            )
+            self.root.title("Remote Borne Control Interface - SIMULATION MODE")
+        else:
+            self.simulation_var.set("")
+            self.root.title("Remote Borne Control Interface")
+
+    def _ssh_queue_is_idle(self):
+        """Do not retarget an EVSE while a real command could still be queued."""
+        try:
+            return not self.ssh_queue.busy and self.ssh_queue.q.empty()
+        except Exception:
+            return False
+
+    def _load_simulator_module(self):
+        if self._simulator_module is not None:
+            return self._simulator_module
+
+        source_path = os.path.join(
+            self._simulator_directory(), "rbm_local_evse_simulator.py"
+        )
+        if not os.path.isfile(source_path):
+            raise FileNotFoundError(
+                "Local simulator files are missing. Rebuild RBM with the simulator files included."
+            )
+        spec = importlib.util.spec_from_file_location("rbm_local_evse_simulator", source_path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError("Unable to load the local simulator module.")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        self._simulator_module = module
+        return module
+
+    def _switch_ssh_target(self, profile, simulation: bool):
+        """Retarget the live SSH manager without persisting a temporary profile."""
+        if not self._ssh_queue_is_idle():
+            self._popup_warning(
+                "Simulator",
+                "Wait for the current SSH command to finish before switching target.",
+            )
+            return False
+
+        self._close_aux_windows("simulator target change")
+        self._manual_disconnect_mode = False
+        self._refresh_running = False
+        self._refresh_pending = False
+        self._refresh_pending_navigation = False
+        self._navigation_in_progress = False
+        self.connected = False
+        self._clear_file_list_ui()
+
+        self.host = profile["host"]
+        self.user = profile["user"]
+        self.password = profile["password"]
+        self.port = int(profile["port"])
+        self.default_path = profile["remote_path"]
+        self.remote_file = profile["remote_file"]
+        self.netlogger_path = profile["netlogger_path"]
+        self.current_path = self.default_path
+
+        if self.ip_label is not None:
+            self.ip_label.configure(text=f"IP: {self.host}")
+        if self.user_label is not None:
+            self.user_label.configure(text=f"User: {self.user}")
+        if self.path_entry is not None:
+            self.path_entry.delete(0, "end")
+            self.path_entry.insert(0, self.current_path)
+
+        self._set_simulation_mode(simulation)
+        self.status_var.set("Connecting to simulator..." if simulation else "Reconnecting...")
+        self._set_led(False)
+        self._update_controls_state()
+        self.ssh.update_target(self.host, self.user, self.password, self.port)
+        target_name = "local simulator" if simulation else "configured charger"
+        self.log(f"[SIMULATOR] Switching SSH target to {target_name}: {self.host}:{self.port}.")
+        return True
+
+    def _simulator_profile(self):
+        return {
+            "host": SIMULATOR_HOST,
+            "user": SIMULATOR_USER,
+            "password": SIMULATOR_PASSWORD,
+            "port": SIMULATOR_PORT,
+            "remote_path": SIMULATOR_GRID_CODES_PATH,
+            "remote_file": "GridCodes.properties",
+            "netlogger_path": "/var/aux/netlogger",
+        }
+
+    def _configured_profile(self):
+        ssh_cfg = self.config["SSH"]
+        paths_cfg = self.config["PATHS"]
+        return {
+            "host": ssh_cfg.get("host", ""),
+            "user": ssh_cfg.get("username", ""),
+            "password": ssh_cfg.get("password", ""),
+            "port": int(ssh_cfg.get("port", "22")),
+            "remote_path": paths_cfg.get("remote_path", SIMULATOR_GRID_CODES_PATH),
+            "remote_file": paths_cfg.get("remote_file", "GridCodes.properties"),
+            "netlogger_path": paths_cfg.get("netlogger_path", NETLOGGER_DEFAULT_PATH),
+        }
+
+    def start_local_simulator_and_connect(self):
+        """Start the bundled simulator in-process, then switch only this session."""
+        if self._sequence_operation_blocked("Starting local simulator"):
+            return
+        if not self._simulation_mode and self.connected and not messagebox.askyesno(
+            "Start local simulator",
+            "RBM will disconnect from the configured charger and switch this session "
+            "to the local simulator. config.ini will not be changed.\n\nContinue?",
+            parent=self.root,
+        ):
+            return
+        try:
+            if self._local_simulator_server is None:
+                module = self._load_simulator_module()
+                runtime_dir = os.path.join(self._simulator_directory(), "runtime", "evse_fs")
+                evse = module.SimulatedEvse(runtime_dir, SIMULATOR_PASSWORD)
+                host_key = os.path.join(self._simulator_directory(), "runtime", "host_key.pem")
+                server = module.LocalSshServer(
+                    SIMULATOR_HOST, SIMULATOR_PORT, evse, host_key
+                )
+                server.start()
+                self._local_simulator_evse = evse
+                self._local_simulator_server = server
+                self.log(
+                    f"[SIMULATOR] Local EVSE started on {SIMULATOR_HOST}:{SIMULATOR_PORT}."
+                )
+        except Exception as exc:
+            self.log(f"[SIMULATOR ERROR] Unable to start local simulator: {exc}")
+            self._popup_error(
+                "Simulator",
+                "Unable to start the local simulator.\n\n"
+                f"{exc}\n\nIf port {SIMULATOR_PORT} is already used, select "
+                "Connect to local simulator only when that server is trusted.",
+            )
+            return
+        self.connect_to_local_simulator(confirm=False)
+
+    def connect_to_local_simulator(self, confirm=True):
+        """Connect to a simulator already listening on the fixed local endpoint."""
+        if self._sequence_operation_blocked("Connecting to local simulator"):
+            return
+        if not self._simulation_mode and self.connected and confirm and not messagebox.askyesno(
+            "Connect to local simulator",
+            "RBM will disconnect from the configured charger and switch this session "
+            "to 127.0.0.1:2222. config.ini will not be changed.\n\nContinue?",
+            parent=self.root,
+        ):
+            return
+        self._switch_ssh_target(self._simulator_profile(), simulation=True)
+
+    def reset_local_simulator(self):
+        if self._local_simulator_evse is None:
+            self._popup_info(
+                "Simulator",
+                "No RBM-managed local simulator is running. Start it first.",
+            )
+            return
+        if not messagebox.askyesno(
+            "Reset local simulator",
+            "Restore the simulator files, logs, telemetry and setpoints to their demo state?",
+            parent=self.root,
+        ):
+            return
+        self._local_simulator_evse.reset()
+        self.log("[SIMULATOR] Local EVSE reset to demo state.")
+        if self._simulation_mode and self.connected:
+            self.refresh_file_list()
+            self.refresh_temperature_and_soc()
+
+    def return_to_configured_charger(self):
+        if not self._simulation_mode:
+            self._popup_info("Simulator", "RBM is already using the configured charger profile.")
+            return
+        if not messagebox.askyesno(
+            "Return to configured charger",
+            "Disconnect from the local simulator and reconnect to the charger defined in config.ini?",
+            parent=self.root,
+        ):
+            return
+        self._switch_ssh_target(self._configured_profile(), simulation=False)
+
+    def _stop_local_simulator_server(self):
+        server = self._local_simulator_server
+        self._local_simulator_server = None
+        self._local_simulator_evse = None
+        if server is not None:
+            try:
+                server.stop()
+                self.log("[SIMULATOR] Local EVSE stopped.")
+            except Exception as exc:
+                self.log(f"[SIMULATOR ERROR] Unable to stop local simulator: {exc}")
+
+    def stop_local_simulator(self):
+        if self._local_simulator_server is None:
+            self._popup_info("Simulator", "No RBM-managed local simulator is running.")
+            return
+        if not messagebox.askyesno(
+            "Stop local simulator",
+            "Stop the local simulator? RBM will return to the configured charger profile first.",
+            parent=self.root,
+        ):
+            return
+        if self._simulation_mode and not self._switch_ssh_target(
+            self._configured_profile(), simulation=False
+        ):
+            return
+        self._stop_local_simulator_server()
+
     def _manual_disconnect(self):
         self._manual_disconnect_mode = True
         self._refresh_running = False
@@ -1542,16 +1795,20 @@ class RemoteBorneApp:
         self._browser_find_dialog = None
 
         close_terminal = getattr(self, "_close_terminal_window", None)
+        terminal_closed = False
         if callable(close_terminal):
             try:
-                close_terminal()
-                closed_any = True
+                terminal_closed = close_terminal(force=True) is not False
+                closed_any = closed_any or terminal_closed
             except Exception:
                 _safe_destroy(getattr(self, "_terminal_window", None))
+                terminal_closed = True
         else:
             _safe_destroy(getattr(self, "_terminal_window", None))
-        self._terminal_window = None
-        self._close_terminal_window = None
+            terminal_closed = True
+        if terminal_closed:
+            self._terminal_window = None
+            self._close_terminal_window = None
 
         debug_window = getattr(self, "_debug_logs_window", None)
         if debug_window is not None:
@@ -1661,12 +1918,69 @@ class RemoteBorneApp:
     # ==================================================================
     # ALIVE MONITOR (heartbeat echo alive)
     # ==================================================================
+    def _run_alive_probe(self, heartbeat_timeout):
+        """Run one SSH heartbeat only while the regular command queue is idle.
+
+        The original heartbeat was queued behind normal operations.  A failed
+        probe could therefore remain pending indefinitely and leave the UI in
+        the Connected state after the EVSE was powered off.  Acquiring the
+        queue lock here keeps scripts and operator commands exclusive while
+        still allowing an idle connection to be checked promptly.
+        """
+        queue = getattr(self, "ssh_queue", None)
+        ssh = getattr(self, "ssh", None)
+        if queue is None or ssh is None:
+            return None
+        if self._manual_disconnect_mode or getattr(ssh, "_reconnect_in_progress", False):
+            return None
+        if not getattr(ssh, "connected", False):
+            return False
+
+        # Never delay an operator command or a running terminal script.
+        pending_commands = getattr(queue, "q", None)
+        if getattr(queue, "busy", False) or getattr(queue, "pause_monitoring", False):
+            return None
+        try:
+            if pending_commands is not None and not pending_commands.empty():
+                return None
+        except Exception:
+            return None
+
+        lock = getattr(queue, "lock", None)
+        if lock is None or not lock.acquire(blocking=False):
+            return None
+
+        try:
+            # A command can have started between the idle check and the lock.
+            if getattr(queue, "busy", False) or not getattr(ssh, "connected", False):
+                return False
+            result = ssh.execute_sync(
+                "echo alive",
+                timeout=heartbeat_timeout,
+                auto_retry=False,
+                log_errors=False,
+            )
+        except Exception as exc:
+            result = {"success": False, "err": str(exc), "out": ""}
+        finally:
+            lock.release()
+
+        if result.get("success"):
+            return True
+
+        reason = (result.get("err") or result.get("out") or "unknown error").strip()
+        self.log("[ALIVE] Heartbeat failed; marking SSH disconnected.")
+        # ``echo alive`` has no application-level failure mode: one failed
+        # response means that the charger connection is not usable.
+        ssh.report_connection_lost(reason, force_event=True)
+        return False
+
     def _start_alive_monitor(self):
         """
-        Lance un thread qui envoie 'echo alive' toutes les 10 s.
+        Start a fast SSH heartbeat to keep the visible connection state honest.
 
-        - Ne spam pas self.ssh.execute (auto_retry=False)
-        - En cas d’échec, on log et on lance une reconnexion propre.
+        A charger power loss must not leave the operator-facing UI in the
+        Connected state while waiting for the slower temperature poll.
         """
         if hasattr(self, "_alive_thread_started") and self._alive_thread_started:
             return
@@ -1674,52 +1988,48 @@ class RemoteBorneApp:
 
         def worker():
             last_reconnect_try = 0.0
-            monitor_interval = max(10, self.alive_interval)
+            # Check immediately after connection, then at most every five
+            # seconds. A probe runs only while SSHQueue is idle, so a running
+            # script retains its requested priority over other SSH actions.
+            monitor_interval = min(5, max(3, self.alive_interval))
+            heartbeat_timeout = min(4, self.ssh_timeout)
+            self.log(
+                f"[ALIVE] Heartbeat every {monitor_interval}s "
+                f"(timeout {heartbeat_timeout}s)."
+            )
             while not self._alive_stop:
-                time.sleep(monitor_interval)
                 # Si l’app est fermée, on sort
                 if not hasattr(self, "ssh"):
                     break
                 if getattr(self.ssh, "_reconnect_in_progress", False):
+                    time.sleep(monitor_interval)
                     continue
                 # Si pas connecté -> on tente une reconnexion périodique
                 if not self.ssh.connected:
                     if self._manual_disconnect_mode:
+                        time.sleep(monitor_interval)
                         continue
                     now = time.time()
                     if now - last_reconnect_try >= 30:
                         self.log("[ALIVE] Disconnected, attempting reconnect.")
                         self.ssh.restart()
                         last_reconnect_try = now
+                    time.sleep(monitor_interval)
                     continue
 
-                def cb(res):
-                    nonlocal last_reconnect_try
-                    if not res["success"]:
-                        if getattr(self.ssh, "_reconnect_in_progress", False):
-                            return
-                        reason = (res.get("err") or res.get("out") or "unknown error").strip()
-                        self.log("[ALIVE] Heartbeat failed; marking SSH disconnected.")
-                        # ``echo alive`` has no application-level failure mode:
-                        # one failed response means this SSH session is no longer usable.
-                        self.ssh.report_connection_lost(reason, force_event=True)
-                        now = time.time()
-                        if now - last_reconnect_try >= 30:
-                            self.log("[ALIVE] Starting automatic reconnect after heartbeat failure.")
-                            self.ssh.force_reconnect()
-                            last_reconnect_try = now
-
-                # IMPORTANT : pas d’auto_retry ici, sinon double gestion
-                self.ssh_queue.execute(
-                    "echo alive",
-                    callback=cb,
-                    timeout=8,
-                    auto_retry=False,
-                    log_errors=False,
-                    command_type="heartbeat",
-                    silent=True,
-                    label="Heartbeat",
-                )
+                probe_result = self._run_alive_probe(heartbeat_timeout)
+                if probe_result is False and not self._manual_disconnect_mode:
+                    now = time.time()
+                    if now - last_reconnect_try >= 30:
+                        self.log("[ALIVE] Starting automatic reconnect after heartbeat failure.")
+                        self.ssh.force_reconnect()
+                        last_reconnect_try = now
+                # Keep the first control immediate, then wait after each
+                # attempt. A failed heartbeat updates the UI in roughly four
+                # seconds when the charger is switched off and the queue is idle.
+                if self._alive_stop:
+                    break
+                time.sleep(monitor_interval)
 
         t = threading.Thread(target=worker, daemon=True)
         t.start()
@@ -4853,6 +5163,7 @@ class RemoteBorneApp:
                 self.ssh,
                 ssh_queue=self.ssh_queue,
                 on_close=lambda: setattr(self, "_energy_win", None),
+                pn_limit_provider=self._get_pn_limit,
             )
             try:
                 win = getattr(self._energy_win, "win", self._energy_win)
@@ -4877,6 +5188,11 @@ class RemoteBorneApp:
             raise ValueError("Unsupported sequence mode.")
 
         active = int(round(float(step.get("active"))))
+        pn_limit = self._get_pn_limit()
+        if pn_limit <= 0 or abs(active) > pn_limit:
+            raise ValueError(
+                f"Active P is outside the current +/-{int(pn_limit)} W Pn limit."
+            )
         hold = int(round(float(step.get("hold"))))
         if not (test_sequence.TestSequenceWindow.MIN_HOLD_SECONDS <= hold <=
                 test_sequence.TestSequenceWindow.MAX_HOLD_SECONDS):
@@ -5150,6 +5466,8 @@ class RemoteBorneApp:
                     child.grid_configure(row=int(row) + 1)
             container.grid_rowconfigure(2, weight=0)
             container.grid_rowconfigure(3, weight=1)
+            container.grid_rowconfigure(4, weight=0)
+            container.grid_rowconfigure(5, weight=1)
         except (tk.TclError, TypeError, ValueError) as exc:
             self.log(f"[SEQUENCE] Pn helper layout could not be prepared: {exc}")
             return
@@ -5292,122 +5610,9 @@ class RemoteBorneApp:
         percent_scale.configure(command=on_slider)
 
         sequence._rbm_pn_helper_added = True
-        sequence._rbm_pn_widgets = (pn_entry, percent_entry, percent_scale, read_button)
-
-        # Keep the helper read-only while an automated sequence is executing,
-        # exactly like the native plateau editor fields.
-        original_set_editing_enabled = sequence._set_editing_enabled
-
-        def set_editing_enabled(enabled):
-            result = original_set_editing_enabled(enabled)
-            state = "normal" if enabled else "disabled"
-            for widget in sequence._rbm_pn_widgets:
-                try:
-                    widget.configure(state=state)
-                except tk.TclError:
-                    pass
-            return result
-
-        sequence._set_editing_enabled = set_editing_enabled
-
-    def _bind_test_sequence_persistence(self, sequence):
-        """Save only after a successful user edit, without changing command flow."""
-        for method_name in (
-            "add_step",
-            "update_selected",
-            "remove_selected",
-            "move_selected",
-            "clear_steps",
-        ):
-            original = getattr(sequence, method_name, None)
-            if not callable(original):
-                continue
-
-            def save_after_edit(*args, _original=original, **kwargs):
-                result = _original(*args, **kwargs)
-                self._save_test_sequence_steps(sequence)
-                return result
-
-            setattr(sequence, method_name, save_after_edit)
-
-        # The legacy UI captured the original bound methods while it was built.
-        # Rebind its edit controls so button clicks use the autosave wrappers.
-        for button_name, command in (
-            ("btn_add", sequence.add_step),
-            ("btn_update", sequence.update_selected),
-            ("btn_remove", sequence.remove_selected),
-            ("btn_up", lambda: sequence.move_selected(-1)),
-            ("btn_down", lambda: sequence.move_selected(1)),
-        ):
-            try:
-                getattr(sequence, button_name).configure(command=command)
-            except Exception:
-                pass
-
-        def _rebind_clear_button(widget):
-            try:
-                if widget.cget("text") == "Clear":
-                    widget.configure(command=sequence.clear_steps)
-            except Exception:
-                pass
-            try:
-                for child in widget.winfo_children():
-                    _rebind_clear_button(child)
-            except Exception:
-                pass
-
-        _rebind_clear_button(sequence.win)
-
-    def _bind_test_sequence_numeric_validation(self, sequence):
-        """Apply the Energy Manager numeric rules to every sequencer input."""
-        last_valid_values = {}
-        for variable_name in ("active_var", "reactive_var", "cosphi_var"):
-            variable = getattr(sequence, variable_name, None)
-            if variable is None:
-                continue
-            last_valid_values[variable_name] = variable.get()
-            changing = [False]
-
-            def validate_value(
-                *_args, _name=variable_name, _variable=variable, _changing=changing
-            ):
-                if _changing[0]:
-                    return
-                proposed = _variable.get()
-                if self._validate_float_key(proposed):
-                    last_valid_values[_name] = proposed
-                    return
-                # StringVar traces also catch pastes and scripted changes that
-                # bypass Tk's usual validate="key" callback.
-                _changing[0] = True
-                try:
-                    _variable.set(last_valid_values[_name])
-                finally:
-                    _changing[0] = False
-
-            variable.trace_add("write", validate_value)
-
-        # The restored sequence module validates CosPhi only at execution.
-        # Apply the EVSE operating range before a plateau can be added or edited.
-        for method_name in ("add_step", "update_selected"):
-            original = getattr(sequence, method_name, None)
-            if not callable(original):
-                continue
-
-            def validate_cosphi_step(*args, _original=original, **kwargs):
-                mode = str(sequence.mode_var.get()).strip()
-                raw_cosphi = sequence.cosphi_var.get().strip() or "1"
-                if mode == "CosPhi" and not self._is_valid_cosphi(raw_cosphi):
-                    sequence._popup(
-                        "showwarning",
-                        "Test Sequence",
-                        "CosPhi must be between -0.99 and 1.00.\n"
-                        "Value 0 is not allowed.",
-                    )
-                    return None
-                return _original(*args, **kwargs)
-
-            setattr(sequence, method_name, validate_cosphi_step)
+        sequence.register_editable_widgets(
+            pn_entry, percent_entry, percent_scale, read_button
+        )
 
     def _save_and_close_test_sequence(self):
         """Persist steps before releasing the modal Test Sequence window."""
@@ -5450,42 +5655,21 @@ class RemoteBorneApp:
                     self.log("[UI] Test Sequence brought to foreground.")
                     return
 
-            # The restored sequencer has its own default geometry. Override
-            # its centering callback before construction so Windows renders
-            # only the final size, rather than flashing the old size first.
-            original_center_window = test_sequence.center_window
-            original_toplevel = test_sequence.ttk.Toplevel
-
-            def center_sequence_window(_master, win, _width, _height):
-                self._size_test_sequence_window(win)
-
-            def hidden_sequence_toplevel(*args, **kwargs):
-                """Prevent the sequencer's legacy default size from flashing."""
-                win = original_toplevel(*args, **kwargs)
-                win.withdraw()
-                return win
-
-            test_sequence.center_window = center_sequence_window
-            test_sequence.ttk.Toplevel = hidden_sequence_toplevel
-            try:
-                self._sequence_win = test_sequence.TestSequenceWindow(
-                    self.root,
-                    ssh_queue=self.ssh_queue,
-                    is_connected=lambda: bool(
-                        self.connected and getattr(self.ssh, "connected", False)
-                    ),
-                    pn_limit_provider=self._get_pn_limit,
-                    on_close=self._save_and_close_test_sequence,
-                )
-            finally:
-                test_sequence.center_window = original_center_window
-                test_sequence.ttk.Toplevel = original_toplevel
+            self._sequence_win = test_sequence.TestSequenceWindow(
+                self.root,
+                ssh_queue=self.ssh_queue,
+                is_connected=lambda: bool(
+                    self.connected and getattr(self.ssh, "connected", False)
+                ),
+                pn_limit_provider=self._get_pn_limit,
+                on_close=self._save_and_close_test_sequence,
+                on_steps_changed=self._save_test_sequence_steps,
+            )
+            self._size_test_sequence_window(self._sequence_win.win)
             saved_steps = self._load_test_sequence_steps()
             if saved_steps:
                 self._sequence_win.steps = saved_steps
                 self._sequence_win._render_steps(select_index=0)
-            self._bind_test_sequence_numeric_validation(self._sequence_win)
-            self._bind_test_sequence_persistence(self._sequence_win)
             self._add_test_sequence_file_actions(self._sequence_win)
             self._add_test_sequence_pn_helper(self._sequence_win)
             self._sequence_modal_open = True
@@ -5795,12 +5979,28 @@ class RemoteBorneApp:
                 )
                 return
 
-            if cmd.startswith("rm "):
-                cmd = "rm -f " + cmd[3:]
-            elif cmd.startswith("mv "):
-                cmd = "mv -f " + cmd[3:]
-            elif cmd.startswith("cp "):
-                cmd = "cp -f " + cmd[3:]
+            # Preserve exactly what the operator typed. File operations can
+            # overwrite or delete data, so RBM asks before sending them but
+            # never silently adds force flags such as ``-f``.
+            try:
+                command_name = shlex.split(cmd, posix=True)[0]
+            except (ValueError, IndexError):
+                command_name = cmd.split(maxsplit=1)[0] if cmd.split() else ""
+            if command_name in {"rm", "mv", "cp"}:
+                operation = {
+                    "rm": "delete files",
+                    "mv": "move or overwrite files",
+                    "cp": "copy or overwrite files",
+                }[command_name]
+                if not messagebox.askyesno(
+                    "Confirm file operation",
+                    f"This command can {operation}.\n\n"
+                    "RBM will send it exactly as typed:\n"
+                    f"{cmd}\n\nContinue?",
+                    parent=win,
+                ):
+                    append("[INFO] File operation cancelled.\n")
+                    return
 
             interactive_cmds = ["vim", "vi", "nano", "top", "htop", "less", "more"]
             base_cmd = cmd.split()[0] if cmd.split() else ""
@@ -6017,13 +6217,17 @@ class RemoteBorneApp:
             "Type 'help' for commands.\n"
         )
 
-        def _on_close():
+        def _on_close(force=False):
             if script_running[0]:
-                self._popup_warning(
-                    "Terminal",
-                    "A script is still running. Stop it or wait for completion before closing the terminal.",
-                )
-                return
+                if not force:
+                    self._popup_warning(
+                        "Terminal",
+                        "A script is still running. Stop it or wait for completion before closing the terminal.",
+                    )
+                    return False
+                self.ssh_queue.cancel_active_stream("terminal_script")
+                script_running[0] = False
+                terminal_busy[0] = False
             try:
                 self._close_terminal_window = None
                 self._terminal_window = None
@@ -6034,6 +6238,7 @@ class RemoteBorneApp:
                 win.destroy()
             except Exception:
                 pass
+            return True
 
         self._close_terminal_window = _on_close
         win.protocol("WM_DELETE_WINDOW", _on_close)
@@ -6205,6 +6410,7 @@ class RemoteBorneApp:
             self.ssh.close()
         except Exception:
             pass
+        self._stop_local_simulator_server()
         self.root.after(150, self.root.destroy)
 
     # --------------------------------------------------------------

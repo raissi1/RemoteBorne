@@ -18,7 +18,6 @@ venv/
 config/config.ini
 logs/
 exports/
-documents/
 
 # ============================
 # Build artifacts
@@ -26,12 +25,6 @@ documents/
 build/
 dist/
 *.egg-info/
-
-# ============================
-# PowerShell build scripts
-# ============================
-*.ps1
-
 # ============================
 # IDE / Editor files
 # ============================

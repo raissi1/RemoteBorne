@@ -23,7 +23,7 @@ def open_help(parent=None):
 
     win = tk.Toplevel(parent)
     win.withdraw()
-    win.title("RBM Help")
+    win.title("RBM V16.1.0 Help")
     win.geometry("1000x800")
     win.minsize(850, 600)
 
@@ -46,7 +46,7 @@ def open_help(parent=None):
 
     ttk.Label(
         top,
-        text="Remote Borne Manager - User Guide",
+        text="Remote Borne Control Interface V16.1.0 - User Guide",
         font=("Segoe UI", 16, "bold"),
     ).pack(side="left")
 
@@ -229,7 +229,8 @@ def open_help(parent=None):
         "- htop\n"
         "- less\n"
         "- more\n\n"
-        "For UI safety and consistency, rm / mv / cp are forced with -f.\n",
+        "Use rm, mv, and cp with caution: they can change or remove files on the EVSE. "
+        "RBM asks for confirmation and sends the command exactly as typed; it never adds force options automatically.\n",
         "normal",
     )
 
@@ -249,7 +250,19 @@ def open_help(parent=None):
         "normal",
     )
 
-    text.insert("end", "\n10. DEBUG LOGS AND MAINTENANCE\n", "section")
+    text.insert("end", "\n10. LOCAL SIMULATOR\n", "section")
+    text.insert(
+        "end",
+        "Use Tools -> Start local simulator and connect to validate RBM without a physical charger. "
+        "RBM starts an isolated SSH/SCP EVSE on 127.0.0.1:2222, switches only the current session, "
+        "and displays a SIMULATION MODE banner. The configured charger profile in config.ini is never changed. "
+        "Use Reset local simulator to restore demo GridCodes, logs, temperatures and SoC. Use Return to configured charger "
+        "before Stop local simulator, or simply close RBM: the local simulator stops automatically. "
+        "This mode validates RBM workflows, not electrical or firmware behaviour of a real EVSE.\n",
+        "normal",
+    )
+
+    text.insert("end", "\n11. DEBUG LOGS AND MAINTENANCE\n", "section")
     text.insert(
         "end",
         "The Debug logs menu opens the remote log follow window.\n\n"
@@ -265,7 +278,7 @@ def open_help(parent=None):
         "normal",
     )
 
-    text.insert("end", "\n11. ARCHITECTURE AND STABILITY\n", "section")
+    text.insert("end", "\n12. ARCHITECTURE AND STABILITY\n", "section")
     text.insert(
         "end",
         "RBM relies on a centralized architecture with SSHQueue for critical commands, explicit SCP timeouts, protected Tkinter callbacks, and cleaner transport failure handling.\n",
@@ -273,7 +286,7 @@ def open_help(parent=None):
     )
     text.insert("end", "Recommended for controlled local industrial networks.\n", "warning")
 
-    text.insert("end", "\n12. KNOWN LIMITS\n", "section")
+    text.insert("end", "\n13. KNOWN LIMITS\n", "section")
     text.insert(
         "end",
         "- Battery SoC depends on the latest value available in charger logs and current vehicle activity\n"
@@ -282,10 +295,10 @@ def open_help(parent=None):
         "normal",
     )
 
-    text.insert("end", "\n13. VERSION\n", "section")
+    text.insert("end", "\n14. VERSION\n", "section")
     text.insert(
         "end",
-        f"Remote Borne Control Interface\nHelp snapshot date: {today}\n\nAuthor: Nabil RAISSI\n",
+        f"Remote Borne Control Interface V16.1.0\nHelp snapshot date: {today}\n\nAuthor: Nabil RAISSI\n",
         "normal",
     )
 

@@ -1,0 +1,5 @@
+# Runtime and packaging dependencies for RBM development and delivery builds.
+ttkbootstrap>=1.10
+reportlab>=4
+paramiko>=3
+pyinstaller>=6
