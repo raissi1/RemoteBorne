@@ -70,11 +70,15 @@ class DebugLogsWindow:
       - sauvegarde de la vue filtrÃ©e
     """
 
-    def __init__(self, parent, ssh_info):
+    def __init__(self, parent, ssh_info, host_key=None):
         """
         ssh_info:
             - (host, user, password)
             - ou (host, user, password, port)
+        host_key:
+            Fingerprint already approved by the main RBM SSH session.  It is
+            passed to this independent Plink process so batch mode remains
+            secure and does not fail for a newly approved EVSE.
         """
         self.parent = parent
         if len(ssh_info) == 4:
@@ -84,6 +88,7 @@ class DebugLogsWindow:
             self.port = 22
         else:
             raise ValueError("ssh_info must be (host, user, password[, port])")
+        self.host_key = (host_key or "").strip()
 
         # Processus & Ã©tats
         self.processes = {}        # log_name -> subprocess.Popen
@@ -290,16 +295,21 @@ class DebugLogsWindow:
         """
         Construit la commande plink pour faire un tail -f sur un fichier de log.
         """
-        return [
+        command = [
             PLINK_PATH,
             "-ssh",
             "-batch",
+        ]
+        if self.host_key:
+            command.extend(["-hostkey", self.host_key])
+        command.extend([
             "-P", str(self.port),
             "-l", self.user,
             "-pw", self.password,
             self.host,
             f"tail -f {remote_path}",
-        ]
+        ])
+        return command
 
     # ------------------------------------------------------------------
     # Start / Stop / reader thread
@@ -365,25 +375,60 @@ class DebugLogsWindow:
         self.insert_line(log_name, f"[INFO] Local file: {file_path}")
 
         def reader():
-            while self.running.get(log_name, False):
-                line = proc.stdout.readline()
-                if not line:
-                    break
-                try:
-                    if self.parent.winfo_exists():
-                        self.parent.after(0, self.insert_line, log_name, line)
-                    else:
-                        break
-                except Exception:
-                    break
-                # Ã‰crit dans le fichier local complet
-                log_file.write(line)
-                log_file.flush()
+            stopped_by_operator = False
             try:
-                proc.kill()
-            except Exception:
-                pass
-            log_file.close()
+                while self.running.get(log_name, False):
+                    line = proc.stdout.readline()
+                    if not line:
+                        break
+                    try:
+                        if self.parent.winfo_exists():
+                            self.parent.after(0, self.insert_line, log_name, line)
+                        else:
+                            break
+                    except Exception:
+                        break
+                    # Ã‰crit dans le fichier local complet
+                    log_file.write(line)
+                    log_file.flush()
+            finally:
+                stopped_by_operator = not self.running.get(log_name, False)
+                try:
+                    if proc.poll() is None:
+                        proc.kill()
+                except Exception:
+                    pass
+                try:
+                    log_file.close()
+                except Exception:
+                    pass
+
+                # A failed Plink process must not leave the tab permanently
+                # marked as running.  The operator can immediately press Start
+                # again after a transient SSH or host-key error.
+                if self.processes.get(log_name) is proc:
+                    self.processes.pop(log_name, None)
+                self.running.pop(log_name, None)
+
+                if not stopped_by_operator:
+                    returncode = proc.poll()
+
+                    def report_stream_end():
+                        try:
+                            if self.window.winfo_exists():
+                                self.insert_line(
+                                    log_name,
+                                    "[ERROR] Log stream stopped "
+                                    f"(exit code {returncode}). Press Start to retry.",
+                                )
+                        except tk.TclError:
+                            pass
+
+                    try:
+                        if self.parent.winfo_exists():
+                            self.parent.after(0, report_stream_end)
+                    except Exception:
+                        pass
 
         threading.Thread(target=reader, daemon=True).start()
 
@@ -520,8 +565,9 @@ class DebugLogsWindow:
             except Exception:
                 pass
             del self.processes[log_name]
-            if not silent:
-                self._popup_info("Info", f"Stopped following {log_name}.")
+        self.running.pop(log_name, None)
+        if not silent:
+            self._popup_info("Info", f"Stopped following {log_name}.")
 
     def clear_log(self, log_name: str):
         # efface la vue + le buffer
@@ -572,8 +618,9 @@ class DebugLogsWindow:
         self._popup_info("Success", f"Log successfully saved:\n{file_path}")
 
     def exit_log(self, log_name: str):
-        self.stop_log(log_name)
-        self.window.destroy()
+        # The Close button closes the shared window, therefore stop every
+        # active tail process rather than only the current tab's process.
+        self.on_close()
 
     def on_close(self):
         for log_name in list(self.processes.keys()):
@@ -581,11 +628,20 @@ class DebugLogsWindow:
         self.window.destroy()
 
 # ---------- Wrapper utilisation par RemoteBorneManager.py ----------
-def open_debug_logs_window(parent, host: str, user: str, password: str, port: int = 22):
+def open_debug_logs_window(
+    parent,
+    host: str,
+    user: str,
+    password: str,
+    port: int = 22,
+    host_key: str = None,
+):
     """
     Appel simple depuis RemoteBorneManager:
-        debug_logs.open_debug_logs_window(self.root, self.host, self.user, self.password, self.port)
+        debug_logs.open_debug_logs_window(
+            self.root, self.host, self.user, self.password, self.port, host_key
+        )
     """
     ssh_info = (host, user, password, port)
-    return DebugLogsWindow(parent, ssh_info)
+    return DebugLogsWindow(parent, ssh_info, host_key=host_key)
 

@@ -11,6 +11,7 @@ import logging
 
 from src.test_sequence import TestSequenceWindow
 from src.RemoteBorneManager import RemoteBorneApp
+from src.debug_logs import DebugLogsWindow
 from src.plink_backend import PlinkBackend
 from src.setpoint_validation import (
     validate_active_power,
@@ -257,6 +258,38 @@ class TestSafetyRegressionGuards(unittest.TestCase):
         self.assertNotIn('cmd = "rm -f "', source)
         self.assertNotIn('cmd = "mv -f "', source)
         self.assertNotIn('cmd = "cp -f "', source)
+
+    def test_terminal_uses_an_integrated_console_prompt(self):
+        source = (ROOT / "src" / "RemoteBorneManager.py").read_text(encoding="utf-8")
+        terminal_source = source[source.index("    def open_terminal("):]
+        self.assertIn('command_start_mark = "terminal_command_start"', terminal_source)
+        self.assertIn("output.bind(\"<Return>\", on_enter)", terminal_source)
+        self.assertNotIn("entry = ttk.Entry(frame", terminal_source)
+
+    def test_debug_logs_reuses_the_approved_host_key(self):
+        window = DebugLogsWindow.__new__(DebugLogsWindow)
+        window.host = "192.168.1.101"
+        window.user = "root"
+        window.password = "secret"
+        window.port = 22
+        window.host_key = "ssh-ed25519 255 SHA256:approved-key"
+
+        command = window._build_plink_tail_cmd("/var/log/example.log")
+
+        self.assertEqual(
+            command[command.index("-hostkey") + 1],
+            "ssh-ed25519 255 SHA256:approved-key",
+        )
+        main_source = (ROOT / "src" / "RemoteBorneManager.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("host_key=getattr(getattr(self.ssh, \"backend\", None)", main_source)
+
+    def test_debug_log_streams_release_their_tab_after_an_unexpected_exit(self):
+        source = (ROOT / "src" / "debug_logs.py").read_text(encoding="utf-8")
+        self.assertIn("self.processes.pop(log_name, None)", source)
+        self.assertIn("Press Start to retry.", source)
+        self.assertIn("self.on_close()", source)
 
     def test_simulator_launcher_has_no_user_specific_python_path(self):
         source = (ROOT / "tools" / "simulator" / "start_rbm_simulator.ps1").read_text(

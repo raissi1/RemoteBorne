@@ -5806,7 +5806,7 @@ class RemoteBorneApp:
             insertbackground="white",
             font=("Consolas", 10),
             wrap="word",
-            state="disabled",
+            state="normal",
         )
         output.grid(row=0, column=0, sticky="nsew")
 
@@ -5814,32 +5814,31 @@ class RemoteBorneApp:
         scrollbar.grid(row=0, column=1, sticky="ns")
         output.configure(yscrollcommand=scrollbar.set)
 
-        entry = ttk.Entry(frame, font=("Consolas", 10))
-        entry.grid(
-            row=1,
-            column=0,
-            columnspan=2,
-            sticky="ew",
-            padx=5,
-            pady=5,
-        )
-
         btn_frame = ttk.Frame(frame)
-        btn_frame.grid(row=2, column=0, columnspan=2, sticky="ew")
+        btn_frame.grid(row=1, column=0, columnspan=2, sticky="ew")
+
+        history = []
+        history_index = [-1]
+        terminal_busy = [False]
+        script_running = [False]
+        completion_pending = [False]
+        command_start_mark = "terminal_command_start"
 
         def append(text):
             try:
+                was_disabled = str(output.cget("state")) == "disabled"
                 output.configure(state="normal")
                 output.insert("end", text)
                 output.see("end")
-                output.configure(state="disabled")
+                if was_disabled:
+                    output.configure(state="disabled")
             except Exception:
                 pass
 
         def clear():
             output.configure(state="normal")
             output.delete("1.0", "end")
-            output.configure(state="disabled")
+            write_prompt()
 
         ttk.Button(btn_frame, text="Clear", command=clear).pack(
             side="left", padx=5, pady=5
@@ -5851,11 +5850,42 @@ class RemoteBorneApp:
             command=lambda: _on_close(),
         ).pack(side="right", padx=5, pady=5)
 
-        history = []
-        history_index = [-1]
-        terminal_busy = [False]
-        script_running = [False]
-        completion_pending = [False]
+        def write_prompt():
+            """Append one protected shell prompt and leave the cursor after it."""
+            try:
+                output.configure(state="normal")
+                content = output.get("1.0", "end-1c")
+                if content and not content.endswith("\n"):
+                    output.insert("end", "\n")
+                output.insert("end", f"{current_dir} $ ")
+                output.mark_set(command_start_mark, "end-1c")
+                output.mark_gravity(command_start_mark, "left")
+                output.mark_set("insert", "end-1c")
+                output.see("end")
+            except tk.TclError:
+                pass
+
+        def command_input():
+            try:
+                return output.get(command_start_mark, "end-1c")
+            except tk.TclError:
+                return ""
+
+        def replace_command(value):
+            try:
+                output.configure(state="normal")
+                output.delete(command_start_mark, "end-1c")
+                output.insert("end", value)
+                output.mark_set("insert", "end-1c")
+                output.see("end")
+            except tk.TclError:
+                pass
+
+        def show_completion_message(message, restore_command):
+            """Print completion candidates without losing the typed command."""
+            append(f"\n{message}\n")
+            write_prompt()
+            replace_command(restore_command)
 
         def cancel_script():
             if not script_running[0]:
@@ -5885,21 +5915,20 @@ class RemoteBorneApp:
 
         def set_terminal_busy(is_busy):
             terminal_busy[0] = is_busy
-            entry.configure(state="disabled" if is_busy else "normal")
+            output.configure(state="disabled" if is_busy else "normal")
             stop_script_btn.configure(
                 state="normal" if is_busy and script_running[0] else "disabled"
             )
             if not is_busy:
-                entry.focus_force()
+                write_prompt()
+                output.focus_force()
 
         def prefill_command(command):
             if terminal_busy[0]:
                 append("[INFO] Wait for the current command before preparing another script.\n")
                 return
-            entry.configure(state="normal")
-            entry.delete(0, "end")
-            entry.insert(0, command)
-            entry.focus_force()
+            replace_command(command)
+            output.focus_force()
 
         self._terminal_prefill_command = prefill_command
 
@@ -5960,6 +5989,7 @@ class RemoteBorneApp:
                             append(f"[DIR] {current_dir}\n")
                         else:
                             append("[ERROR] Directory not found\n")
+                        set_terminal_busy(False)
 
                     try:
                         if not self._closing and self.root.winfo_exists():
@@ -5967,7 +5997,8 @@ class RemoteBorneApp:
                     except Exception:
                         pass
 
-                self.ssh_queue.execute(
+                set_terminal_busy(True)
+                queued = self.ssh_queue.execute(
                     test_cmd,
                     callback=cb,
                     timeout=self.ssh_timeout,
@@ -5977,6 +6008,9 @@ class RemoteBorneApp:
                     silent=True,
                     label="Terminal cd",
                 )
+                if not queued:
+                    append("[ERROR] Terminal command could not be queued.\n")
+                    set_terminal_busy(False)
                 return
 
             # Preserve exactly what the operator typed. File operations can
@@ -6085,7 +6119,7 @@ class RemoteBorneApp:
             def on_stream(chunk):
                 append(chunk)
 
-            self.ssh_queue.execute(
+            queued = self.ssh_queue.execute(
                 full_cmd,
                 callback=cb,
                 timeout=None if is_script else self.ssh_timeout,
@@ -6097,6 +6131,10 @@ class RemoteBorneApp:
                 stream_callback=on_stream if is_script else None,
                 cancel_token="terminal_script" if is_script else None,
             )
+            if not queued:
+                append("[ERROR] Terminal command could not be queued.\n")
+                script_running[0] = False
+                set_terminal_busy(False)
 
         def complete_token(event=None):
             """Complete a command name or a remote file path with the Tab key."""
@@ -6106,7 +6144,7 @@ class RemoteBorneApp:
             if completion_pending[0]:
                 return "break"
 
-            value = entry.get()
+            value = command_input()
             stripped = value.lstrip()
             if not stripped:
                 append("[INFO] Type a command or path before pressing Tab.\n")
@@ -6121,12 +6159,15 @@ class RemoteBorneApp:
                 ]
                 matches = [command for command in commands if command.startswith(stripped)]
                 if len(matches) == 1:
-                    entry.delete(0, "end")
-                    entry.insert(0, matches[0] + " ")
+                    replace_command(matches[0] + " ")
                 elif len(matches) > 1:
-                    append("[TAB] " + "  ".join(matches) + "\n")
+                    show_completion_message(
+                        "[TAB] " + "  ".join(matches), value
+                    )
                 else:
-                    append(f"[TAB] No command starts with '{stripped}'.\n")
+                    show_completion_message(
+                        f"[TAB] No command starts with '{stripped}'.", value
+                    )
                 return "break"
 
             token = words[-1]
@@ -6151,16 +6192,19 @@ class RemoteBorneApp:
                 ]
                 error = (res.get("err") or "").strip()
                 if error:
-                    append("[ERROR] " + error + "\n")
+                    show_completion_message("[ERROR] " + error, requested_value)
                     return
                 if not candidates:
-                    append(f"[TAB] No match for '{token}'.\n")
+                    show_completion_message(
+                        f"[TAB] No match for '{token}'.", requested_value
+                    )
                     return
-                if len(candidates) == 1 and entry.get() == requested_value:
-                    entry.delete(0, "end")
-                    entry.insert(0, value_prefix + candidates[0])
+                if len(candidates) == 1 and command_input() == requested_value:
+                    replace_command(value_prefix + candidates[0])
                     return
-                append("[TAB] " + "  ".join(candidates) + "\n")
+                show_completion_message(
+                    "[TAB] " + "  ".join(candidates), requested_value
+                )
 
             self.ssh_queue.execute(
                 completion_cmd,
@@ -6175,47 +6219,94 @@ class RemoteBorneApp:
             return "break"
 
         def on_enter(event=None):
-            cmd = entry.get().strip()
+            cmd = command_input().strip()
             if not cmd:
-                return
+                return "break"
+            output.insert("end", "\n")
             if cmd == "clear":
                 clear()
-                entry.delete(0, "end")
-                return
+                return "break"
             if cmd == "help":
                 show_help()
-                entry.delete(0, "end")
-                return
+                write_prompt()
+                return "break"
 
             history.append(cmd)
             history_index[0] = len(history)
             run_command(cmd)
-            entry.delete(0, "end")
+            return "break"
 
         def history_up(event):
             if history:
                 history_index[0] = max(0, history_index[0] - 1)
-                entry.delete(0, "end")
-                entry.insert(0, history[history_index[0]])
+                replace_command(history[history_index[0]])
+            return "break"
 
         def history_down(event):
             if history:
                 history_index[0] = min(len(history), history_index[0] + 1)
-                entry.delete(0, "end")
                 if history_index[0] < len(history):
-                    entry.insert(0, history[history_index[0]])
+                    replace_command(history[history_index[0]])
+                else:
+                    replace_command("")
+            return "break"
 
-        entry.bind("<Return>", on_enter)
-        entry.bind("<Tab>", complete_token)
-        entry.bind("<Up>", history_up)
-        entry.bind("<Down>", history_down)
-        entry.focus_force()
+        def protect_terminal_history(event):
+            """Keep past output immutable while allowing normal shell-line editing."""
+            if terminal_busy[0]:
+                return "break"
+            try:
+                insert = output.index("insert")
+                at_prompt = output.compare(insert, "<=", command_start_mark)
+                selection = output.tag_ranges("sel")
+                if selection and output.compare(selection[0], "<", command_start_mark):
+                    output.tag_remove("sel", "1.0", "end")
+            except tk.TclError:
+                return "break"
+
+            if event.keysym == "Home":
+                output.mark_set("insert", command_start_mark)
+                return "break"
+            if event.keysym == "Left" and at_prompt:
+                return "break"
+            if event.keysym == "BackSpace" and at_prompt:
+                return "break"
+            if event.keysym == "Delete" and output.compare(insert, "<", command_start_mark):
+                return "break"
+            if output.compare(insert, "<", command_start_mark):
+                output.mark_set("insert", "end-1c")
+
+        def paste_into_command(event=None):
+            """Paste only into the active command, never over terminal history."""
+            if terminal_busy[0]:
+                return "break"
+            try:
+                clipboard = win.clipboard_get()
+                insert = output.index("insert")
+                selection = output.tag_ranges("sel")
+                if selection and output.compare(selection[0], "<", command_start_mark):
+                    output.tag_remove("sel", "1.0", "end")
+                if output.compare(insert, "<", command_start_mark):
+                    output.mark_set("insert", "end-1c")
+                output.insert("insert", clipboard)
+            except tk.TclError:
+                pass
+            return "break"
+
+        output.bind("<Return>", on_enter)
+        output.bind("<Tab>", complete_token)
+        output.bind("<Up>", history_up)
+        output.bind("<Down>", history_down)
+        output.bind("<KeyPress>", protect_terminal_history, add="+")
+        output.bind("<<Paste>>", paste_into_command)
 
         append(
             "RBM SSH Terminal ready.\n"
             f"Connected to {self.host}\n"
             "Type 'help' for commands.\n"
         )
+        write_prompt()
+        output.focus_force()
 
         def _on_close(force=False):
             if script_running[0]:
@@ -6376,7 +6467,8 @@ class RemoteBorneApp:
                 self.ssh.host,
                 self.ssh.user,
                 self.ssh.password,
-                self.ssh.port
+                self.ssh.port,
+                host_key=getattr(getattr(self.ssh, "backend", None), "host_key", None),
             )
         except Exception as e:
             self._debug_logs_window = None
