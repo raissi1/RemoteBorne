@@ -626,6 +626,7 @@ class TestSequenceWindow:
             self._finish("Sequence completed")
             return
         step = self.steps[self.current_index]
+        self._hold_deadline = None
         step["status"] = "Sending command"
         self._render_steps(select_index=self.current_index)
         self.status_var.set(f"Sending plateau {self.current_index + 1} of {len(self.steps)}")
@@ -662,11 +663,16 @@ class TestSequenceWindow:
             return
         step["status"] = f"Holding {step['hold']} s"
         self._render_steps(select_index=index)
-        self._hold_deadline = time.monotonic() + step["hold"]
+        hold_started_at = time.monotonic()
+        self._hold_deadline = hold_started_at + step["hold"]
+        if self.paused:
+            # A pause may begin while SSH is still sending the command. Only
+            # its overlap with the hold interval extends that interval.
+            self._pause_started_at = hold_started_at
         self._wait_hold(run_id, index)
 
     def _wait_hold(self, run_id, index):
-        if run_id != self.run_id or not self.running:
+        if run_id != self.run_id or not self.running or index != self.current_index:
             return
         if self.stop_requested:
             self._finish("Stopped by operator")
@@ -702,7 +708,8 @@ class TestSequenceWindow:
         self._pause_started_at = None
         self.btn_pause.configure(text="Pause")
         self._log("Sequence resumed.")
-        self._run_next(self.run_id)
+        # The pending hold/next-step timer (or SSH completion callback) already
+        # owns progress. Starting it again here would resend the active plateau.
 
     def stop(self):
         if not self.running:

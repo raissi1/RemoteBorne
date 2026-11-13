@@ -46,6 +46,92 @@ def _sequence_form(mode="P/Q", active="1000", reactive="", cosphi="1", hold="10"
     return sequence
 
 
+class TestSequencePauseResume(unittest.TestCase):
+    def _sequence(self):
+        sequence = TestSequenceWindow.__new__(TestSequenceWindow)
+        sequence.running = True
+        sequence.paused = sequence.stop_requested = False
+        sequence.run_id = 1
+        sequence.current_index = 0
+        sequence._hold_deadline = sequence._pause_started_at = None
+        sequence._active_queue_token = "test-sequence:1"
+        sequence.steps = [
+            {"mode": "P/Q", "active": power, "reactive": None, "hold": 10}
+            for power in (1000, 2000)
+        ]
+        sequence.ssh_queue = Mock()
+        sequence.ssh_queue.execute.return_value = True
+        sequence.ssh_queue.cancel_pending.return_value = 0
+        sequence.win = Mock()
+        scheduled = []
+        sequence.win.after.side_effect = lambda _delay, callback: scheduled.append(callback)
+        sequence.is_connected = lambda: True
+        for attribute in ("btn_pause", "btn_stop", "btn_safe_stop", "status_var",
+                          "_log", "_render_steps", "_update_progress"):
+            setattr(sequence, attribute, Mock())
+        sequence._finish = Mock(side_effect=lambda _status: setattr(sequence, "running", False))
+        return sequence, scheduled
+
+    def test_resume_hold_keeps_one_timer_and_does_not_resend_plateau(self):
+        sequence, scheduled = self._sequence()
+        with patch("src.test_sequence.time.monotonic", return_value=0) as clock:
+            sequence._run_next(1)
+            callback = sequence.ssh_queue.execute.call_args.kwargs["callback"]
+            callback({"success": True})
+            clock.return_value = 2
+            sequence.toggle_pause()
+            clock.return_value = 8
+            sequence.toggle_pause()
+            self.assertEqual(sequence._hold_deadline, 16)
+            self.assertEqual(sequence.ssh_queue.execute.call_count, 1)
+            self.assertEqual(len(scheduled), 1)
+            scheduled.pop(0)()
+            self.assertEqual(sequence.ssh_queue.execute.call_count, 1)
+            clock.return_value = 16
+            scheduled.pop(0)()
+            self.assertEqual(sequence.ssh_queue.execute.call_count, 2)
+            self.assertEqual(sequence.current_index, 1)
+            self.assertIsNone(sequence._hold_deadline)
+
+    def test_pause_during_ssh_extends_only_the_paused_part_of_the_hold(self):
+        sequence, scheduled = self._sequence()
+        with patch("src.test_sequence.time.monotonic", return_value=0) as clock:
+            sequence._run_next(1)
+            clock.return_value = 1
+            sequence.toggle_pause()
+            clock.return_value = 5
+            sequence.ssh_queue.execute.call_args.kwargs["callback"]({"success": True})
+            clock.return_value = 8
+            sequence.toggle_pause()
+            self.assertEqual(sequence._hold_deadline, 18)
+            self.assertEqual(sequence.ssh_queue.execute.call_count, 1)
+            clock.return_value = 18
+            scheduled.pop(0)()
+            self.assertEqual(sequence.ssh_queue.execute.call_count, 2)
+
+    def test_resume_before_ssh_completion_waits_for_the_existing_command(self):
+        sequence, scheduled = self._sequence()
+        with patch("src.test_sequence.time.monotonic", return_value=0):
+            sequence._run_next(1)
+            sequence.toggle_pause()
+            sequence.toggle_pause()
+            self.assertEqual(sequence.ssh_queue.execute.call_count, 1)
+            self.assertEqual(scheduled, [])
+            sequence.ssh_queue.execute.call_args.kwargs["callback"]({"success": True})
+            self.assertEqual(len(scheduled), 1)
+
+    def test_stop_while_paused_does_not_send_the_next_plateau(self):
+        sequence, scheduled = self._sequence()
+        with patch("src.test_sequence.time.monotonic", return_value=0):
+            sequence._run_next(1)
+            sequence.ssh_queue.execute.call_args.kwargs["callback"]({"success": True})
+            sequence.toggle_pause()
+            sequence.stop()
+            scheduled.pop(0)()
+            sequence._finish.assert_called_once_with("Stopped by operator")
+            self.assertEqual(sequence.ssh_queue.execute.call_count, 1)
+
+
 class TestGlobalLogSearch(unittest.TestCase):
     def test_searches_every_source_and_keeps_log_names(self):
         buffers = {
@@ -155,6 +241,18 @@ class TestSequenceValidation(unittest.TestCase):
             validate_cosphi("0")
         self.assertEqual(validate_cosphi("-0.99"), -0.99)
         self.assertEqual(validate_reactive_power("", optional=True), None)
+
+    def test_cosphi_rejects_values_that_would_be_transmitted_as_zero_percent(self):
+        for value in ("0.001", "-0.001", "0.0049", "-0.0049", "0.005", "-0.005"):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "0%"):
+                validate_cosphi(value)
+        for value in ("0.006", "-0.006", "0.9", "-0.99", "1"):
+            with self.subTest(value=value):
+                self.assertNotEqual(round(validate_cosphi(value) * 100), 0)
+
+    def test_sequence_cosphi_uses_the_same_transmitted_value_guard(self):
+        with self.assertRaisesRegex(ValueError, "0%"):
+            _sequence_form(mode="CosPhi", cosphi="0.001")._form_step()
 
     def test_csv_import_is_validated_before_any_step_is_returned(self):
         sequence = _sequence_form()

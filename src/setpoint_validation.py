@@ -51,4 +51,9 @@ def validate_cosphi(value, *, default: float = 1.0) -> float:
         raise ValueError(
             "CosPhi must be between -0.99 and 1.00; value 0 is not allowed."
         )
+    if int(round(cosphi * 100)) == 0:
+        raise ValueError(
+            "CosPhi rounds to 0% on the target; choose a value representable "
+            "as a non-zero integer percentage."
+        )
     return cosphi
