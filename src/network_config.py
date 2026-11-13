@@ -60,7 +60,7 @@ def open_network_config(parent, config_path, on_saved=None):
     win.withdraw()
     win.title("Network Configuration")
     win.geometry("640x475")
-    win.resizable(False, False)
+    win.resizable(True, True)
     center_window(parent, win, 640, 430)
 
     def show_error(title: str, message: str):
@@ -256,7 +256,7 @@ def open_network_config(parent, config_path, on_saved=None):
     win.minsize(620, 465)
 
     # Build first, then show the completed modal window above RBM only.
-    win.transient(parent)
+    win.transient("")
     win.deiconify()
     win.lift()
     win.focus_force()

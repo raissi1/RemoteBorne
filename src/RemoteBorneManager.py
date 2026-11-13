@@ -2802,8 +2802,8 @@ class RemoteBorneApp:
         dialog.withdraw()
         self._browser_find_dialog = dialog
         dialog.title("Find in GridCodes")
-        dialog.transient(self.root)
-        dialog.resizable(False, False)
+        dialog.transient("")
+        dialog.resizable(True, True)
         # Leave room for the action row on compact displays and themed buttons.
         dialog.geometry("460x190")
         dialog.minsize(460, 190)
@@ -3956,7 +3956,7 @@ class RemoteBorneApp:
         dialog = tk.Toplevel(self.root)
         dialog.withdraw()
         dialog.title("NetLogger logs")
-        dialog.transient(self.root)
+        dialog.transient("")
         # Only Debug Logs remains modeless. NetLogger is an operator workflow,
         # so it keeps RBM protected until it is closed.
         dialog.minsize(650, 420)
@@ -4653,8 +4653,8 @@ class RemoteBorneApp:
             dialog.withdraw()
             self._find_dialog = dialog
             dialog.title("Find (Ctrl+F)")
-            dialog.transient(win)
-            dialog.resizable(False, False)
+            dialog.transient("")
+            dialog.resizable(True, True)
             self._center_toplevel(dialog, 520, 170, parent=win)
             dialog.grid_columnconfigure(0, weight=0)
             dialog.grid_columnconfigure(1, weight=1)
@@ -4882,7 +4882,7 @@ class RemoteBorneApp:
         txt.bind("<Control-w>", lambda e: (close_editor(), "break"))
         # Display the finished modal editor in one operation. This avoids a
         # temporary empty window while the text and toolbar are being built.
-        win.transient(self.root)
+        win.transient("")
         win.deiconify()
         win.lift()
         win.focus_force()
@@ -5810,7 +5810,7 @@ class RemoteBorneApp:
             self._add_test_sequence_pn_helper(self._sequence_win)
             self._sequence_modal_open = True
             sequence_window = self._sequence_win.win
-            sequence_window.transient(self.root)
+            sequence_window.transient("")
             # The complete layout is ready: map the window only once, at its
             # final size, then make it modal above the RBM main window.
             sequence_window.deiconify()
@@ -5924,7 +5924,7 @@ class RemoteBorneApp:
         win.minsize(900, 500)
 
         try:
-            win.transient(self.root)
+            win.transient("")
             win.lift()
             win.focus_force()
         except Exception:

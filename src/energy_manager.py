@@ -116,7 +116,7 @@ class EnergyManagerWindow:
         try:
             # Energy commands must stay in one controlled workflow. Debug
             # Logs is intentionally the only modeless secondary window.
-            self.win.transient(master)
+            self.win.transient("")
             self.win.deiconify()
             self.win.lift()
             self.win.focus_force()

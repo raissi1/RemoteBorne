@@ -311,7 +311,7 @@ class DebugLogsWindow:
         self.window.withdraw()
         self.window.title("Debug Logs - Service Monitor")
         self.window.geometry("1180x760")
-        self.window.transient(parent)
+        self.window.transient("")
         self.window.minsize(980, 620)
 
         # Centrage sur la fenÃªtre parente

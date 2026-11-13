@@ -92,7 +92,7 @@ class TestSequenceWindow:
         self.win.minsize(900, 650)
         self.win.resizable(True, True)
         center_window(master, self.win, 980, 700)
-        self.win.transient(master)
+        self.win.transient("")
         self.win.protocol("WM_DELETE_WINDOW", self.close)
 
         self.mode_var = tk.StringVar(value="P/Q")

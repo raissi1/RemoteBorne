@@ -43,7 +43,7 @@ class GridCodesMigrationWindow:
         self.window.title("GridCodes Migration")
         self.window.minsize(1040, 700)
         self.window.geometry("1180x800")
-        self.window.transient(parent)
+        self.window.transient("")
         center_window(parent, self.window, 1180, 800)
         self.window.protocol("WM_DELETE_WINDOW", self.close)
 

@@ -1,3 +1,6 @@
+# Windows hides Minimize/Maximize on transient dialogs. Keep normal top-level
+# decorations; callers retain grab_set() and their existing close handlers for
+# modal workflows. A minimized modal window can be restored from the taskbar.
 def center_window(parent, win, width=900, height=600):
     try:
         if parent and parent.winfo_exists():
@@ -20,7 +23,7 @@ def center_window(parent, win, width=900, height=600):
 
     try:
         if parent:
-            win.transient(parent)
+            win.transient("")
         win.lift()
         win.focus_force()
     except Exception:

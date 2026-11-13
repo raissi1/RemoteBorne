@@ -347,7 +347,7 @@ def open_help(parent=None):
     text.configure(state="disabled")
     # Map the completed help window once, above RBM but not above other apps.
     if parent is not None:
-        win.transient(parent)
+        win.transient("")
     win.deiconify()
     win.lift()
     win.focus_force()
