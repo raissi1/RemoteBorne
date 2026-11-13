@@ -8,6 +8,7 @@ import tempfile
 import threading
 import unittest
 import logging
+from unittest.mock import Mock, patch
 
 from src.test_sequence import TestSequenceWindow
 from src.RemoteBorneManager import RemoteBorneApp
@@ -345,10 +346,28 @@ class TestSafetyRegressionGuards(unittest.TestCase):
         self.assertFalse(success)
         self.assertIn("pscp.exe", error)
 
-    def test_window_keeps_the_ttkbootstrap_default_icon(self):
-        source = (ROOT / "src" / "RemoteBorneManager.py").read_text(encoding="utf-8")
-        self.assertNotIn("def _set_app_icon", source)
-        self.assertNotIn("self.root.iconbitmap", source)
+    def test_window_uses_the_supplied_icon_on_windows(self):
+        app = RemoteBorneApp.__new__(RemoteBorneApp)
+        app.root = Mock()
+        with patch("src.RemoteBorneManager.sys.platform", "win32"):
+            app._set_app_icon()
+        icon = str(ROOT / "BorneCommander.ico")
+        self.assertEqual(app.root.iconbitmap.call_count, 2)
+        app.root.iconbitmap.assert_any_call(default=icon)
+        app.root.iconbitmap.assert_any_call(icon)
+
+    def test_packaged_window_finds_the_pyinstaller_icon(self):
+        app = RemoteBorneApp.__new__(RemoteBorneApp)
+        app.root = Mock()
+        with tempfile.TemporaryDirectory() as directory:
+            icon = pathlib.Path(directory) / "BorneCommander.ico"
+            icon.write_bytes((ROOT / "BorneCommander.ico").read_bytes())
+            with patch("src.RemoteBorneManager.sys.platform", "win32"), patch(
+                "src.RemoteBorneManager.sys._MEIPASS", directory, create=True
+            ):
+                app._set_app_icon()
+            app.root.iconbitmap.assert_any_call(default=str(icon))
+            app.root.iconbitmap.assert_any_call(str(icon))
 
     def _alive_probe_host(self, ssh, ssh_queue):
         app = RemoteBorneApp.__new__(RemoteBorneApp)

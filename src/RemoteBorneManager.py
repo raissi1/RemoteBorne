@@ -343,6 +343,7 @@ class RemoteBorneApp:
         # Fenêtre ttkbootstrap, thème "flatly" comme V7
         self.root = ttk.Window(themename=self.current_theme)
         self.root.title("Remote Borne Control Interface")
+        self._set_app_icon()
 
         try:
             sw = self.root.winfo_screenwidth()
@@ -514,6 +515,24 @@ class RemoteBorneApp:
         )
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
+
+    def _set_app_icon(self):
+        """Use the supplied Windows icon for this window and its dialogs."""
+        if sys.platform != "win32":
+            return
+        # PyInstaller 6 stores --add-data resources in _internal/_MEIPASS.
+        # Source runs and portable distributions can also keep it at the root.
+        resource_dir = getattr(sys, "_MEIPASS", BASE_DIR)
+        for directory in dict.fromkeys((resource_dir, BASE_DIR)):
+            icon_path = os.path.join(directory, "BorneCommander.ico")
+            if not os.path.isfile(icon_path):
+                continue
+            try:
+                self.root.iconbitmap(default=icon_path)
+                self.root.iconbitmap(icon_path)
+                return
+            except tk.TclError as exc:
+                print(f"[ICON] Unable to load {icon_path}: {exc}")
 
     def _confirm_new_host_key(self, host: str, details: str) -> bool:
         """Ask in Tk's thread before trusting a new or replaced EVSE key."""
@@ -6666,6 +6685,16 @@ class RemoteBorneApp:
 # ENTRY POINT
 # ----------------------------------------------------------------------
 def start_app():
+    if sys.platform == "win32":
+        # Give Windows a stable application identity before creating any HWND,
+        # so source runs use the RBM taskbar icon instead of Python's identity.
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "RemoteBorneManager.RBM"
+            )
+        except (AttributeError, OSError) as exc:
+            print(f"[ICON] Unable to set Windows application identity: {exc}")
     cfg = load_config()
     app = RemoteBorneApp(cfg)
     try:
