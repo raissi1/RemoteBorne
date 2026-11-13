@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import pathlib
 import queue
 import tempfile
@@ -425,7 +426,18 @@ class TestSafetyRegressionGuards(unittest.TestCase):
         spec = (ROOT / "RBM.spec").read_text(encoding="utf-8")
         self.assertNotIn('Copy-Item "src\\logs"', script)
         self.assertNotIn('Copy-Item "src\\exports"', script)
-        self.assertIn("'tools\\\\simulator'", spec)
+        # Inspect the declared source/destination pair without executing the
+        # PyInstaller spec. Generated specs can use either slash convention.
+        data_assignment = next(
+            node for node in ast.parse(spec).body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "datas" for target in node.targets)
+        )
+        data_entries = {
+            tuple(pathlib.PurePosixPath(part.replace("\\", "/")).as_posix() for part in entry)
+            for entry in ast.literal_eval(data_assignment.value)
+        }
+        self.assertIn(("tools/simulator", "tools/simulator"), data_entries)
         self.assertIn("collect_all('paramiko')", spec)
         self.assertIn("RBM_V17_", script)
         self.assertIn("'setpoint_validation'", spec)
