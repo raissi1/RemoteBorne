@@ -395,11 +395,59 @@ class DebugLogsWindow:
             self.global_results_tab, textvariable=self.global_results_status,
             wraplength=900,
         ).pack(fill="x", pady=(0, 6))
+        footer = ttk.Frame(self.global_results_tab)
+        footer.pack(side="bottom", fill="x", pady=(6, 0))
+        self.global_export_status = tk.StringVar(
+            master=self.window, value="Export saves the displayed matching lines.",
+        )
+        ttk.Label(footer, textvariable=self.global_export_status).pack(side="left")
+        self.global_export_button = ttk.Button(
+            footer, text="Export results", command=self.export_global_results, state="disabled",
+        )
+        self.global_export_button.pack(side="right")
+        self._global_results_snapshot = None
         self.global_results_text = ScrolledText(
             self.global_results_tab, wrap="word", state="disabled",
         )
         self.global_results_text.pack(fill="both", expand=True)
         self.global_results_text.tag_configure("match", background="#ffe082", foreground="#000000")
+
+    def export_global_results(self):
+        # Freeze what the operator saw before opening the native Save dialog:
+        # Tk may continue receiving live lines while that dialog is open.
+        snapshot = self._global_results_snapshot
+        if not snapshot or not snapshot["rows"]:
+            return
+        path = filedialog.asksaveasfilename(
+            parent=self.window, title="Export Find results",
+            defaultextension=".txt",
+            initialfile=f"RBM_Find_{datetime.datetime.now():%Y-%m-%d_%H-%M-%S}.txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        lines = [
+            "RBM - Find in all logs",
+            f"Captured: {snapshot['captured']}",
+            f"Search: {snapshot['query']}",
+            f"Ignore case: {snapshot['ignore_case']}",
+            f"Matching lines in buffers: {sum(snapshot['counts'].values())}",
+            f"Exported lines: {len(snapshot['rows'])} (latest 500 per log)",
+            "Scope: displayed results from received buffers; grouped by source log.",
+            "Matches per log:",
+            *[f"  {name}: {count}" for name, count in snapshot["counts"].items()],
+            "", "Results:",
+            *[f"[{name}] {line}" for name, line in snapshot["rows"]],
+        ]
+        try:
+            with open(path, "w", encoding="utf-8", newline="\n") as handle:
+                handle.write("\n".join(lines) + "\n")
+        except OSError as exc:
+            self._popup_error("Export results", f"Cannot save search results:\n{exc}")
+            return
+        self.global_export_status.set(
+            f"Exported {len(snapshot['rows'])} line(s) to {os.path.basename(path)}"
+        )
 
     def _focus_global_find(self, _event=None):
         self.notebook.select(self.diagnosis_tab)
@@ -437,6 +485,12 @@ class DebugLogsWindow:
         self._global_search_after = None
         query = self._global_query
         counts, rows = search_log_buffers(self.log_buffers, query, self._global_ignore_case)
+        self._global_results_snapshot = {
+            "query": query, "ignore_case": self._global_ignore_case,
+            "counts": counts, "rows": rows,
+            "captured": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+        }
+        self.global_export_button.configure(state="normal" if rows else "disabled")
         widget = self.global_results_text
         position = widget.yview()[0]
         widget.configure(state="normal")

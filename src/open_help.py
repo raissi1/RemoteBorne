@@ -277,6 +277,7 @@ def open_help(parent=None):
         "Debug log window features:\n"
         "- Live diagnosis tab combining the latest setpoint, charger, Battery SoC, temperature, meter, and OCPP service values\n"
         "- Find at the bottom of Live diagnosis searches received lines across every service, shows the source and counts, and follows new matches live; press Ctrl+F or Enter to search\n"
+        "- Export results in the Find tab saves the displayed matching lines as UTF-8 text, with the search, source names, capture time and match counts\n"
         "- OCPP summary shows the latest connection state, BootNotification result, connector state, reported fault details, transaction, and protocol exchange\n"
         "- Start all / Stop all controls for all monitored services\n"
         "- Capture incident creates a timestamped ZIP snapshot containing the visible diagnostic summary and all in-memory log buffers; credentials are never included\n"

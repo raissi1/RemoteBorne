@@ -179,6 +179,7 @@ class TestGlobalLogSearch(unittest.TestCase):
         window._global_ignore_case = True
         window.log_buffers = {"a.log": ["ERROR power"], "b.log": ["ready"]}
         window.global_results_text = Mock()
+        window.global_export_button = Mock()
         window.global_results_text.yview.return_value = (0.0, 1.0)
         window.global_results_status = Mock()
         window.global_follow_var = _Value(True)
@@ -187,6 +188,57 @@ class TestGlobalLogSearch(unittest.TestCase):
         window.global_results_text.tag_add.assert_called_once_with("match", "1.8", "1.13")
         self.assertIn("1 matching line(s)", window.global_results_status.set.call_args.args[0])
         self.assertIn("b.log: 0", window.global_results_status.set.call_args.args[0])
+
+    def _export_window(self):
+        window = DebugLogsWindow.__new__(DebugLogsWindow)
+        window.window = Mock()
+        window.global_export_status = Mock()
+        window._popup_error = Mock()
+        window._global_results_snapshot = {
+            "query": "error", "ignore_case": True,
+            "captured": "2026-11-13T12:00:00+01:00",
+            "counts": {"a.log": 800, "b.log": 0},
+            "rows": [("a.log", "ERROR température")],
+        }
+        return window
+
+    def test_export_freezes_displayed_results_before_the_save_dialog(self):
+        window = self._export_window()
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "results.txt"
+            def choose_file(**_kwargs):
+                window._global_results_snapshot = {"rows": [("b.log", "new live line")]}
+                return str(path)
+            with patch("src.debug_logs.filedialog.asksaveasfilename", side_effect=choose_file):
+                window.export_global_results()
+            content = path.read_text(encoding="utf-8")
+            self.assertIn("Search: error", content)
+            self.assertIn("Matching lines in buffers: 800", content)
+            self.assertIn("Exported lines: 1", content)
+            self.assertIn("[a.log] ERROR température", content)
+            self.assertNotIn("new live line", content)
+            window._popup_error.assert_not_called()
+            window.global_export_status.set.assert_called_once()
+
+    def test_export_cancellation_and_empty_results_do_not_report_success(self):
+        window = self._export_window()
+        with patch("src.debug_logs.filedialog.asksaveasfilename", return_value="") as dialog:
+            window.export_global_results()
+            self.assertEqual(dialog.call_count, 1)
+            window._global_results_snapshot = {"rows": []}
+            window.export_global_results()
+            self.assertEqual(dialog.call_count, 1)
+        window.global_export_status.set.assert_not_called()
+        window._popup_error.assert_not_called()
+
+    def test_export_reports_a_file_write_error(self):
+        window = self._export_window()
+        with tempfile.TemporaryDirectory() as directory:
+            path = str(pathlib.Path(directory) / "missing" / "results.txt")
+            with patch("src.debug_logs.filedialog.asksaveasfilename", return_value=path):
+                window.export_global_results()
+        window._popup_error.assert_called_once()
+        window.global_export_status.set.assert_not_called()
 
     def test_live_refresh_is_coalesced_and_cancellable(self):
         window = DebugLogsWindow.__new__(DebugLogsWindow)
