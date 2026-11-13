@@ -6,6 +6,7 @@ import re
 import datetime
 import json
 import zipfile
+from collections import deque
 from pathlib import Path
 from typing import Optional, Union
 import tkinter as tk
@@ -23,6 +24,29 @@ except ImportError:
 MAX_LINES = 10000  # max lignes conservÃ©es en mÃ©moire ET dans la vue
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
+
+
+def search_log_buffers(buffers, query, ignore_case=True, limit_per_log=500):
+    """Search literal text in each received buffer, independently of tab filters.
+
+    Count every matching line, but bound the displayed results per source so a
+    common query cannot flood the UI. Rows retain their source log name.
+    """
+    counts, rows = {}, []
+    if not query:
+        return counts, rows
+    needle = query.casefold() if ignore_case else query
+    for name, lines in buffers.items():
+        recent = deque(maxlen=limit_per_log)
+        count = 0
+        for line in lines:
+            haystack = line.casefold() if ignore_case else line
+            if needle in haystack:
+                count += 1
+                recent.append((name, line))
+        counts[name] = count
+        rows.extend(recent)
+    return counts, rows
 
 
 def _detect_plink() -> str:
@@ -317,6 +341,12 @@ class DebugLogsWindow:
         # Centrage sur la fenÃªtre parente
         center_window(parent, self.window, 1180, 760)
 
+        # One Find bar remains available from the diagnosis and every log tab.
+        self._global_query = ""
+        self._global_ignore_case = True
+        self._global_search_after = None
+        self._create_global_find_bar()
+
         # Notebook
         self.notebook = ttk.Notebook(self.window)
         self.notebook.pack(fill="both", expand=True)
@@ -335,10 +365,118 @@ class DebugLogsWindow:
         for name, path in self.logs_paths.items():
             self._create_tab(name, path)
 
+        self._create_global_results_tab()
+        self.window.bind("<Control-f>", self._focus_global_find)
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
         self.window.deiconify()
         self.window.lift()
         self.window.focus_force()
+
+    def _create_global_find_bar(self):
+        bar = ttk.Frame(self.window, padding=(8, 6))
+        bar.pack(fill="x")
+        ttk.Label(bar, text="Find in all logs:").pack(side="left")
+        self.global_find_var = tk.StringVar(master=self.window)
+        self.global_ignore_case_var = tk.BooleanVar(master=self.window, value=True)
+        self.global_follow_var = tk.BooleanVar(master=self.window, value=True)
+        self.global_find_entry = ttk.Entry(bar, textvariable=self.global_find_var)
+        self.global_find_entry.pack(side="left", fill="x", expand=True, padx=6)
+        self.global_find_entry.bind("<Return>", self.find_in_all_logs)
+        ttk.Button(bar, text="Find", command=self.find_in_all_logs).pack(side="left", padx=3)
+        ttk.Button(bar, text="Clear", command=self.clear_global_find).pack(side="left", padx=3)
+        ttk.Checkbutton(
+            bar, text="Ignore case", variable=self.global_ignore_case_var,
+            command=self.find_in_all_logs,
+        ).pack(side="left", padx=6)
+        ttk.Checkbutton(bar, text="Follow results", variable=self.global_follow_var).pack(side="left")
+
+    def _create_global_results_tab(self):
+        self.global_results_tab = ttk.Frame(self.notebook, padding=6)
+        self.notebook.add(self.global_results_tab, text="Find - all logs")
+        self.global_results_status = tk.StringVar(
+            master=self.window,
+            value="Search received lines from every log. Start all to receive live data.",
+        )
+        ttk.Label(
+            self.global_results_tab, textvariable=self.global_results_status,
+            wraplength=900,
+        ).pack(fill="x", pady=(0, 6))
+        self.global_results_text = ScrolledText(
+            self.global_results_tab, wrap="word", state="disabled",
+        )
+        self.global_results_text.pack(fill="both", expand=True)
+        self.global_results_text.tag_configure("match", background="#ffe082", foreground="#000000")
+
+    def _focus_global_find(self, _event=None):
+        self.global_find_entry.focus_set()
+        self.global_find_entry.selection_range(0, "end")
+        return "break"
+
+    def _cancel_global_search(self):
+        if self._global_search_after is not None:
+            self.window.after_cancel(self._global_search_after)
+            self._global_search_after = None
+
+    def find_in_all_logs(self, _event=None):
+        self._cancel_global_search()
+        self._global_query = self.global_find_var.get()
+        self._global_ignore_case = self.global_ignore_case_var.get()
+        self._refresh_global_results()
+        self.notebook.select(self.global_results_tab)
+        return "break"
+
+    def clear_global_find(self):
+        self._cancel_global_search()
+        self.global_find_var.set("")
+        self._global_query = ""
+        self._refresh_global_results()
+        self.global_find_entry.focus_set()
+
+    def _schedule_global_search(self):
+        # Coalesce incoming streams instead of scanning 40,000 buffered lines
+        # for every received line. No remote commands or extra SSH connections.
+        if getattr(self, "_global_query", "") and self._global_search_after is None:
+            self._global_search_after = self.window.after(500, self._refresh_global_results)
+
+    def _refresh_global_results(self):
+        self._global_search_after = None
+        query = self._global_query
+        counts, rows = search_log_buffers(self.log_buffers, query, self._global_ignore_case)
+        widget = self.global_results_text
+        position = widget.yview()[0]
+        widget.configure(state="normal")
+        widget.delete("1.0", "end")
+        rendered = [f"[{name}] {line}" for name, line in rows]
+        if rendered:
+            widget.insert("end", "\n".join(rendered) + "\n")
+        if query:
+            # Highlight the first occurrence in each result with one Tk call,
+            # avoiding thousands of Tcl searches on high-volume streams.
+            pattern = re.compile(re.escape(query), re.IGNORECASE if self._global_ignore_case else 0)
+            ranges = []
+            for number, (name, line) in enumerate(rows, 1):
+                match = pattern.search(line)
+                if match:
+                    offset = len(name) + 3  # [source] prefix
+                    ranges.extend((f"{number}.{offset + match.start()}", f"{number}.{offset + match.end()}"))
+            if ranges:
+                widget.tag_add("match", *ranges)
+            total = sum(counts.values())
+            detail = " | ".join(f"{name}: {count}" for name, count in counts.items())
+            self.global_results_status.set(
+                f"{total} matching line(s), {len(rows)} shown (latest 500 per log). "
+                f"Received buffers only; updates live.\n{detail}"
+            )
+        else:
+            self.global_results_status.set(
+                "Enter text and click Find. Searches received buffers from all logs; "
+                "start the streams with Start all."
+            )
+        widget.configure(state="disabled")
+        if self.global_follow_var.get():
+            widget.see("end")
+        else:
+            widget.yview_moveto(position)
 
     def _create_diagnosis_tab(self):
         """Create a concise, read-only view across the monitored service logs."""
@@ -846,6 +984,9 @@ class DebugLogsWindow:
             if len(buf) > MAX_LINES:
                 buf.pop(0)
 
+        # Global Find also receives lines from paused or individually filtered tabs.
+        self._schedule_global_search()
+
         # si pause live : on n'affiche rien, mais on garde dans le buffer
         if self.pause_live[log_name].get():
             return
@@ -911,6 +1052,7 @@ class DebugLogsWindow:
             self.log_buffers[log_name] = []
         if log_name in self.text_widgets:
             self.text_widgets[log_name].delete("1.0", tk.END)
+        self._schedule_global_search()
 
     def save_log(self, log_name: str):
         """
@@ -959,6 +1101,7 @@ class DebugLogsWindow:
         self.on_close()
 
     def on_close(self):
+        self._cancel_global_search()
         for log_name in list(self.processes.keys()):
             self.stop_log(log_name, silent=True)
         self.window.destroy()

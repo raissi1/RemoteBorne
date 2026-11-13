@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 
 from src.test_sequence import TestSequenceWindow
 from src.RemoteBorneManager import RemoteBorneApp
-from src.debug_logs import DebugLogsWindow, parse_diagnostic_line
+from src.debug_logs import DebugLogsWindow, parse_diagnostic_line, search_log_buffers
 from src.gridcodes_migrator import analyze_migration, export_plan
 from src.plink_backend import PlinkBackend
 from src.setpoint_validation import (
@@ -44,6 +44,75 @@ def _sequence_form(mode="P/Q", active="1000", reactive="", cosphi="1", hold="10"
     sequence.hold_var = _Value(hold)
     sequence.pn_limit_provider = lambda: 11000
     return sequence
+
+
+class TestGlobalLogSearch(unittest.TestCase):
+    def test_searches_every_source_and_keeps_log_names(self):
+        buffers = {
+            "EnergyManager.log": ["ready", "ERROR power"],
+            "ChargerApp.log": ["Error charger"],
+            "iotc-meter-dispatcher.log": ["meter ready"],
+            "ocpp-service.log": ["error socket"],
+        }
+        counts, rows = search_log_buffers(buffers, "error")
+        self.assertEqual(sum(counts.values()), 3)
+        self.assertEqual(counts["iotc-meter-dispatcher.log"], 0)
+        self.assertEqual([name for name, _line in rows], [
+            "EnergyManager.log", "ChargerApp.log", "ocpp-service.log",
+        ])
+
+    def test_case_sensitive_literal_and_empty_search(self):
+        buffers = {"log": ["ERROR a.b", "error axb"]}
+        self.assertEqual(search_log_buffers(buffers, "ERROR", False)[0], {"log": 1})
+        self.assertEqual(search_log_buffers(buffers, "a.b")[1], [("log", "ERROR a.b")])
+        self.assertEqual(search_log_buffers(buffers, ""), ({}, []))
+        self.assertEqual(search_log_buffers(buffers, "missing")[1], [])
+
+    def test_caps_each_source_but_counts_all_matching_lines(self):
+        buffers = {"a": [f"match {i}" for i in range(5)], "b": ["match b"]}
+        counts, rows = search_log_buffers(buffers, "match", limit_per_log=2)
+        self.assertEqual(counts, {"a": 5, "b": 1})
+        self.assertEqual(rows, [("a", "match 3"), ("a", "match 4"), ("b", "match b")])
+
+    def test_new_lines_are_searchable_even_when_the_source_tab_is_paused(self):
+        window = DebugLogsWindow.__new__(DebugLogsWindow)
+        window.log_buffers = {"log": []}
+        window.pause_live = {"log": _Value(True)}
+        window._update_diagnosis = Mock()
+        window._schedule_global_search = Mock()
+        window._append_line_to_widget = Mock()
+        window.insert_line("log", "ERROR received\n")
+        self.assertEqual(search_log_buffers(window.log_buffers, "error")[0], {"log": 1})
+        window._schedule_global_search.assert_called_once()
+        window._append_line_to_widget.assert_not_called()
+
+    def test_results_render_with_source_and_matching_line_counts(self):
+        window = DebugLogsWindow.__new__(DebugLogsWindow)
+        window._global_query = "error"
+        window._global_ignore_case = True
+        window.log_buffers = {"a.log": ["ERROR power"], "b.log": ["ready"]}
+        window.global_results_text = Mock()
+        window.global_results_text.yview.return_value = (0.0, 1.0)
+        window.global_results_status = Mock()
+        window.global_follow_var = _Value(True)
+        window._refresh_global_results()
+        window.global_results_text.insert.assert_called_once_with("end", "[a.log] ERROR power\n")
+        window.global_results_text.tag_add.assert_called_once_with("match", "1.8", "1.13")
+        self.assertIn("1 matching line(s)", window.global_results_status.set.call_args.args[0])
+        self.assertIn("b.log: 0", window.global_results_status.set.call_args.args[0])
+
+    def test_live_refresh_is_coalesced_and_cancellable(self):
+        window = DebugLogsWindow.__new__(DebugLogsWindow)
+        window.window = Mock()
+        window.window.after.return_value = "refresh-1"
+        window._global_query = "error"
+        window._global_search_after = None
+        window._schedule_global_search()
+        window._schedule_global_search()
+        window.window.after.assert_called_once_with(500, window._refresh_global_results)
+        window._cancel_global_search()
+        window.window.after_cancel.assert_called_once_with("refresh-1")
+        self.assertIsNone(window._global_search_after)
 
 
 class TestSequenceValidation(unittest.TestCase):
