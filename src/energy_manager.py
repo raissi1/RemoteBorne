@@ -114,12 +114,13 @@ class EnergyManagerWindow:
         self.build_ui()
         self.win.protocol("WM_DELETE_WINDOW", self.close)
         try:
-            # Keep this dashboard modeless. It remains above RBM when opened,
-            # without grabbing the main application or flashing on creation.
+            # Energy commands must stay in one controlled workflow. Debug
+            # Logs is intentionally the only modeless secondary window.
             self.win.transient(master)
             self.win.deiconify()
             self.win.lift()
             self.win.focus_force()
+            self.win.grab_set()
         except Exception:
             pass
 

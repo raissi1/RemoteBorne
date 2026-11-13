@@ -23,7 +23,7 @@ def open_help(parent=None):
 
     win = tk.Toplevel(parent)
     win.withdraw()
-    win.title("RBM V16.1.0 Help")
+    win.title("RBM V17.0.0 Help")
     win.geometry("1000x800")
     win.minsize(850, 600)
 
@@ -46,7 +46,7 @@ def open_help(parent=None):
 
     ttk.Label(
         top,
-        text="Remote Borne Control Interface V16.1.0 - User Guide",
+        text="Remote Borne Control Interface V17.0.0 - User Guide",
         font=("Segoe UI", 16, "bold"),
     ).pack(side="left")
 
@@ -110,6 +110,7 @@ def open_help(parent=None):
         "Network config with clean restart when SSH settings change",
         "temperature and Battery SoC monitoring",
         "integrated SSH terminal with history and persistent cd",
+        "local GridCodes migration with review, report, export, and controlled EVSE upload",
     ]:
         text.insert("end", f"- {item}\n", "normal")
 
@@ -245,12 +246,19 @@ def open_help(parent=None):
         "- in P/Q mode, Reactive Power Q is optional; leave it blank to send P without a reactive option\n"
         "- in CosPhi mode, leave CosPhi blank to use 1\n"
         "- use Add, Update, Remove, and Move controls to prepare the scenario\n\n"
-        "Test Sequence is a modal window: while it remains open, RBM blocks access to the main application, including GridCodes changes, manual setpoints, maintenance, Terminal, and Debug logs. Close Test Sequence to restore main-window access. Start sends one plateau at a time. Pause freezes the remaining hold time, Resume continues it, and Stop prevents all remaining plateaus from being sent. A remote command error or SSH disconnection stops the sequence automatically. Use Save as CSV to choose the sequence file name and location; use Import sequence to reload a saved scenario. Steps are kept only for the current RBM session, so import the saved CSV again after a full application restart.\n\n"
+        "Test Sequence is a modal window: while it remains open, RBM blocks access to the main application, including GridCodes changes, manual setpoints, maintenance, Terminal, and Debug logs. Close Test Sequence to restore main-window access. Start first displays the number of plateaus and the minimum total hold time for operator confirmation. Pause freezes the remaining hold time, Resume continues it, and Stop prevents all remaining plateaus from being sent without changing the active setpoint. Stop + send P=0 is a separate confirmed action for an explicit controlled return to zero active power. A remote command error or SSH disconnection stops the sequence automatically. Use Save as CSV to choose the sequence file name and location; use Import sequence to reload a saved scenario. Steps are kept only for the current RBM session, so import the saved CSV again after a full application restart.\n\n"
         "Validate the full scenario and the EVSE test conditions before starting. Monitor the main logs during execution; the sequence does not replace the protected Restart services or Reboot device procedures.\n",
         "normal",
     )
 
-    text.insert("end", "\n10. LOCAL SIMULATOR\n", "section")
+    text.insert("end", "\n10. GRIDCODES MIGRATION\n", "section")
+    text.insert(
+        "end",
+        "Open Tools > GridCodes Migration to prepare GridCodes files for a new EVSE software version. Select one source file or a folder, select the new target template, and optionally load a JSON file containing approved rename rules. The optional Project profile can rename the vehicle segment of GC_<vehicle> filenames and set PowerMax_1Ph_VAr or PowerMax_3Ph_VAr. Leave these profile fields blank for the generic behavior; every selected override is displayed in the analysis before export. Analyze migration is local: it does not change source files and does not contact the EVSE. The preview shows the retained, renamed, added, and removed parameters for every file. Export migrated files writes a new UTF-8/LF output folder and migration_report.json. Only after a successful export can Upload exported files to EVSE be used. Upload preserves the exported subfolder layout, leaves the report local, retries failed SCP transfers, and verifies every remote file size. Review unresolved removed parameters and warnings before export or upload.\n",
+        "normal",
+    )
+
+    text.insert("end", "\n11. LOCAL SIMULATOR\n", "section")
     text.insert(
         "end",
         "Use Tools -> Start local simulator and connect to validate RBM without a physical charger. "
@@ -262,12 +270,16 @@ def open_help(parent=None):
         "normal",
     )
 
-    text.insert("end", "\n11. DEBUG LOGS AND MAINTENANCE\n", "section")
+    text.insert("end", "\n12. DEBUG LOGS AND MAINTENANCE\n", "section")
     text.insert(
         "end",
         "The Debug logs menu opens the remote log follow window.\n\n"
         "Debug log window features:\n"
-        "- live follow of the main remote logs\n"
+        "- Live diagnosis tab combining the latest setpoint, charger, Battery SoC, temperature, meter, and OCPP service values\n"
+        "- OCPP summary shows the latest connection state, BootNotification result, connector state, reported fault details, transaction, and protocol exchange\n"
+        "- Start all / Stop all controls for all monitored services\n"
+        "- Capture incident creates a timestamped ZIP snapshot containing the visible diagnostic summary and all in-memory log buffers; credentials are never included\n"
+        "- live follow of EnergyManager, ChargerApp, meter dispatcher, and OCPP service logs\n"
         "- uses the host key already approved for the current RBM connection\n"
         "- local save of the captured output\n"
         "- safer close behavior while readers are still stopping\n\n"
@@ -278,7 +290,7 @@ def open_help(parent=None):
         "normal",
     )
 
-    text.insert("end", "\n12. ARCHITECTURE AND STABILITY\n", "section")
+    text.insert("end", "\n13. ARCHITECTURE AND STABILITY\n", "section")
     text.insert(
         "end",
         "RBM relies on a centralized architecture with SSHQueue for critical commands, explicit SCP timeouts, protected Tkinter callbacks, and cleaner transport failure handling.\n",
@@ -286,7 +298,7 @@ def open_help(parent=None):
     )
     text.insert("end", "Recommended for controlled local industrial networks.\n", "warning")
 
-    text.insert("end", "\n13. KNOWN LIMITS\n", "section")
+    text.insert("end", "\n14. KNOWN LIMITS\n", "section")
     text.insert(
         "end",
         "- Battery SoC depends on the latest value available in charger logs and current vehicle activity\n"
@@ -295,10 +307,10 @@ def open_help(parent=None):
         "normal",
     )
 
-    text.insert("end", "\n14. VERSION\n", "section")
+    text.insert("end", "\n15. VERSION\n", "section")
     text.insert(
         "end",
-        f"Remote Borne Control Interface V16.1.0\nHelp snapshot date: {today}\n\nAuthor: Nabil RAISSI\n",
+        f"Remote Borne Control Interface V17.0.0\nHelp snapshot date: {today}\n\nAuthor: Nabil RAISSI\n",
         "normal",
     )
 

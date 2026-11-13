@@ -14,7 +14,7 @@ if (Test-Path $distApp) {
 }
 
 $python = (Get-Command python -ErrorAction Stop).Source
-& $python -m PyInstaller --clean --noconfirm --name RBM --noconsole --icon=BorneCommander.ico --add-data "BorneCommander.ico;." --add-data "tools\simulator;tools\simulator" --collect-all ttkbootstrap --collect-all reportlab --collect-all paramiko --hidden-import=debug_logs --hidden-import=energy_manager --hidden-import=network_config --hidden-import=plink_backend --hidden-import=ssh_manager --hidden-import=test_sequence src/RemoteBorneManager.py
+& $python -m PyInstaller --clean --noconfirm --name RBM --noconsole --icon=BorneCommander.ico --add-data "BorneCommander.ico;." --add-data "tools\simulator;tools\simulator" --collect-all ttkbootstrap --collect-all reportlab --collect-all paramiko --hidden-import=debug_logs --hidden-import=energy_manager --hidden-import=gridcodes_migrator --hidden-import=gridcodes_migration_ui --hidden-import=network_config --hidden-import=plink_backend --hidden-import=setpoint_validation --hidden-import=ssh_manager --hidden-import=test_sequence src/RemoteBorneManager.py
 
 Write-Host "Copying runtime folders..." -ForegroundColor Cyan
 Copy-Item "src\config" $distApp -Recurse -Force
@@ -22,16 +22,25 @@ New-Item -ItemType Directory -Path "$distApp\documents" -Force | Out-Null
 foreach ($language in @("FR", "EN")) {
     $sourceFolder = Join-Path "src\documents" $language
     $targetFolder = Join-Path "$distApp\documents" $language
-    $releaseDocuments = Get-ChildItem $sourceFolder -Filter "RBM_V16_*.docx" -File
+    $releaseDocuments = Get-ChildItem $sourceFolder -Filter "RBM_V17_*.docx" -File
 
     if ($releaseDocuments.Count -ne 2) {
-        throw "Expected the two V16 delivery documents in $sourceFolder; found $($releaseDocuments.Count)."
+        throw "Expected the two V17 delivery documents in $sourceFolder; found $($releaseDocuments.Count)."
     }
 
     New-Item -ItemType Directory -Path $targetFolder -Force | Out-Null
     Copy-Item $releaseDocuments.FullName $targetFolder -Force
 }
 Copy-Item "src\tools" $distApp -Recurse -Force
+# `src\tools` replaces the tools folder created by PyInstaller. Restore the
+# bundled simulator afterwards so the executable can start it at runtime.
+$simulatorSource = Join-Path $root "tools\simulator"
+$simulatorTarget = Join-Path $distApp "tools\simulator"
+if (!(Test-Path (Join-Path $simulatorSource "rbm_local_evse_simulator.py"))) {
+    throw "Simulator source is missing: $simulatorSource"
+}
+New-Item -ItemType Directory -Path $simulatorTarget -Force | Out-Null
+Copy-Item (Join-Path $simulatorSource "rbm_local_evse_simulator.py") $simulatorTarget -Force
 Copy-Item "src\imgs" $distApp -Recurse -Force
 
 
@@ -42,7 +51,8 @@ $checks = @(
     "RBM.exe",
     "config\config.example.ini",
     "tools\plink.exe",
-    "tools\pscp.exe"
+    "tools\pscp.exe",
+    "tools\simulator\rbm_local_evse_simulator.py"
 )
 
 $missingChecks = @()
@@ -65,7 +75,7 @@ if (Test-Path (Join-Path $distApp "documents")) {
 }
 Write-Host "Documents copied: $docCount"
 if ($docCount -ne 4) {
-    throw "Expected 4 V16 delivery documents in the package; found $docCount."
+    throw "Expected 4 V17 delivery documents in the package; found $docCount."
 }
 Write-Host "Runtime configuration copied from src\config."
 

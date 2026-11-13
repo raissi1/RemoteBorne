@@ -4,6 +4,10 @@ import subprocess
 import threading
 import re
 import datetime
+import json
+import zipfile
+from pathlib import Path
+from typing import Optional, Union
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from tkinter.scrolledtext import ScrolledText
@@ -59,6 +63,198 @@ def _runtime_logs_dir() -> str:
     return os.path.join(base_dir, "RemoteBorneManager", "logs")
 
 
+def _runtime_incidents_dir() -> str:
+    """Return the per-user location used for operator incident captures."""
+    base_dir = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    return os.path.join(base_dir, "RemoteBorneManager", "incidents")
+
+
+def parse_diagnostic_line(log_name: str, line: str) -> dict[str, str]:
+    """Extract stable operator metrics from one service-log line.
+
+    The EVSE services have evolved their surrounding log format over time, so
+    the parser deliberately detects only the metric tokens.  It returns raw
+    values rather than inferring a pass/fail result from different sign
+    conventions used by the services.
+    """
+    updates = {}
+    text = line.strip()
+    if not text:
+        return updates
+
+    if log_name == "EnergyManager.log":
+        match = re.search(r"power_W\s*:\s*([-+]?\d+(?:\.\d+)?)", text, re.I)
+        if match:
+            updates["setpoint_p"] = f"{match.group(1)} W"
+        match = re.search(r"(?:reactive|q)[^\n]*?(?:var|power_W)\s*[:=]\s*([-+]?\d+(?:\.\d+)?)", text, re.I)
+        if match:
+            updates["setpoint_q"] = f"{match.group(1)} var"
+
+    elif log_name == "ChargerApp.log":
+        match = re.search(r"PresentSOC[^\d]*(\d+(?:\.\d+)?)", text, re.I)
+        if match:
+            updates["soc"] = f"{match.group(1)} %"
+        for token, key, unit in (
+            ("evActivePowerPresent_W", "charger_p", "W"),
+            ("evReactivePowerPresent_W", "charger_q", "var"),
+            ("ChargePowerLimit", "charge_limit", "W"),
+            ("DischargePowerLimit", "discharge_limit", "W"),
+        ):
+            match = re.search(rf"{re.escape(token)}[^-+\d]*([-+]?\d+(?:\.\d+)?)", text, re.I)
+            if match:
+                updates[key] = f"{match.group(1)} {unit}"
+        match = re.search(r"(?:T1|Relay)[^\n]*(?:T1\s*[:=]\s*[-+]?\d+)", text, re.I)
+        if match:
+            updates["temperature"] = match.group(0)
+
+    elif log_name == "iotc-meter-dispatcher.log":
+        for token, key, unit in (
+            ("activePower", "meter_p", "W"),
+            ("reactivePower", "meter_q", "var"),
+            ("powerFactor", "power_factor", ""),
+            ("frequency", "frequency", "Hz"),
+        ):
+            match = re.search(rf'"?{re.escape(token)}"?\s*[:=]\s*([-+]?\d+(?:\.\d+)?)', text, re.I)
+            if match:
+                updates[key] = f"{match.group(1)}{(' ' + unit) if unit else ''}"
+        # Some dispatcher builds log a JSON object without a conventional
+        # prefix.  This validates the payload for future troubleshooting but
+        # does not make the live monitor dependent on a fixed JSON schema.
+        if "{" in text:
+            try:
+                json.loads(text[text.index("{"):])
+                updates.setdefault("meter_payload", "valid JSON received")
+            except (ValueError, TypeError):
+                pass
+
+    elif log_name == "ocpp-service.log":
+        # OCPP can emit a large volume of raw JSON frames.  Keep the live
+        # diagnosis focused on the service state and the latest operator-useful
+        # event instead of copying payloads that may contain identifiers.
+        match = re.search(r"OCPPStatePublisher:\s*publish state\s+(OCPPState\w+)", text, re.I)
+        if match:
+            updates["ocpp_connection"] = match.group(1).replace("OCPPState", "")
+
+        if re.search(r"NetConnection:\s*Connected\b", text, re.I):
+            updates["ocpp_connection"] = "Connected"
+        elif re.search(r"NetConnection:.*(?:Connection is lost|Connection failed|disconnect)", text, re.I):
+            updates["ocpp_connection"] = "Disconnected"
+
+        match = re.search(r"BootNotificationResponse received:\s*(\w+)", text, re.I)
+        if match:
+            updates["ocpp_boot"] = match.group(1).capitalize()
+        elif re.search(r"BootNotification.*rejected", text, re.I):
+            updates["ocpp_boot"] = "Rejected"
+
+        # StatusNotification payloads are sent both through internal bridges
+        # and to the central system.  Their common fields give a reliable view
+        # of the last state for the connector mentioned by this log line.
+        if "StatusNotification" in text:
+            status = re.search(r'"status"\s*:\s*"([^\"]+)"', text, re.I)
+            connector = re.search(r'"connectorId"\s*:\s*(\d+)', text, re.I)
+            if status:
+                connector_id = connector.group(1) if connector else "?"
+                updates["ocpp_connector"] = f"Connector {connector_id}: {status.group(1)}"
+                updates["ocpp_exchange"] = "StatusNotification"
+                if status.group(1).lower() == "faulted":
+                    error_code = re.search(r'"errorCode"\s*:\s*"([^\"]+)"', text, re.I)
+                    info = re.search(r'"info"\s*:\s*"([^\"]+)"', text, re.I)
+                    vendor_code = re.search(r'"vendorErrorCode"\s*:\s*"([^\"]+)"', text, re.I)
+                    details = [error_code.group(1) if error_code else "Faulted"]
+                    if info:
+                        details.append(info.group(1))
+                    if vendor_code:
+                        details.append(f"code {vendor_code.group(1)}")
+                    updates["ocpp_fault"] = " | ".join(details)
+
+        if re.search(r"\bStartTransaction\b", text, re.I):
+            updates["ocpp_transaction"] = "Start transaction"
+            updates["ocpp_exchange"] = "StartTransaction"
+        elif re.search(r"\bStopTransaction\b", text, re.I):
+            updates["ocpp_transaction"] = "Stop transaction"
+            updates["ocpp_exchange"] = "StopTransaction"
+        elif re.search(r"\bAuthorize\b", text, re.I):
+            updates["ocpp_exchange"] = "Authorize"
+        elif re.search(r"\bHeartbeat\b", text, re.I):
+            updates["ocpp_exchange"] = "Heartbeat"
+        elif re.search(r"\bMeterValues\b", text, re.I):
+            updates["ocpp_exchange"] = "MeterValues"
+
+        # Smart scheduling and the EnergyManager bridge expose the effective
+        # V2X settings. They are more actionable than the raw OCPP frame.
+        match = re.search(r"v2x\s*mode\s*:\s*([^;\n]+)", text, re.I)
+        if match:
+            updates["ocpp_v2x_mode"] = match.group(1).strip()
+        match = re.search(
+            r"activeSetPoint:.*?Power:\s*([-+]?\d+(?:\.\d+)?)\s*\(W\)",
+            text,
+            re.I,
+        )
+        if match:
+            updates["ocpp_active_setpoint"] = f"{match.group(1)} W"
+        match = re.search(
+            r"reactiveSetPoint:.*?Power:\s*([-+]?\d+(?:\.\d+)?)\s*\(W\)",
+            text,
+            re.I,
+        )
+        if match:
+            updates["ocpp_reactive_setpoint"] = f"{match.group(1)} var"
+
+        for reactive, key, unit in (
+            (False, "ocpp_active_setpoint", "W"),
+            (True, "ocpp_reactive_setpoint", "var"),
+        ):
+            name = r"SetPoint\s+Reactive" if reactive else r"SetPoint(?!\s+Reactive)"
+            match = re.search(
+                rf"{name}\s+power_W\s*:\s*([-+]?\d+(?:\.\d+)?)",
+                text,
+                re.I,
+            )
+            if match:
+                updates[key] = f"{match.group(1)} {unit}"
+
+        for token, key, unit in (
+            (r"Charge:\s*\{\s*maxPower_W", "ocpp_charge_limit", "W"),
+            (r"Discharge:\s*\{\s*maxPower_W", "ocpp_discharge_limit", "W"),
+            (r"New HW limits received,\s*power_W", "ocpp_hw_power_limit", "W"),
+            (r"New HW limits received,\s*current_mA", "ocpp_hw_current_limit", "mA"),
+        ):
+            match = re.search(rf"{token}\s*:\s*([-+]?\d+(?:\.\d+)?)", text, re.I)
+            if match:
+                updates[key] = f"{match.group(1)} {unit}"
+
+        # MeterValues frames can contain phase values plus aggregate values.
+        # Keep a short phase summary and the latest aggregate reading.
+        def meter_values(measurand: str):
+            return re.findall(
+                rf'"measurand"\s*:\s*"{re.escape(measurand)}"'
+                r'(?:\s*,\s*"phase"\s*:\s*"([^"]+)")?'
+                r'.*?"value"\s*:\s*"([^"]+)"',
+                text,
+                re.I,
+            )
+
+        voltage_values = meter_values("Voltage")
+        if voltage_values:
+            updates["ocpp_meter_voltage"] = " | ".join(
+                f"{phase or 'total'}: {value} V"
+                for phase, value in voltage_values[:3]
+            )
+        for measurand, key, unit in (
+            ("Current.Offered", "ocpp_meter_current", "A"),
+            ("Power.Offered", "ocpp_meter_offered_power", "W"),
+            ("Power.Active.Import", "ocpp_meter_import_power", "W"),
+            ("Power.Active.Export", "ocpp_meter_export_power", "W"),
+            ("Energy.Active.Import.Register", "ocpp_meter_import_energy", "Wh"),
+            ("Energy.Active.Export.Register", "ocpp_meter_export_energy", "Wh"),
+            ("SoC", "ocpp_meter_soc", "%"),
+        ):
+            values = meter_values(measurand)
+            if values:
+                updates[key] = f"{values[-1][1]} {unit}"
+    return updates
+
+
 class DebugLogsWindow:
     """
     Ultimate debug tool :
@@ -107,6 +303,8 @@ class DebugLogsWindow:
         self.filter_error = {}           # log_name -> BooleanVar
         self.filter_warn = {}            # log_name -> BooleanVar
         self.filter_info = {}            # log_name -> BooleanVar
+        self.diagnosis_values = {}
+        self.diagnosis_last_update = tk.StringVar(value="No live service data received yet.")
 
         # Keep logs visible while the operator continues working in RBM.
         self.window = tk.Toplevel(parent)
@@ -123,11 +321,15 @@ class DebugLogsWindow:
         self.notebook = ttk.Notebook(self.window)
         self.notebook.pack(fill="both", expand=True)
 
-        # 3 logs (adaptables)
+        self._create_diagnosis_tab()
+
+        # Main EVSE service logs.  Every entry gets the same independent
+        # live-follow, filtering, local capture, and incident-snapshot flow.
         self.logs_paths = {
             "EnergyManager.log": "/var/aux/EnergyManager/EnergyManager.log",
             "ChargerApp.log": "/var/aux/ChargerApp/ChargerApp.log",
             "iotc-meter-dispatcher.log": "/var/aux/iotc-meter-dispatcher/iotc-meter-dispatcher.log",
+            "ocpp-service.log": "/var/aux/ocpp-framework/ocpp-service.log",
         }
 
         for name, path in self.logs_paths.items():
@@ -137,6 +339,136 @@ class DebugLogsWindow:
         self.window.deiconify()
         self.window.lift()
         self.window.focus_force()
+
+    def _create_diagnosis_tab(self):
+        """Create a concise, read-only view across the monitored service logs."""
+        frame = ttk.Frame(self.notebook, padding=12)
+        self.notebook.add(frame, text="Live diagnosis")
+        frame.columnconfigure(0, weight=1)
+        frame.columnconfigure(1, weight=1)
+        frame.rowconfigure(3, weight=1)
+
+        ttk.Label(
+            frame,
+            text="Live service diagnosis",
+            font=("Segoe UI", 15, "bold"),
+        ).grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(
+            frame,
+            text="Values are read from the incoming logs. Only values present in the service logs are shown; power signs are kept raw.",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 10))
+
+        groups = (
+            ("Energy Manager", (("setpoint_p", "Last setpoint P"), ("setpoint_q", "Last setpoint Q"))),
+            ("Charger", (("soc", "Battery SoC"), ("charger_p", "EV active power"), ("charger_q", "EV reactive power"), ("charge_limit", "Charge limit"), ("discharge_limit", "Discharge limit"), ("temperature", "Temperature"))),
+            ("Meter dispatcher", (("meter_p", "Meter active power"), ("meter_q", "Meter reactive power"), ("power_factor", "Power factor"), ("frequency", "Frequency"), ("meter_payload", "Last payload"))),
+            (
+                "OCPP service",
+                (
+                    ("ocpp_connection", "Connection"),
+                    ("ocpp_boot", "Boot notification"),
+                    ("ocpp_connector", "Last connector state"),
+                    ("ocpp_fault", "Last reported fault"),
+                    ("ocpp_transaction", "Last transaction"),
+                    ("ocpp_exchange", "Last OCPP exchange"),
+                    ("ocpp_v2x_mode", "V2X mode"),
+                    ("ocpp_active_setpoint", "Active setpoint"),
+                    ("ocpp_reactive_setpoint", "Reactive setpoint"),
+                    ("ocpp_charge_limit", "Charge limit"),
+                    ("ocpp_discharge_limit", "Discharge limit"),
+                    ("ocpp_hw_power_limit", "HW power limit"),
+                    ("ocpp_hw_current_limit", "HW current limit"),
+                    ("ocpp_meter_soc", "Meter SoC"),
+                    ("ocpp_meter_voltage", "Meter voltage"),
+                    ("ocpp_meter_current", "Current offered"),
+                    ("ocpp_meter_offered_power", "Power offered"),
+                    ("ocpp_meter_import_power", "Active import"),
+                    ("ocpp_meter_export_power", "Active export"),
+                    ("ocpp_meter_import_energy", "Energy import"),
+                    ("ocpp_meter_export_energy", "Energy export"),
+                ),
+            ),
+        )
+        for index, (title, metrics) in enumerate(groups):
+            row, column = divmod(index, 2)
+            group = ttk.Labelframe(frame, text=title, padding=8)
+            group.grid(row=row + 2, column=column, sticky="nsew", padx=(0, 8) if column == 0 else (0, 0), pady=(0, 8))
+            group.columnconfigure(1, weight=1)
+            group.columnconfigure(3, weight=1)
+            for metric_index, (key, label) in enumerate(metrics):
+                metric_row, metric_column = divmod(metric_index, 2)
+                label_column = metric_column * 2
+                self.diagnosis_values[key] = tk.StringVar(value="--")
+                ttk.Label(group, text=f"{label}:").grid(row=metric_row, column=label_column, sticky="w", padx=(0, 6), pady=2)
+                ttk.Label(group, textvariable=self.diagnosis_values[key]).grid(
+                    row=metric_row, column=label_column + 1, sticky="w", padx=(0, 12), pady=2
+                )
+
+        actions = ttk.Frame(frame)
+        actions.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        ttk.Button(actions, text="Start all", command=self.start_all_logs).pack(side="left", padx=(0, 6))
+        ttk.Button(actions, text="Stop all", command=self.stop_all_logs).pack(side="left", padx=(0, 6))
+        ttk.Button(actions, text="Capture incident", command=self.capture_incident).pack(side="left")
+        ttk.Label(actions, textvariable=self.diagnosis_last_update).pack(side="right")
+
+    def _update_diagnosis(self, log_name: str, line: str):
+        updates = parse_diagnostic_line(log_name, line)
+        if not updates:
+            return
+        for key, value in updates.items():
+            variable = self.diagnosis_values.get(key)
+            if variable is not None:
+                variable.set(value)
+        self.diagnosis_last_update.set(
+            f"Updated {datetime.datetime.now().strftime('%H:%M:%S')} from {log_name}"
+        )
+
+    def start_all_logs(self):
+        for name in self.logs_paths:
+            self.start_log(name)
+
+    def stop_all_logs(self):
+        for name in list(self.processes):
+            self.stop_log(name, silent=True)
+        self._popup_info("Live diagnosis", "All live log streams were stopped.")
+
+    def _incident_summary(self) -> str:
+        lines = [
+            "RBM Debug incident capture",
+            f"Captured: {datetime.datetime.now().isoformat(timespec='seconds')}",
+            "",
+            "Live diagnosis:",
+        ]
+        for key in sorted(self.diagnosis_values):
+            lines.append(f"- {key}: {self.diagnosis_values[key].get()}")
+        lines.extend(("", "Buffered lines:"))
+        for name, buffer in self.log_buffers.items():
+            lines.append(f"- {name}: {len(buffer)} line(s)")
+        return "\n".join(lines) + "\n"
+
+    def _write_incident_capture(
+        self, target_dir: Optional[Union[str, Path]] = None
+    ) -> Path:
+        """Persist a self-contained diagnostic snapshot without credentials."""
+        stamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        target = Path(target_dir or _runtime_incidents_dir()) / f"incident_{stamp}"
+        target.mkdir(parents=True, exist_ok=False)
+        (target / "summary.txt").write_text(self._incident_summary(), encoding="utf-8")
+        for name, buffer in self.log_buffers.items():
+            (target / name).write_text("\n".join(buffer) + ("\n" if buffer else ""), encoding="utf-8")
+        archive = target.with_suffix(".zip")
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
+            for item in target.iterdir():
+                bundle.write(item, arcname=item.name)
+        return archive
+
+    def capture_incident(self):
+        try:
+            archive = self._write_incident_capture()
+        except OSError as exc:
+            self._popup_error("Capture incident", f"Unable to save the incident capture:\n{exc}")
+            return
+        self._popup_info("Capture incident", f"Diagnostic snapshot saved:\n{archive}")
 
     def _show_popup(self, popup, title: str, message: str):
         """Keep native dialogs above the Debug Logs window that triggered them."""
@@ -502,6 +834,10 @@ class DebugLogsWindow:
         et si le flux live n'est pas en pause.
         """
         line = line.rstrip("\n")
+
+        # Diagnosis continues updating even when a tab is paused or filtered:
+        # the pause is a display preference, not a loss of live telemetry.
+        self._update_diagnosis(log_name, line)
 
         # buffer mÃ©moire
         buf = self.log_buffers.get(log_name)

@@ -1,4 +1,4 @@
-"""V16 automated P/Q and CosPhi test sequencer.
+"""V17 automated P/Q and CosPhi test sequencer.
 
 This module is intentionally plain Python. The V15 delivery embedded the
 sequencer as compressed bytecode, which made reviews, maintenance, and
@@ -82,6 +82,8 @@ class TestSequenceWindow:
         self.stop_requested = False
         self._hold_deadline = None
         self._pause_started_at = None
+        self._run_started_at = None
+        self._safe_stop_token = None
 
         # RBM applies its final adaptive geometry before this dialog is mapped.
         self.win = ttk.Toplevel(master)
@@ -101,10 +103,12 @@ class TestSequenceWindow:
         self.status_var = tk.StringVar(
             value="Ready - build and validate a sequence before starting."
         )
+        self.summary_var = tk.StringVar(value="0 plateaus | minimum hold: 0 s")
+        self.progress_var = tk.DoubleVar(value=0)
         self.tree = self.log_text = self.q_entry = self.cosphi_entry = None
         self.btn_add = self.btn_update = self.btn_remove = self.btn_clear = None
         self.btn_up = self.btn_down = self.btn_start = None
-        self.btn_pause = self.btn_stop = self.btn_import = None
+        self.btn_pause = self.btn_stop = self.btn_safe_stop = self.btn_import = None
 
         self._build_ui()
         self._install_numeric_validation()
@@ -131,6 +135,9 @@ class TestSequenceWindow:
             text="Each plateau is sent only after the previous command and hold time complete.",
             bootstyle="secondary",
         ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 0))
+        ttk.Label(header, textvariable=self.summary_var, bootstyle="secondary").grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=(2, 0)
+        )
 
         editor = ttk.Labelframe(root, text="Plateau editor", padding=8)
         editor.grid(row=1, column=0, sticky="ew", pady=(0, 8))
@@ -222,6 +229,14 @@ class TestSequenceWindow:
         self.tree.configure(yscrollcommand=scroll.set)
         self.tree.bind("<<TreeviewSelect>>", self._load_selected)
 
+        progress = ttk.Progressbar(
+            sequence,
+            variable=self.progress_var,
+            maximum=100,
+            bootstyle="success-striped",
+        )
+        progress.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+
         controls = ttk.Frame(root)
         controls.grid(row=3, column=0, sticky="ew", pady=(0, 8))
         self.btn_start = ttk.Button(
@@ -240,6 +255,14 @@ class TestSequenceWindow:
             state="disabled",
         )
         self.btn_stop.pack(side="left")
+        self.btn_safe_stop = ttk.Button(
+            controls,
+            text="Stop + send P=0",
+            bootstyle="danger",
+            command=self.stop_and_send_zero,
+            state="disabled",
+        )
+        self.btn_safe_stop.pack(side="left", padx=(6, 0))
         ttk.Button(controls, text="Close", bootstyle="danger", command=self.close).pack(
             side="right"
         )
@@ -388,6 +411,40 @@ class TestSequenceWindow:
             if select_index == index:
                 self.tree.selection_set(item)
                 self.tree.focus(item)
+        self._refresh_summary()
+
+    @staticmethod
+    def _format_duration(seconds):
+        seconds = max(0, int(round(seconds)))
+        hours, remainder = divmod(seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        if hours:
+            return f"{hours} h {minutes:02d} min"
+        if minutes:
+            return f"{minutes} min {seconds:02d} s"
+        return f"{seconds} s"
+
+    def _refresh_summary(self):
+        total_hold = sum(int(step.get("hold", 0)) for step in self.steps)
+        self.summary_var.set(
+            f"{len(self.steps)} plateau(s) | minimum hold: {self._format_duration(total_hold)}"
+        )
+        if not self.running:
+            self.progress_var.set(0 if not self.steps else (100 if all(
+                step.get("status") == "Completed" for step in self.steps
+            ) else 0))
+
+    def _update_progress(self, current_index, holding_remaining=None):
+        total = len(self.steps)
+        if not total:
+            self.progress_var.set(0)
+            return
+        completed = min(current_index, total)
+        fraction = completed / total
+        if holding_remaining is not None and current_index < total:
+            hold = max(1, int(self.steps[current_index].get("hold", 1)))
+            fraction += ((hold - min(hold, holding_remaining)) / hold) / total
+        self.progress_var.set(min(100, max(0, fraction * 100)))
 
     def _set_editing_enabled(self, enabled):
         state = "normal" if enabled else "disabled"
@@ -526,16 +583,29 @@ class TestSequenceWindow:
         except ValueError as exc:
             self._popup("showwarning", "Test Sequence", str(exc))
             return
+        total_hold = sum(step["hold"] for step in self.steps)
+        if not self._popup(
+            "askyesno",
+            "Confirm Test Sequence",
+            "Start the prepared sequence?\n\n"
+            f"Plateaus: {len(self.steps)}\n"
+            f"Minimum hold time: {self._format_duration(total_hold)}\n\n"
+            "Verify the EVSE test conditions before continuing.",
+        ):
+            return
         self.run_id += 1
         self._active_queue_token = f"test-sequence:{self.run_id}"
         self.current_index = 0
         self.running = True
         self.paused = self.stop_requested = False
+        self._run_started_at = time.monotonic()
         self._render_steps(select_index=0)
         self._set_editing_enabled(False)
         self.btn_start.configure(state="disabled")
         self.btn_pause.configure(state="normal", text="Pause")
         self.btn_stop.configure(state="normal")
+        self.btn_safe_stop.configure(state="normal")
+        self._update_progress(0)
         self.status_var.set(f"Running 0 of {len(self.steps)} plateaus")
         self._log(f"Sequence started with {len(self.steps)} plateau(s).")
         self._run_next(self.run_id)
@@ -559,6 +629,7 @@ class TestSequenceWindow:
         step["status"] = "Sending command"
         self._render_steps(select_index=self.current_index)
         self.status_var.set(f"Sending plateau {self.current_index + 1} of {len(self.steps)}")
+        self._update_progress(self.current_index)
         command, description = self._command_for(step)
         self._log(f"Plateau {self.current_index + 1}: {description}")
         index = self.current_index
@@ -606,10 +677,12 @@ class TestSequenceWindow:
         remaining = max(0, int(math.ceil(self._hold_deadline - time.monotonic())))
         if remaining:
             self.status_var.set(f"Holding plateau {index + 1}: {remaining} s remaining")
+            self._update_progress(index, remaining)
             self.win.after(250, lambda: self._wait_hold(run_id, index))
             return
         self.steps[index]["status"] = "Completed"
         self.current_index = index + 1
+        self._update_progress(self.current_index)
         self._render_steps(select_index=min(self.current_index, len(self.steps) - 1))
         self._run_next(run_id)
 
@@ -638,6 +711,7 @@ class TestSequenceWindow:
         self.paused = False
         self.btn_pause.configure(state="disabled", text="Pause")
         self.btn_stop.configure(state="disabled")
+        self.btn_safe_stop.configure(state="disabled")
         cancelled = self.ssh_queue.cancel_pending(self._active_queue_token)
         if cancelled:
             self.status_var.set("Stopped before the next queued command")
@@ -646,6 +720,48 @@ class TestSequenceWindow:
             return
         self.status_var.set("Stopping after the current command")
         self._log("Stop requested after the current command.")
+
+    def stop_and_send_zero(self):
+        """Stop remaining plateaus then explicitly return active power to zero."""
+        if not self.running:
+            return
+        if not self._popup(
+            "askyesno",
+            "Emergency sequence stop",
+            "Stop this sequence and send an explicit active-power setpoint of 0 W?\n\n"
+            "This does not replace EVSE safety procedures.",
+        ):
+            return
+        self.stop()
+        self._safe_stop_token = f"test-sequence-safe-stop:{self.run_id}"
+        command, description = self._command_for(
+            {"mode": "P/Q", "active": 0, "reactive": None, "hold": 0}
+        )
+        self.status_var.set("Stopping sequence, then sending P=0 W")
+        self._log(f"Emergency stop requested: {description}.")
+
+        def finished(result):
+            if result.get("success"):
+                self.status_var.set("Sequence stopped; P=0 W command sent")
+                self._log("Emergency P=0 W command sent successfully.")
+                return
+            detail = (result.get("err") or result.get("out") or "Unknown error").strip()
+            self.status_var.set("Sequence stopped; P=0 W command failed")
+            self._log(f"Emergency P=0 W command failed: {detail}")
+            self._popup("showerror", "Test Sequence", f"Unable to send P=0 W:\n{detail}")
+
+        queued = self.ssh_queue.execute(
+            command,
+            callback=finished,
+            timeout=30,
+            auto_retry=False,
+            label="Sequence emergency P=0",
+            silent=False,
+            cancel_token=self._safe_stop_token,
+        )
+        if not queued:
+            self.status_var.set("Sequence stopped; P=0 W command was rejected")
+            self._log("Emergency P=0 W command was rejected by the queue.")
 
     def _abort(self, reason):
         self._log(reason)
@@ -656,11 +772,13 @@ class TestSequenceWindow:
         self.running = self.paused = self.stop_requested = False
         self._active_queue_token = None
         self._hold_deadline = self._pause_started_at = None
+        self._run_started_at = None
         self.status_var.set(status)
         self._set_editing_enabled(True)
         self.btn_start.configure(state="normal")
         self.btn_pause.configure(state="disabled", text="Pause")
         self.btn_stop.configure(state="disabled")
+        self.btn_safe_stop.configure(state="disabled")
         self._render_steps(select_index=min(self.current_index, len(self.steps) - 1))
         self._log(status)
 

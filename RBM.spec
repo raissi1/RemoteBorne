@@ -3,7 +3,7 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = [('BorneCommander.ico', '.'), ('tools\\simulator', 'tools\\simulator')]
 binaries = []
-hiddenimports = ['debug_logs', 'energy_manager', 'network_config', 'plink_backend', 'ssh_manager', 'test_sequence']
+hiddenimports = ['debug_logs', 'energy_manager', 'gridcodes_migrator', 'gridcodes_migration_ui', 'network_config', 'plink_backend', 'setpoint_validation', 'ssh_manager', 'test_sequence']
 tmp_ret = collect_all('ttkbootstrap')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('reportlab')

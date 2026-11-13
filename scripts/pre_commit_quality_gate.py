@@ -64,19 +64,19 @@ def check_readable_test_sequence() -> None:
     print("[OK] Test Sequence source is readable and auditable")
 
 
-def check_v16_documents() -> None:
+def check_v17_documents() -> None:
     for language in ("FR", "EN"):
         folder = SRC / "documents" / language
-        documents = sorted(folder.glob("RBM_V16_*.docx"))
+        documents = sorted(folder.glob("RBM_V17_*.docx"))
         if len(documents) != 2:
             fail(
-                f"Expected two V16 delivery documents in {folder}; found {len(documents)}"
+                f"Expected two V17 delivery documents in {folder}; found {len(documents)}"
             )
-    print("[OK] V16 EN/FR delivery documents are present")
+    print("[OK] V17 EN/FR delivery documents are present")
 
 
 def check_regression_tests() -> None:
-    """Run the headless V16.1 checks without leaving bytecode in the project."""
+    """Run the headless V17 checks without leaving bytecode in the project."""
     tests = ROOT / "tests"
     if not tests.is_dir():
         fail("Regression test folder is missing")
@@ -93,7 +93,7 @@ def check_regression_tests() -> None:
     if result.returncode:
         details = (result.stdout + result.stderr).strip()
         fail(f"Regression tests failed:\n{details}")
-    print("[OK] Headless V16.1 regression tests passed")
+    print("[OK] Headless V17 regression tests passed")
 
 
 def main() -> int:
@@ -101,7 +101,7 @@ def main() -> int:
     check_python_syntax()
     check_entrypoints()
     check_readable_test_sequence()
-    check_v16_documents()
+    check_v17_documents()
     check_regression_tests()
     print("\n[SUCCESS] Quality gate passed.")
     return 0

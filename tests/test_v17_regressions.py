@@ -1,4 +1,4 @@
-"""Fast, headless regression checks for RBM V16.1 safety rules."""
+"""Fast, headless regression checks for RBM V17 safety rules."""
 
 from __future__ import annotations
 
@@ -11,7 +11,8 @@ import logging
 
 from src.test_sequence import TestSequenceWindow
 from src.RemoteBorneManager import RemoteBorneApp
-from src.debug_logs import DebugLogsWindow
+from src.debug_logs import DebugLogsWindow, parse_diagnostic_line
+from src.gridcodes_migrator import analyze_migration, export_plan
 from src.plink_backend import PlinkBackend
 from src.setpoint_validation import (
     validate_active_power,
@@ -45,6 +46,11 @@ def _sequence_form(mode="P/Q", active="1000", reactive="", cosphi="1", hold="10"
 
 
 class TestSequenceValidation(unittest.TestCase):
+    def test_sequence_duration_format_is_operator_readable(self):
+        self.assertEqual(TestSequenceWindow._format_duration(0), "0 s")
+        self.assertEqual(TestSequenceWindow._format_duration(70), "1 min 10 s")
+        self.assertEqual(TestSequenceWindow._format_duration(3660), "1 h 01 min")
+
     def test_pq_without_reactive_power_is_supported(self):
         step = _sequence_form()._form_step()
         self.assertEqual(step["active"], 1000)
@@ -98,6 +104,102 @@ class TestSequenceValidation(unittest.TestCase):
         self.assertEqual(steps[1]["cosphi"], -0.99)
 
 
+class TestGridCodesMigration(unittest.TestCase):
+    def test_analysis_and_export_preserve_source_and_template_structure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            source = root / "old.properties"
+            template = root / "new_template.properties"
+            rules = root / "rules.json"
+            source.write_text("# old comment\nCountry = FR\nLegacyLimit = 7000\nObsolete = yes\n", encoding="utf-8")
+            template.write_text("# target comment\nCountry = DE\nPowerLimit = 11000\nNewDefault = enabled\n", encoding="utf-8")
+            rules.write_text('{"rename_rules": {"LegacyLimit": "PowerLimit"}}', encoding="utf-8")
+
+            plan = analyze_migration(source, template, rules)
+            self.assertEqual(len(plan.items), 1)
+            item = plan.items[0]
+            self.assertIn("Country = FR", item.content)
+            self.assertIn("PowerLimit = 7000", item.content)
+            self.assertIn("NewDefault = enabled", item.content)
+            self.assertIn("Obsolete", item.report.removed)
+            self.assertEqual(source.read_text(encoding="utf-8"), "# old comment\nCountry = FR\nLegacyLimit = 7000\nObsolete = yes\n")
+
+            output, report = export_plan(plan, root / "export")
+            self.assertTrue((output / "old.properties").is_file())
+            self.assertTrue(report.is_file())
+
+    def test_migration_is_available_from_tools_and_is_packaged(self):
+        main_source = (ROOT / "src" / "RemoteBorneManager.py").read_text(encoding="utf-8")
+        spec = (ROOT / "RBM.spec").read_text(encoding="utf-8")
+        build_script = (ROOT / "build_rbm.ps1").read_text(encoding="utf-8")
+        self.assertIn('label="GridCodes Migration"', main_source)
+        self.assertIn("migration_win.close()", main_source)
+        self.assertIn("gridcodes_migrator", spec)
+        self.assertIn("gridcodes_migration_ui", build_script)
+
+    def test_only_debug_logs_is_modeless_while_operator_tools_are_modal(self):
+        main_source = (ROOT / "src" / "RemoteBorneManager.py").read_text(encoding="utf-8")
+        migration_source = (ROOT / "src" / "gridcodes_migration_ui.py").read_text(encoding="utf-8")
+        energy_source = (ROOT / "src" / "energy_manager.py").read_text(encoding="utf-8")
+        debug_source = (ROOT / "src" / "debug_logs.py").read_text(encoding="utf-8")
+
+        self.assertIn("self.window.grab_set()", migration_source)
+        self.assertIn("self.window.grab_release()", migration_source)
+        self.assertIn("self.win.grab_set()", energy_source)
+        self.assertIn("def close_netlogger_dialog():", main_source)
+        self.assertIn("dialog.grab_set()", main_source)
+        terminal_source = main_source[main_source.index("    def open_terminal("):]
+        self.assertIn("win.grab_set()", terminal_source)
+        self.assertIn("win.grab_release()", terminal_source)
+        self.assertNotIn("self.window.grab_set()", debug_source)
+
+    def test_migration_refuses_an_output_inside_the_source_folder(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            source_dir = root / "input"
+            source_dir.mkdir()
+            source = source_dir / "old.properties"
+            template = root / "template.properties"
+            source.write_text("Country=FR\n", encoding="utf-8")
+            template.write_text("Country=DE\n", encoding="utf-8")
+            plan = analyze_migration(source_dir, template)
+            with self.assertRaisesRegex(Exception, "inside the source"):
+                export_plan(plan, source_dir / "output")
+
+    def test_optional_project_profile_renames_vehicle_and_overrides_power_limits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            source = root / "GC_Twingo_Power-Test"
+            template = root / "template.properties"
+            source.write_text("Country=FR\nPowerMax_1Ph_VAr=6000\nPowerMax_3Ph_VAr=9000\n", encoding="utf-8")
+            template.write_text("Country=DE\nPowerMax_1Ph_VAr=7000\nPowerMax_3Ph_VAr=10000\n", encoding="utf-8")
+
+            plan = analyze_migration(
+                source,
+                template,
+                vehicle_name="R5",
+                power_max_1ph_var="7200",
+                power_max_3ph_var="11000",
+            )
+            item = plan.items[0]
+            self.assertEqual(item.relative_output.name, "GC_R5_Power-Test")
+            self.assertIn("PowerMax_1Ph_VAr=7200", item.content)
+            self.assertIn("PowerMax_3Ph_VAr=11000", item.content)
+            self.assertEqual(len(item.report.profile_overrides), 2)
+
+    def test_project_profile_is_optional_and_rejects_unsafe_vehicle_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            source = root / "GC_Twingo_Test"
+            template = root / "template.properties"
+            source.write_text("Country=FR\n", encoding="utf-8")
+            template.write_text("Country=DE\n", encoding="utf-8")
+            plan = analyze_migration(source, template)
+            self.assertEqual(plan.items[0].relative_output.name, "GC_Twingo_Test")
+            with self.assertRaisesRegex(Exception, "Vehicle name"):
+                analyze_migration(source, template, vehicle_name="R5/unsafe")
+
+
 class TestSafetyRegressionGuards(unittest.TestCase):
     def test_stop_can_remove_only_its_pending_sequence_commands(self):
         ssh_queue = SSHQueue.__new__(SSHQueue)
@@ -147,18 +249,18 @@ class TestSafetyRegressionGuards(unittest.TestCase):
         self.assertEqual(RemoteBorneApp.__module__, "src.RemoteBorneManager")
         source = (ROOT / "src" / "RemoteBorneManager.py").read_text(encoding="utf-8")
         help_source = (ROOT / "src" / "open_help.py").read_text(encoding="utf-8")
-        self.assertIn('APP_VERSION = "16.1.0"', source)
-        self.assertIn("V16.1.0", help_source)
+        self.assertIn('APP_VERSION = "17.0.0"', source)
+        self.assertIn("V17.0.0", help_source)
 
-    def test_build_artifacts_match_the_v16_runtime(self):
+    def test_build_artifacts_match_the_v17_runtime(self):
         script = (ROOT / "build_rbm.ps1").read_text(encoding="utf-8")
         spec = (ROOT / "RBM.spec").read_text(encoding="utf-8")
         self.assertNotIn('Copy-Item "src\\logs"', script)
         self.assertNotIn('Copy-Item "src\\exports"', script)
-        self.assertIn("tools/simulator", spec)
-        self.assertIn('"paramiko"', spec)
-        self.assertIn("RBM_V16_", spec)
-        self.assertIn('"setpoint_validation"', spec)
+        self.assertIn("'tools\\\\simulator'", spec)
+        self.assertIn("collect_all('paramiko')", spec)
+        self.assertIn("RBM_V17_", script)
+        self.assertIn("'setpoint_validation'", spec)
         self.assertIn("Build output is incomplete", script)
 
     def test_energy_manager_uses_shared_setpoint_limits(self):
@@ -168,6 +270,65 @@ class TestSafetyRegressionGuards(unittest.TestCase):
         self.assertIn("validate_reactive_power", source)
         self.assertIn("validate_cosphi", source)
         self.assertIn("pn_limit_provider=self._get_pn_limit", main_source)
+        self.assertIn("validate_reactive_power(reactive, optional=True)", main_source)
+        self.assertIn("validate_cosphi(cosphi, default=1.0)", main_source)
+        self.assertIn("Reactive (Q) = |{active_int}|", main_source)
+
+    def test_main_cosphi_builds_a_validated_command(self):
+        class Value:
+            def __init__(self, value):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+        class Entry(Value):
+            def delete(self, _start, _end):
+                self.value = ""
+
+            def insert(self, _index, value):
+                self.value = str(value)
+
+        class Button:
+            def __init__(self):
+                self.states = []
+
+            def configure(self, **kwargs):
+                self.states.append(kwargs.get("state"))
+
+        class Queue:
+            def __init__(self):
+                self.commands = []
+
+            def execute(self, command, **kwargs):
+                self.commands.append((command, kwargs))
+                return True
+
+        app = RemoteBorneApp.__new__(RemoteBorneApp)
+        messages = []
+        queue = Queue()
+        button = Button()
+        app._sequence_operation_blocked = lambda _action: False
+        app._safe_mark_user_command = lambda: None
+        app.connected = True
+        app.use_cosphi_var = Value(True)
+        app.cosphi_active_entry = Entry("-1000")
+        app.cosphi_entry = Entry("0.9")
+        app.pn_value_var = Value("11000")
+        app._set_pn_limit = lambda _value: True
+        app._get_pn_limit = lambda: 11000
+        app.log = messages.append
+        app.ssh_timeout = 30
+        app.ssh_queue = queue
+        app.btn_send_cosphi = button
+
+        RemoteBorneApp.send_cosphi_command(app)
+
+        self.assertEqual(len(queue.commands), 1)
+        self.assertIn('SetpointCosPhi_Pct=90', queue.commands[0][0])
+        self.assertIn('--power -1000 -m CentralSetpoint', queue.commands[0][0])
+        self.assertIn('Reactive (Q) = |-1000|', "\n".join(messages))
+        self.assertEqual(button.states, ["disabled"])
 
     def test_plink_reports_missing_tools_before_starting_a_process(self):
         backend = PlinkBackend(
@@ -264,6 +425,7 @@ class TestSafetyRegressionGuards(unittest.TestCase):
         terminal_source = source[source.index("    def open_terminal("):]
         self.assertIn('command_start_mark = "terminal_command_start"', terminal_source)
         self.assertIn("output.bind(\"<Return>\", on_enter)", terminal_source)
+        self.assertIn('if cmd == "cd" or cmd.startswith("cd "):', terminal_source)
         self.assertNotIn("entry = ttk.Entry(frame", terminal_source)
 
     def test_debug_logs_reuses_the_approved_host_key(self):
@@ -291,6 +453,79 @@ class TestSafetyRegressionGuards(unittest.TestCase):
         self.assertIn("Press Start to retry.", source)
         self.assertIn("self.on_close()", source)
 
+    def test_debug_logs_include_the_ocpp_service_stream(self):
+        source = (ROOT / "src" / "debug_logs.py").read_text(encoding="utf-8")
+        self.assertIn('"ocpp-service.log": "/var/aux/ocpp-framework/ocpp-service.log"', source)
+
+    def test_debug_diagnosis_extracts_ocpp_connection_and_fault_details(self):
+        connected = parse_diagnostic_line(
+            "ocpp-service.log", "NetConnection: Connected"
+        )
+        boot = parse_diagnostic_line(
+            "ocpp-service.log", "Boot: BootNotificationResponse received: ACCEPTED"
+        )
+        fault = parse_diagnostic_line(
+            "ocpp-service.log",
+            'Raw network message sent: [2, "id", "StatusNotification", { "connectorId" : 0, "errorCode" : "OtherError", "info" : "Undervoltage", "status" : "Faulted", "vendorErrorCode" : "14" }]',
+        )
+        transaction = parse_diagnostic_line(
+            "ocpp-service.log", 'Raw network message sent: [2, "id", "StartTransaction", { "connectorId" : 1 }]'
+        )
+        self.assertEqual(connected["ocpp_connection"], "Connected")
+        self.assertEqual(boot["ocpp_boot"], "Accepted")
+        self.assertEqual(fault["ocpp_connector"], "Connector 0: Faulted")
+        self.assertEqual(fault["ocpp_fault"], "OtherError | Undervoltage | code 14")
+        self.assertEqual(transaction["ocpp_transaction"], "Start transaction")
+
+    def test_debug_diagnosis_extracts_ocpp_v2x_and_meter_values(self):
+        setpoint = parse_diagnostic_line(
+            "ocpp-service.log",
+            "Smart: Calculated SetPoint at now v2x mode: CentralSetpoint; phases: 3; "
+            "activeSetPoint: Current: 0(mA); Power: -2070(W); ; "
+            "reactiveSetPoint: Current: 0(mA); Power: 250(W); ;",
+        )
+        meter = parse_diagnostic_line(
+            "ocpp-service.log",
+            'MeterValues { "sampledValue" : [ '
+            '{ "measurand" : "Voltage", "phase" : "L1-N", "unit" : "V", "value" : "230.10" }, '
+            '{ "measurand" : "Voltage", "phase" : "L2-N", "unit" : "V", "value" : "231.20" }, '
+            '{ "measurand" : "Current.Offered", "unit" : "A", "value" : "15.465" }, '
+            '{ "measurand" : "Power.Offered", "unit" : "W", "value" : "10671" }, '
+            '{ "measurand" : "SoC", "unit" : "Percent", "value" : "91" } ] }',
+        )
+        self.assertEqual(setpoint["ocpp_v2x_mode"], "CentralSetpoint")
+        self.assertEqual(setpoint["ocpp_active_setpoint"], "-2070 W")
+        self.assertEqual(setpoint["ocpp_reactive_setpoint"], "250 var")
+        self.assertEqual(meter["ocpp_meter_voltage"], "L1-N: 230.10 V | L2-N: 231.20 V")
+        self.assertEqual(meter["ocpp_meter_current"], "15.465 A")
+        self.assertEqual(meter["ocpp_meter_offered_power"], "10671 W")
+        self.assertEqual(meter["ocpp_meter_soc"], "91 %")
+
+    def test_debug_diagnosis_extracts_raw_service_metrics(self):
+        energy = parse_diagnostic_line(
+            "EnergyManager.log",
+            "GridCodes request { P: {power_W: -2070} }, { Q: {power_W: 250} }",
+        )
+        charger = parse_diagnostic_line(
+            "ChargerApp.log",
+            "PresentSOC = 62; evActivePowerPresent_W = -2000; ChargePowerLimit = 11000",
+        )
+        meter = parse_diagnostic_line(
+            "iotc-meter-dispatcher.log",
+            '{"activePower": -2010, "reactivePower": 240, "powerFactor": 0.98, "frequency": 50}',
+        )
+        self.assertEqual(energy["setpoint_p"], "-2070 W")
+        self.assertEqual(charger["soc"], "62 %")
+        self.assertEqual(charger["charger_p"], "-2000 W")
+        self.assertEqual(meter["meter_q"], "240 var")
+        self.assertEqual(meter["frequency"], "50 Hz")
+
+    def test_sequence_has_an_explicit_confirmed_zero_power_stop(self):
+        source = (ROOT / "src" / "test_sequence.py").read_text(encoding="utf-8")
+        self.assertIn("Confirm Test Sequence", source)
+        self.assertIn("def stop_and_send_zero", source)
+        self.assertIn("Sequence emergency P=0", source)
+
     def test_simulator_launcher_has_no_user_specific_python_path(self):
         source = (ROOT / "tools" / "simulator" / "start_rbm_simulator.ps1").read_text(
             encoding="utf-8"
@@ -302,6 +537,9 @@ class TestSafetyRegressionGuards(unittest.TestCase):
     def test_build_bundles_the_integrated_simulator(self):
         source = (ROOT / "build_rbm.ps1").read_text(encoding="utf-8")
         self.assertIn('--add-data "tools\\simulator;tools\\simulator"', source)
+        self.assertIn('$simulatorTarget = Join-Path $distApp "tools\\simulator"', source)
+        self.assertIn('Copy-Item (Join-Path $simulatorSource "rbm_local_evse_simulator.py") $simulatorTarget -Force', source)
+        self.assertIn('"tools\\simulator\\rbm_local_evse_simulator.py"', source)
         self.assertIn("--collect-all paramiko", source)
 
     def test_simulator_has_demo_netlogger_content(self):

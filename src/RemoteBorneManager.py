@@ -52,28 +52,46 @@ try:
     from .ssh_queue import SSHQueue
     from .network_config import open_network_config
     from .open_help import open_help
+    from .setpoint_validation import (
+        validate_active_power,
+        validate_cosphi,
+        validate_reactive_power,
+    )
     from . import energy_manager
     from . import debug_logs
     from . import test_sequence
+    from . import gridcodes_migration_ui
 except ImportError:
     try:
         from ssh_manager import SSHManager
         from ssh_queue import SSHQueue
         from network_config import open_network_config
         from open_help import open_help
+        from setpoint_validation import (
+            validate_active_power,
+            validate_cosphi,
+            validate_reactive_power,
+        )
         import energy_manager
         import debug_logs
         import test_sequence
+        import gridcodes_migration_ui
     except ImportError:
         from src.ssh_manager import SSHManager
         from src.ssh_queue import SSHQueue
         from src.network_config import open_network_config
         from src.open_help import open_help
+        from src.setpoint_validation import (
+            validate_active_power,
+            validate_cosphi,
+            validate_reactive_power,
+        )
         from src import energy_manager
         from src import debug_logs
         from src import test_sequence
+        from src import gridcodes_migration_ui
 
-APP_VERSION = "16.1.0"
+APP_VERSION = "17.0.0"
 
 # Operational limits used by the main P/Q and CosPhi panels.  The target still
 # validates commands; Pn is an operator-side guard that can be read from the
@@ -432,6 +450,7 @@ class RemoteBorneApp:
         # but are deliberately discarded when the application exits.
         self._test_sequence_session_steps = []
         self._debug_logs_window = None
+        self._migration_window = None
         self._find_dialog = None
         self.temp_label_var = tk.StringVar(value="Relay: -- °C")
         self.soc_label_var = tk.StringVar(value="Battery SoC: --")
@@ -595,12 +614,12 @@ class RemoteBorneApp:
 
     @staticmethod
     def _is_valid_cosphi(value) -> bool:
-        """CosPhi operates from -0.99 to 1.00, excluding zero."""
+        """Keep legacy callers aligned with the shared CosPhi validation rule."""
         try:
-            cosphi = float(value)
-        except (TypeError, ValueError):
+            validate_cosphi(value)
+            return True
+        except ValueError:
             return False
-        return math.isfinite(cosphi) and -0.99 <= cosphi <= 1.0 and abs(cosphi) >= 1e-9
 
     # ==================================================================
     # LOGOS
@@ -716,6 +735,11 @@ class RemoteBorneApp:
         self.simulator_menu.add_command(
             label="Stop local simulator",
             command=self.stop_local_simulator,
+        )
+        self.simulator_menu.add_separator()
+        self.simulator_menu.add_command(
+            label="GridCodes Migration",
+            command=self.open_gridcodes_migration,
         )
         menubar.add_cascade(label="Tools", menu=self.simulator_menu)
 
@@ -1819,6 +1843,15 @@ class RemoteBorneApp:
                 _safe_destroy(getattr(debug_window, "window", None))
         self._debug_logs_window = None
 
+        migration_win = getattr(self, "_migration_window", None)
+        if migration_win is not None:
+            try:
+                migration_win.close()
+                closed_any = True
+            except Exception:
+                _safe_destroy(getattr(migration_win, "window", None))
+        self._migration_window = None
+
         energy_win = getattr(self, "_energy_win", None)
         if energy_win is not None:
             try:
@@ -1854,6 +1887,7 @@ class RemoteBorneApp:
                     getattr(self, "_find_dialog", None),
                     getattr(self, "_browser_find_dialog", None),
                     getattr(self, "_terminal_window", None),
+                    getattr(getattr(self, "_migration_window", None), "window", None),
                     getattr(getattr(self, "_energy_win", None), "win", None),
                     getattr(getattr(self, "_debug_logs_window", None), "window", None),
                 }
@@ -1876,6 +1910,7 @@ class RemoteBorneApp:
             getattr(self, "_find_dialog", None),
             getattr(self, "_browser_find_dialog", None),
             getattr(self, "_terminal_window", None),
+            getattr(getattr(self, "_migration_window", None), "window", None),
             getattr(getattr(self, "_energy_win", None), "win", None),
             getattr(getattr(self, "_sequence_win", None), "win", None),
             getattr(getattr(self, "_debug_logs_window", None), "window", None),
@@ -2773,6 +2808,10 @@ class RemoteBorneApp:
 
         def close_dialog():
             try:
+                dialog.grab_release()
+            except tk.TclError:
+                pass
+            try:
                 dialog.destroy()
             except Exception:
                 pass
@@ -2801,6 +2840,7 @@ class RemoteBorneApp:
         dialog.deiconify()
         dialog.lift()
         dialog.focus_force()
+        dialog.grab_set()
         query_entry.focus_set()
         query_entry.selection_range(0, "end")
 
@@ -3746,6 +3786,124 @@ class RemoteBorneApp:
                 pass
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def open_gridcodes_migration(self):
+        """Open the local migration assistant without changing the EVSE."""
+        try:
+            existing = getattr(self, "_migration_window", None)
+            existing_window = getattr(existing, "window", None)
+            if existing_window is not None and existing_window.winfo_exists():
+                existing_window.deiconify()
+                existing_window.lift()
+                existing_window.focus_force()
+                return
+        except tk.TclError:
+            pass
+
+        try:
+            self._migration_window = gridcodes_migration_ui.open_gridcodes_migration_window(
+                self.root,
+                exports_dir=EXPORTS_DIR,
+                is_connected=lambda: bool(
+                    self.connected and getattr(self.ssh, "connected", False)
+                ),
+                upload_export=self._upload_migrated_gridcodes_export,
+                log=self.log,
+            )
+            self.log("[MIGRATION] GridCodes Migration assistant opened.")
+        except Exception as exc:
+            self.log(f"[MIGRATION ERROR] Unable to open migration assistant: {exc}")
+            self._popup_error("GridCodes Migration", f"Unable to open migration assistant:\n{exc}")
+
+    def _upload_migrated_gridcodes_export(self, export_dir: str):
+        """Upload reviewed migration output while preserving its folder layout."""
+        if self._sequence_operation_blocked("Uploading migrated GridCodes"):
+            return
+        if not self.connected:
+            self._popup_warning("GridCodes Migration", "SSH is not connected.")
+            return
+        root_dir = os.path.abspath(export_dir)
+        if not os.path.isdir(root_dir):
+            self._popup_error("GridCodes Migration", "The selected migration export folder no longer exists.")
+            return
+        files = []
+        for current_dir, _directories, names in os.walk(root_dir):
+            for name in names:
+                if name == "migration_report.json" or name.lower().endswith(".json"):
+                    continue
+                files.append(os.path.join(current_dir, name))
+        if not files:
+            self._popup_warning("GridCodes Migration", "No migrated configuration file is available for upload.")
+            return
+
+        target_root = (self.current_path or self.default_path).rstrip("/")
+        self._safe_mark_user_command()
+        self.log(f"[MIGRATION] Uploading {len(files)} reviewed file(s) to {target_root}.")
+
+        def worker():
+            success_count = 0
+            failed = []
+            prepared_dirs = set()
+            for local_path in files:
+                relative = os.path.relpath(local_path, root_dir).replace("\\", "/")
+                remote_path = self._join_remote(target_root, relative)
+                remote_dir = posixpath.dirname(remote_path)
+                if remote_dir not in prepared_dirs:
+                    prepared_dirs.add(remote_dir)
+                    ensured = self.ssh.ensure_remote_dir(remote_dir)
+                    if not ensured.get("success"):
+                        failed.append(f"{relative}: cannot prepare {remote_dir}")
+                        continue
+                attempt_success = False
+                last_error = ""
+                for attempt in range(1, 4):
+                    result = self.ssh.scp_put(local_path, remote_path, timeout=self.ssh_timeout)
+                    if result.get("success"):
+                        attempt_success = True
+                        break
+                    last_error = (result.get("err") or result.get("out") or "unknown error").strip()
+                    time.sleep(0.5 * attempt)
+                if not attempt_success:
+                    failed.append(f"{relative}: {last_error}")
+                    continue
+                size_result = self.ssh.execute_sync(
+                    f"test -f {shlex.quote(remote_path)} && wc -c < {shlex.quote(remote_path)}",
+                    timeout=self.ssh_timeout,
+                    auto_retry=False,
+                    log_errors=False,
+                )
+                remote_size = (size_result.get("out") or "").strip()
+                try:
+                    size_matches = size_result.get("success") and int(remote_size) == os.path.getsize(local_path)
+                except ValueError:
+                    size_matches = False
+                if not size_matches:
+                    failed.append(f"{relative}: remote size verification failed")
+                    continue
+                success_count += 1
+                self.log(f"[MIGRATION] Uploaded and verified: {relative} -> {remote_path}")
+
+            def finished():
+                self.log(f"[MIGRATION] Upload complete: {success_count} success, {len(failed)} failed.")
+                if failed:
+                    self._popup_warning(
+                        "GridCodes Migration",
+                        f"Upload completed with {len(failed)} error(s).\n\n" + "\n".join(failed[:8]),
+                    )
+                else:
+                    self._popup_info(
+                        "GridCodes Migration",
+                        f"{success_count} migrated file(s) uploaded and size-verified.",
+                    )
+                self.refresh_file_list()
+
+            try:
+                self.root.after(0, finished)
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def _menu_edit(self):
         remote = self._selected_remote_file()
         if not remote:
@@ -3780,11 +3938,8 @@ class RemoteBorneApp:
         dialog.withdraw()
         dialog.title("NetLogger logs")
         dialog.transient(self.root)
-        # This window must never lock the main application. A missing log
-        # directory is a normal EVSE configuration difference, not an error
-        # that should prevent the operator from continuing to work.
-        # Transient keeps this non-modal window above RBM, without forcing it
-        # above unrelated applications on the desktop.
+        # Only Debug Logs remains modeless. NetLogger is an operator workflow,
+        # so it keeps RBM protected until it is closed.
         dialog.minsize(650, 420)
         self._center_toplevel(dialog, 760, 520, parent=self.root)
 
@@ -4022,12 +4177,23 @@ class RemoteBorneApp:
             state="disabled",
         )
         download_button.grid(row=0, column=2, padx=(0, 6))
-        ttk.Button(actions, text="Close", command=dialog.destroy).grid(row=0, column=3)
+        def close_netlogger_dialog():
+            try:
+                dialog.grab_release()
+            except tk.TclError:
+                pass
+            try:
+                dialog.destroy()
+            except tk.TclError:
+                pass
 
-        dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
+        ttk.Button(actions, text="Close", command=close_netlogger_dialog).grid(row=0, column=3)
+
+        dialog.protocol("WM_DELETE_WINDOW", close_netlogger_dialog)
         dialog.deiconify()
         dialog.lift()
         dialog.focus_force()
+        dialog.grab_set()
         list_files()
 
     def _on_pn_slider_changed(self, value):
@@ -4732,43 +4898,14 @@ class RemoteBorneApp:
         if active == "":
             active = "0"
 
-        try:
-            active_val = float(active)
-        except ValueError:
-            messagebox.showwarning(
-                "Energy Manager", "Active power must be a valid numeric value."
-            )
-            return
-
-        reactive_val = None
-        if reactive:
-            try:
-                reactive_val = float(reactive)
-            except ValueError:
-                messagebox.showwarning(
-                    "Energy Manager", "Reactive power must be a valid numeric value."
-                )
-                return
-
         if not self._set_pn_limit(self.pn_value_var.get()):
             return
-        pn_limit = self._get_pn_limit()
-        if abs(active_val) > pn_limit:
-            messagebox.showwarning(
-                "Energy Manager",
-                f"Active (P) must be between -{int(pn_limit)} and {int(pn_limit)} W (Pn).",
-            )
+        try:
+            active_int = validate_active_power(active, self._get_pn_limit())
+            reactive_int = validate_reactive_power(reactive, optional=True)
+        except ValueError as exc:
+            messagebox.showwarning("Energy Manager", str(exc))
             return
-        if reactive_val is not None and (reactive_val < -11000 or reactive_val > 11000):
-            messagebox.showwarning(
-                "Energy Manager",
-                "Reactive (Q) must be between -11000 and 11000 var.",
-            )
-            return
-
-        # On envoie des entiers
-        active_int = int(round(active_val))
-        reactive_int = int(round(reactive_val)) if reactive_val is not None else None
 
         if reactive_int is None:
             self.log(f"Sending setpoint: Active={active_int} W, Reactive omitted")
@@ -4845,47 +4982,27 @@ class RemoteBorneApp:
             self.cosphi_entry.insert(0, cosphi)
             self.log("[COSPHI] Empty value defaulted to 1.")
 
-        try:
-            active_val = float(active)
-            cosphi_val = float(cosphi)
-        except ValueError:
-            messagebox.showwarning(
-                "Energy Manager",
-                "Active and CosPhi must be valid numeric values.",
-            )
-            return
-
         if not self._set_pn_limit(self.pn_value_var.get()):
             return
-        pn_limit = self._get_pn_limit()
-        if abs(active_val) > pn_limit:
-            messagebox.showwarning(
-                "Energy Manager",
-                f"Active (P) must be between -{int(pn_limit)} and {int(pn_limit)} W (Pn).",
-            )
-            return
-
-        if not self._is_valid_cosphi(cosphi_val):
-            messagebox.showwarning(
-                "Energy Manager",
-                "CosPhi must be between -0.99 and 1.00.\n"
-                "Value 0 is not allowed.",
-            )
+        try:
+            active_int = validate_active_power(active, self._get_pn_limit())
+            cosphi_val = validate_cosphi(cosphi, default=1.0)
+        except ValueError as exc:
+            messagebox.showwarning("Energy Manager", str(exc))
             return
 
         # Calcul Q conservé pour information opérateur
-        q_val = int(round(abs(active_val) * math.tan(math.acos(cosphi_val))))
+        q_val = int(round(abs(active_int) * math.tan(math.acos(cosphi_val))))
         cosphi_pct = int(round(cosphi_val * 100))
-        active_int = int(round(active_val))
 
         self.log("CosPhi calculation:")
-        self.log(f"  Active = {active_val} W")
+        self.log(f"  Active = {active_int} W")
         self.log(f"  CosPhi = {cosphi_val}")
         self.log(
-            f"  Reactive (Q) = |{active_val}| * tan(acos({cosphi_val})) = {q_val} var"
+            f"  Reactive (Q) = |{active_int}| * tan(acos({cosphi_val})) = {q_val} var"
         )
         self.log(
-            f"Sending CosPhi command: Active={active_val} W, "
+            f"Sending CosPhi command: Active={active_int} W, "
             f"CosPhi={cosphi_val} ({cosphi_pct}%), Reactive={q_val} var"
         )
 
@@ -5969,7 +6086,7 @@ class RemoteBorneApp:
                 append("[INFO] A command is already running. Wait for it to finish.\n")
                 return
 
-            if cmd.startswith("cd"):
+            if cmd == "cd" or cmd.startswith("cd "):
                 parts = cmd.split(maxsplit=1)
                 if len(parts) == 1:
                     new_dir = self.default_path
@@ -6326,6 +6443,10 @@ class RemoteBorneApp:
             except Exception:
                 pass
             try:
+                win.grab_release()
+            except tk.TclError:
+                pass
+            try:
                 win.destroy()
             except Exception:
                 pass
@@ -6333,6 +6454,11 @@ class RemoteBorneApp:
 
         self._close_terminal_window = _on_close
         win.protocol("WM_DELETE_WINDOW", _on_close)
+
+        # The terminal can execute arbitrary remote commands. Keep its session
+        # isolated from RBM controls; Debug Logs remains the live monitor that
+        # can intentionally stay open alongside the main window.
+        win.grab_set()
 
         if initial_command:
             prefill_command(initial_command)
