@@ -341,11 +341,10 @@ class DebugLogsWindow:
         # Centrage sur la fenÃªtre parente
         center_window(parent, self.window, 1180, 760)
 
-        # One Find bar remains available from the diagnosis and every log tab.
+        # Search controls belong only to the Live diagnosis action area.
         self._global_query = ""
         self._global_ignore_case = True
         self._global_search_after = None
-        self._create_global_find_bar()
 
         # Notebook
         self.notebook = ttk.Notebook(self.window)
@@ -372,10 +371,10 @@ class DebugLogsWindow:
         self.window.lift()
         self.window.focus_force()
 
-    def _create_global_find_bar(self):
-        bar = ttk.Frame(self.window, padding=(8, 6))
-        bar.pack(fill="x")
-        ttk.Label(bar, text="Find in all logs:").pack(side="left")
+    def _create_global_find_bar(self, parent):
+        bar = ttk.Frame(parent)
+        bar.pack(side="left", fill="x", expand=True, padx=(16, 0))
+        ttk.Label(bar, text="Find:").pack(side="left")
         self.global_find_var = tk.StringVar(master=self.window)
         self.global_ignore_case_var = tk.BooleanVar(master=self.window, value=True)
         self.global_follow_var = tk.BooleanVar(master=self.window, value=True)
@@ -384,11 +383,6 @@ class DebugLogsWindow:
         self.global_find_entry.bind("<Return>", self.find_in_all_logs)
         ttk.Button(bar, text="Find", command=self.find_in_all_logs).pack(side="left", padx=3)
         ttk.Button(bar, text="Clear", command=self.clear_global_find).pack(side="left", padx=3)
-        ttk.Checkbutton(
-            bar, text="Ignore case", variable=self.global_ignore_case_var,
-            command=self.find_in_all_logs,
-        ).pack(side="left", padx=6)
-        ttk.Checkbutton(bar, text="Follow results", variable=self.global_follow_var).pack(side="left")
 
     def _create_global_results_tab(self):
         self.global_results_tab = ttk.Frame(self.notebook, padding=6)
@@ -408,6 +402,7 @@ class DebugLogsWindow:
         self.global_results_text.tag_configure("match", background="#ffe082", foreground="#000000")
 
     def _focus_global_find(self, _event=None):
+        self.notebook.select(self.diagnosis_tab)
         self.global_find_entry.focus_set()
         self.global_find_entry.selection_range(0, "end")
         return "break"
@@ -482,6 +477,7 @@ class DebugLogsWindow:
         """Create a concise, read-only view across the monitored service logs."""
         frame = ttk.Frame(self.notebook, padding=12)
         self.notebook.add(frame, text="Live diagnosis")
+        self.diagnosis_tab = frame
         frame.columnconfigure(0, weight=1)
         frame.columnconfigure(1, weight=1)
         frame.rowconfigure(3, weight=1)
@@ -547,7 +543,20 @@ class DebugLogsWindow:
         ttk.Button(actions, text="Start all", command=self.start_all_logs).pack(side="left", padx=(0, 6))
         ttk.Button(actions, text="Stop all", command=self.stop_all_logs).pack(side="left", padx=(0, 6))
         ttk.Button(actions, text="Capture incident", command=self.capture_incident).pack(side="left")
-        ttk.Label(actions, textvariable=self.diagnosis_last_update).pack(side="right")
+        self._create_global_find_bar(actions)
+
+        # Keep optional search settings and the update status out of the
+        # main button row, leaving the query entry room on narrow windows.
+        options = ttk.Frame(frame)
+        options.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        ttk.Checkbutton(
+            options, text="Ignore case", variable=self.global_ignore_case_var,
+            command=self.find_in_all_logs,
+        ).pack(side="left", padx=(0, 8))
+        ttk.Checkbutton(
+            options, text="Follow results", variable=self.global_follow_var,
+        ).pack(side="left")
+        ttk.Label(options, textvariable=self.diagnosis_last_update).pack(side="right")
 
     def _update_diagnosis(self, log_name: str, line: str):
         updates = parse_diagnostic_line(log_name, line)
