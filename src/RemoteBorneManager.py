@@ -51,6 +51,7 @@ try:
     from .ssh_manager import SSHManager
     from .ssh_queue import SSHQueue
     from .utils_ui import center_window, ScrollableFrame
+    from .main_workspace import build_main_workspace
     from .network_config import open_network_config
     from .open_help import open_help
     from .setpoint_validation import (
@@ -67,6 +68,7 @@ except ImportError:
         from ssh_manager import SSHManager
         from ssh_queue import SSHQueue
         from utils_ui import center_window, ScrollableFrame
+        from main_workspace import build_main_workspace
         from network_config import open_network_config
         from open_help import open_help
         from setpoint_validation import (
@@ -82,6 +84,7 @@ except ImportError:
         from src.ssh_manager import SSHManager
         from src.ssh_queue import SSHQueue
         from src.utils_ui import center_window, ScrollableFrame
+        from src.main_workspace import build_main_workspace
         from src.network_config import open_network_config
         from src.open_help import open_help
         from src.setpoint_validation import (
@@ -595,6 +598,11 @@ class RemoteBorneApp:
             self.style.theme_use(theme_name)
             # Re-apply the RBM visual language after ttkbootstrap changes theme.
             self._configure_ui_styles()
+            for pane in (getattr(self, "main_panes", None), getattr(self, "workspace_panes", None)):
+                if pane is not None:
+                    pane.configure(background=self.style.colors.bg)
+            if getattr(self, "led_canvas", None) is not None:
+                self.led_canvas.configure(background=self.style.colors.bg)
             # MAJ du style du log en fonction du nouveau thème
             if self.log_text is not None:
                 self._style_logs()
@@ -853,591 +861,7 @@ class RemoteBorneApp:
         )
 
     def _build_layout(self):
-        self._configure_ui_styles()
-
-        # ----- MAIN -----
-        scroll = ScrollableFrame(self.root)
-        scroll.pack(fill="both", expand=True)
-        main = ttk.Frame(scroll.content)
-        main.pack(fill="both", expand=True)
-
-        # Keep the control area compact and use any additional display height
-        # for operational evidence in Logs rather than empty space.
-        main.grid_columnconfigure(0, weight=1)
-        main.grid_columnconfigure(1, weight=1)
-        main.grid_rowconfigure(0, weight=0)
-        main.grid_rowconfigure(1, weight=1)
-        main.grid_rowconfigure(2, weight=2)
-
-        # ----- HEADER (logos + titre + status) -----
-        header = ttk.Frame(main)
-        header.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=(2, 2))
-        header.grid_columnconfigure(0, weight=1)
-        header.grid_columnconfigure(1, weight=3)
-        header.grid_columnconfigure(2, weight=1)
-
-        left_logo_fr = ttk.Frame(header)
-        left_logo_fr.grid(row=0, column=0, sticky="w")
-        if self.logo_left:
-            ttk.Label(left_logo_fr, image=self.logo_left).pack(anchor="w")
-
-        center_fr = ttk.Frame(header)
-        center_fr.grid(row=0, column=1, sticky="nsew")
-        ttk.Label(
-            center_fr,
-            text="Remote Borne Control Interface (RBM)",
-            style="HeaderTitle.TLabel",
-            anchor="center",
-        ).pack(fill="x")
-        self.simulation_banner = ttk.Label(
-            center_fr,
-            textvariable=self.simulation_var,
-            bootstyle="warning",
-            anchor="center",
-        )
-        self.simulation_banner.pack(fill="x")
-
-        right_logo_fr = ttk.Frame(header)
-        right_logo_fr.grid(row=0, column=2, sticky="e")
-        if self.logo_right:
-            ttk.Label(right_logo_fr, image=self.logo_right).pack(anchor="e")
-
-        # ----- LEFT : FILE BROWSER -----
-        left = ttk.Labelframe(
-            main,
-            text=f"EVSE Local Grid Code Configuration Files",
-            style="Section.TLabelframe",
-            padding=5,
-        )
-        left.grid(row=1, column=0, sticky="nsew", padx=(10, 5), pady=5)
-
-        # 🔥 IMPORTANT (responsive)
-        left.grid_rowconfigure(0, weight=0)   # barre de path
-        left.grid_rowconfigure(1, weight=0)   # barre de recherche
-        left.grid_rowconfigure(2, weight=1)   # liste fichiers
-        left.grid_columnconfigure(0, weight=1)
-
-        # Path bar
-        path_row = ttk.Frame(left)
-        path_row.grid(row=0, column=0, sticky="ew", pady=(0, 4))
-        path_row.grid_columnconfigure(1, weight=1)
-
-        ttk.Label(path_row, text="Path:").grid(row=0, column=0, sticky="w")
-        self.path_entry = ttk.Entry(path_row)
-        self.path_entry.grid(row=0, column=1, sticky="ew", padx=2)
-        self.path_entry.insert(0, self.current_path)
-
-        self.btn_go = ttk.Button(
-            path_row, text="Go", width=6, style="Nav.TButton", command=self._go_to_path
-        )
-        self.btn_go.grid(
-            row=0, column=2, padx=2
-        )
-        self.btn_up = ttk.Button(
-            path_row, text="Up", width=6, style="Nav.TButton", command=self._go_parent
-        )
-        self.btn_up.grid(
-            row=0, column=3, padx=2
-        )
-        self.btn_root = ttk.Button(
-            path_row, text="Root", width=6, style="Nav.TButton", command=self._go_root
-        )
-        self.btn_root.grid(
-            row=0, column=4, padx=2
-        )
-        # Find stays visible beside the path controls, without opening a
-        # secondary window or changing the remote navigation flow.
-        find_row = ttk.Frame(left)
-        find_row.grid(row=1, column=0, sticky="ew", pady=(0, 4))
-        find_row.grid_columnconfigure(1, weight=1)
-        ttk.Label(find_row, text="Find:").grid(row=0, column=0, sticky="w")
-        self.find_entry = ttk.Entry(find_row, textvariable=self._file_find_var)
-        self.find_entry.grid(row=0, column=1, sticky="ew", padx=2)
-        self.find_entry.bind("<Return>", lambda _event: self._apply_file_filter_from_entry())
-        self._file_find_var.trace_add("write", self._on_file_find_changed)
-        self.btn_find = ttk.Button(
-            find_row,
-            text="Find",
-            width=6,
-            style="Nav.TButton",
-            command=self._apply_file_filter_from_entry,
-        )
-        self.btn_find.grid(row=0, column=2, padx=2)
-        self.btn_clear_find = ttk.Button(
-            find_row,
-            text="Clear",
-            width=6,
-            style="Nav.TButton",
-            command=self._clear_file_filter,
-        )
-        self.btn_clear_find.grid(row=0, column=3, padx=(2, 0))
-
-        # File list
-        list_frame = ttk.Frame(left)
-        list_frame.grid(row=2, column=0, sticky="nsew")
-        list_frame.grid_rowconfigure(0, weight=1)
-        list_frame.grid_columnconfigure(0, weight=1)
-        left.grid_rowconfigure(2, weight=1)     # <--- AJOUT NECESSAIRE
-        left.grid_columnconfigure(0, weight=1)  # <--- AJOUT NECESSAIRE
-
-
-        self.file_list = tk.Listbox(
-            list_frame,
-            activestyle="none",
-            font=("Segoe UI", 10),
-        )
-        self.file_list.grid(row=0, column=0, sticky="nsew")
-
-        vs = ttk.Scrollbar(
-            list_frame, orient="vertical", command=self.file_list.yview
-        )
-        vs.grid(row=0, column=1, sticky="ns")
-        hs = ttk.Scrollbar(
-            list_frame, orient="horizontal", command=self.file_list.xview
-        )
-        hs.grid(row=1, column=0, sticky="ew")
-
-        self.file_list.configure(yscrollcommand=vs.set, xscrollcommand=hs.set)
-
-        self.file_list.bind("<Double-Button-1>", self.on_file_double_click)
-        self.file_list.bind("<Button-3>", self._on_file_menu)
-
-        # ----- RIGHT : COMPACT OPERATIONS STACK -----
-        # On wide screens this avoids the former oversized empty Test
-        # Configuration panel while keeping all operating controls together.
-        right_stack = ttk.Frame(main)
-        right_stack.grid(row=1, column=1, sticky="nsew", padx=(5, 10), pady=5)
-        right_stack.grid_columnconfigure(0, weight=1)
-        right_stack.grid_rowconfigure(0, weight=0)
-        right_stack.grid_rowconfigure(1, weight=0)
-        right_stack.grid_rowconfigure(2, weight=1)
-
-        # ----- RIGHT TOP : STATUS + CONTROLS -----
-        right_top = ttk.Labelframe(
-            right_stack, text="Status & Controls", style="Section.TLabelframe", padding=5
-        )
-        right_top.grid(row=0, column=0, sticky="ew", pady=(0, 4))
-        right_top.grid_columnconfigure(0, weight=1)
-
-        # Status row
-        status_row = ttk.Frame(right_top)
-        status_row.grid(row=0, column=0, sticky="ew", pady=(0, 4))
-        status_row.grid_columnconfigure(1, weight=1)
-
-        self.ip_label = ttk.Label(
-            status_row, text=f"IP: {self.host or '-'}", style="Status.TLabel", anchor="w"
-        )
-        self.ip_label.grid(row=0, column=0, sticky="w")
-
-        self.user_label = ttk.Label(
-            status_row, text=f"User: {self.user or '-'}", style="Status.TLabel", anchor="w"
-        )
-        self.user_label.grid(row=1, column=0, sticky="w")
-        
-        #ttk.Label(status_row, textvariable=self.temp_var).grid(row=2, column=0, sticky="w")
-        #ttk.Label(status_row, textvariable=self.soc_var).grid(row=3, column=0, sticky="w")
-        
-        self.led_canvas = tk.Canvas(
-            status_row, width=20, height=20, highlightthickness=0
-        )
-        self.led_canvas.grid(row=0, column=1, rowspan=2, sticky="e", padx=8)
-
-        ttk.Label(
-            status_row,
-            textvariable=self.status_var,
-        ).grid(row=0, column=2, rowspan=2, sticky="e")
-
-        # Connection buttons
-        btn_row = ttk.Frame(right_top)
-        btn_row.grid(row=1, column=0, sticky="ew")
-        btn_row.grid_columnconfigure(0, weight=1)
-        btn_row.grid_columnconfigure(1, weight=1)
-        btn_row.grid_columnconfigure(2, weight=1)
-
-        self.btn_connect = ttk.Button(
-            btn_row,
-            text="Connect",
-            style="Success.TButton",
-            command=self.force_reconnect,
-        )
-        self.btn_connect.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
-
-        self.btn_disconnect = ttk.Button(
-            btn_row,
-            text="Disconnect",
-            style="Warning.TButton",
-            command=self._manual_disconnect,
-        )
-        self.btn_disconnect.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
-
-        self.btn_exit = ttk.Button(
-            btn_row, text="Exit", style="Secondary.TButton", command=self.on_exit
-        )
-        self.btn_exit.grid(row=0, column=2, padx=2, pady=2, sticky="ew")
-
-        # File actions
-        file_actions = ttk.Labelframe(
-            right_top, text="Test Configuration", style="Section.TLabelframe", padding=5
-        )
-        file_actions.grid(row=2, column=0, sticky="nsew", pady=(4, 0))
-
-        # Layout tuned for long labels: short actions on first row,
-        # long actions on a second row with wider buttons.
-        file_actions.grid_columnconfigure(0, weight=1)
-        file_actions.grid_columnconfigure(1, weight=1)
-        file_actions.grid_columnconfigure(2, weight=1)
-        file_actions.grid_columnconfigure(3, weight=1)
-        file_actions.grid_rowconfigure(0, weight=0)
-        file_actions.grid_rowconfigure(1, weight=0)
-
-        # Row 1: short actions
-        self.btn_refresh = ttk.Button(
-            file_actions, text="Refresh", style="Action.TButton", command=self.refresh_file_list
-        )
-        self.btn_refresh.grid(row=0, column=0, padx=3, pady=3, sticky="ew")
-
-        self.btn_download = ttk.Button(
-            file_actions, text="Download", style="Action.TButton", command=self._menu_download
-        )
-        self.btn_download.grid(row=0, column=1, padx=3, pady=3, sticky="ew")
-
-        self.btn_edit = ttk.Button(
-            file_actions, text="Edit", style="Action.TButton", command=self._menu_edit
-        )
-        self.btn_edit.grid(row=0, column=2, padx=3, pady=3, sticky="ew")
-
-        self.btn_print = ttk.Button(
-            file_actions, text="Print", style="Action.TButton", command=self._menu_print
-        )
-        self.btn_print.grid(row=0, column=3, padx=3, pady=3, sticky="ew")
-
-        # Row 2: configuration actions and direct operational shortcuts.
-        # Keeping all four on one row prevents them from being clipped on a
-        # standard 1080p display.
-        self.btn_upload = ttk.Button(
-            file_actions,
-            text="Upload",
-            style="Wide.TButton",
-            command=self.upload_files_to_current_path,
-        )
-        self.btn_upload.grid(row=1, column=0, padx=3, pady=3, sticky="ew")
-
-        self.btn_copy_panel = ttk.Button(
-            file_actions,
-            text="Apply Grid Code",
-            style="Wide.TButton",
-            command=self.copy_selected_to_gridcodes,
-        )
-        self.btn_copy_panel.grid(row=1, column=1, padx=3, pady=3, sticky="ew")
-
-        self.btn_edit_current_properties = ttk.Button(
-            file_actions,
-            text="Active properties",
-            style="Wide.TButton",
-            command=self.edit_current_gridcodes_properties,
-        )
-        self.btn_edit_current_properties.grid(row=1, column=2, padx=3, pady=3, sticky="ew")
-
-        self.btn_netlogger = ttk.Button(
-            file_actions,
-            text="NetLogger logs",
-            style="Wide.TButton",
-            command=self.open_netlogger_download,
-        )
-        self.btn_netlogger.grid(row=1, column=3, padx=3, pady=3, sticky="ew")
-
-        # ----- RIGHT MIDDLE : ENERGY MANAGER -----
-        em_frame = ttk.Labelframe(
-            right_stack, text="Energy Manager Controls", style="Section.TLabelframe", padding=5
-        )
-        em_frame.grid(row=1, column=0, sticky="ew")
-        em_frame.grid_columnconfigure(0, weight=1)
-        em_frame.grid_columnconfigure(1, weight=1)
-
-        # Validateur float commun à tous les champs P/Q/CosPhi
-        vcmd_float = (self.root.register(self._validate_float_key), "%P")
-
-        # Pn is an operator-side limit for the active-power fields. It can be
-        # typed, adjusted with the slider, or loaded from GridCodes.properties.
-        pn_frame = ttk.Labelframe(
-            em_frame, text="Active Power Limit (Pn)", style="Section.TLabelframe", padding=(5, 3)
-        )
-        pn_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 4))
-        pn_frame.grid_columnconfigure(1, weight=0)
-
-        ttk.Label(pn_frame, text="Pn max [W]:").grid(row=0, column=0, sticky="w")
-        self.pn_entry = ttk.Entry(
-            pn_frame,
-            textvariable=self.pn_value_var,
-            width=9,
-            justify="right",
-            validate="key",
-            validatecommand=vcmd_float,
-        )
-        self.pn_entry.grid(row=0, column=1, sticky="w", padx=(6, 6))
-        self.pn_entry.bind("<Return>", self._commit_manual_pn)
-        self.pn_entry.bind("<FocusOut>", self._commit_manual_pn)
-
-        self.btn_read_pn = ttk.Button(
-            pn_frame,
-            text="Read Pn",
-            command=self.read_pn_from_gridcodes_properties,
-        )
-        self.btn_read_pn.grid(row=0, column=2, sticky="w", padx=(0, 12))
-
-        # Compact HMI-style feedback: the last target-confirmed P value is
-        # shown as a dedicated read-only metric rather than a long message.
-        ttk.Label(pn_frame, text="Last confirmed P [W]:").grid(
-            row=1, column=0, sticky="w", pady=(3, 0)
-        )
-        ttk.Label(
-            pn_frame,
-            textvariable=self.last_active_power_var,
-            style="MetricValue.TLabel",
-            width=10,
-            anchor="e",
-        ).grid(row=1, column=1, sticky="w", padx=(6, 6), pady=(3, 0))
-        self.btn_read_last_active_power = ttk.Button(
-            pn_frame,
-            text="Refresh P",
-            command=self.read_last_active_power_from_energy_log,
-        )
-        self.btn_read_last_active_power.grid(row=1, column=2, sticky="w", pady=(3, 0))
-
-        ttk.Label(pn_frame, text="P [%]:").grid(row=0, column=3, sticky="w")
-        pn_frame.grid_columnconfigure(4, weight=1)
-        self.pn_scale = tk.Scale(
-            pn_frame,
-            from_=-100,
-            to=100,
-            resolution=1,
-            orient="horizontal",
-            showvalue=False,
-            variable=self.pn_slider_var,
-            command=self._on_pn_slider_changed,
-            highlightthickness=0,
-        )
-        self.pn_scale.grid(row=0, column=4, sticky="ew", padx=(6, 6))
-        self.pn_percent_entry = ttk.Entry(
-            pn_frame,
-            textvariable=self.pn_percent_var,
-            width=6,
-            justify="right",
-            validate="key",
-            validatecommand=vcmd_float,
-        )
-        self.pn_percent_entry.grid(row=0, column=5, sticky="e")
-        self.pn_percent_entry.bind("<Return>", self._commit_manual_percent)
-        self.pn_percent_entry.bind("<FocusOut>", self._commit_manual_percent)
-        ttk.Label(pn_frame, text="%").grid(row=0, column=6, sticky="w", padx=(3, 0))
-
-        # P/Q
-        pq_frame = ttk.Labelframe(
-            em_frame, text="P / Q Setpoint", style="Section.TLabelframe", padding=5
-        )
-        pq_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 4))
-        # Setpoints are short numerical values. Keeping P and Q on one row
-        # leaves enough vertical space for the monitoring panel on laptops.
-        pq_frame.grid_columnconfigure(1, weight=0)
-        pq_frame.grid_columnconfigure(3, weight=0)
-
-        ttk.Label(pq_frame, text="Active (P) [W]:").grid(row=0, column=0, sticky="w")
-        self.active_entry = ttk.Entry(
-            pq_frame,
-            width=10,
-            justify="right",
-            validate="key",
-            validatecommand=vcmd_float,
-        )
-        self.active_entry.grid(row=0, column=1, sticky="w", padx=(5, 12), pady=2)
-        # Default value for active
-        self.active_entry.insert(0, "0")
-
-        ttk.Label(pq_frame, text="Reactive (Q) [var]:").grid(
-            row=0, column=2, sticky="w"
-        )
-        self.reactive_entry = ttk.Entry(
-            pq_frame,
-            width=10,
-            justify="right",
-            validate="key",
-            validatecommand=vcmd_float,
-        )
-        self.reactive_entry.grid(row=0, column=3, sticky="w", padx=(5, 0), pady=2)
-        # An empty Q field means that no reactive-power option is sent.
-
-        self.btn_send_power = ttk.Button(
-            pq_frame,
-            text="Send",
-            style="Accent.TButton",
-            command=self.send_power_command,
-        )
-        self.btn_send_power.grid(
-            row=1, column=0, columnspan=4, pady=(4, 0), sticky="ew"
-        )
-        self.btn_send_power.configure(padding=(8, 3))
-
-        # CosPhi
-        cosphi_frame = ttk.Labelframe(
-            em_frame, text="CosPhi Setpoint", style="Section.TLabelframe", padding=5
-        )
-        cosphi_frame.grid(row=1, column=1, sticky="nsew", padx=(4, 0))
-        cosphi_frame.grid_columnconfigure(1, weight=0)
-        cosphi_frame.grid_columnconfigure(3, weight=0)
-
-        ttk.Checkbutton(
-            cosphi_frame,
-            text="Use CosPhi mode",
-            variable=self.use_cosphi_var,
-            command=self._on_cosphi_toggle,
-        ).grid(row=0, column=0, columnspan=4, sticky="w")
-
-        ttk.Label(cosphi_frame, text="Active (P) [W]:").grid(
-            row=1, column=0, sticky="w"
-        )
-        self.cosphi_active_entry = ttk.Entry(
-            cosphi_frame,
-            width=10,
-            justify="right",
-            validate="key",
-            validatecommand=vcmd_float,
-        )
-        self.cosphi_active_entry.grid(
-            row=1, column=1, sticky="w", padx=(5, 12), pady=2
-        )
-        # Default value for active
-        self.cosphi_active_entry.insert(0, "0")
-
-        ttk.Label(cosphi_frame, text="CosPhi:").grid(row=1, column=2, sticky="w")
-        self.cosphi_entry = ttk.Entry(
-            cosphi_frame,
-            width=10,
-            justify="right",
-            validate="key",
-            validatecommand=vcmd_float,
-        )
-        self.cosphi_entry.grid(row=1, column=3, sticky="w", padx=(5, 0), pady=2)
-        # A neutral value is inserted when CosPhi mode is enabled or sent.
-
-        self.btn_send_cosphi = ttk.Button(
-            cosphi_frame,
-            text="Send",
-            style="Accent.TButton",
-            command=self.send_cosphi_command,
-        )
-        self.btn_send_cosphi.grid(
-            row=2, column=0, columnspan=4, pady=(4, 0), sticky="ew"
-        )
-        self.btn_send_cosphi.configure(padding=(8, 3))
-
-        # Services
-        srv_frame = ttk.Labelframe(
-            em_frame, text="Services", style="Section.TLabelframe", padding=5
-        )
-        srv_frame.grid(row=2, column=0, sticky="nsew", padx=(0, 4), pady=(4, 0))
-        srv_frame.grid_columnconfigure(0, weight=1)
-        srv_frame.grid_columnconfigure(1, weight=1)
-        srv_frame.grid_rowconfigure(1, weight=0)
-
-        self.btn_restart_services = ttk.Button(
-            srv_frame,
-            text="Restart services",
-            style="Warning.TButton",
-            command=self.restart_initd_services,
-        )
-        self.btn_restart_services.grid(
-            row=0, column=0, padx=3, pady=3, sticky="ew"
-        )
-
-        self.btn_reboot = ttk.Button(
-            srv_frame,
-            text="Reboot device",
-            style="Danger.TButton",
-            command=self.reboot_device,
-        )
-        self.btn_reboot.grid(row=0, column=1, padx=3, pady=3, sticky="ew")
-
-        # ttk.Label(
-            # srv_frame,
-            # text="Run after each configuration change.",
-            # anchor="w",
-            # justify="left",
-        # ).grid(row=1, column=0, columnspan=2, sticky="w", padx=2, pady=(4, 0))
-
-        # --- ADDED ---
-        derate_frame = ttk.Labelframe(
-            em_frame, text="Temperature / Derating", style="Section.TLabelframe", padding=5
-        )
-        derate_frame.grid(
-            row=2, column=1, sticky="nsew", padx=(4, 0), pady=(4, 0)
-        )
-
-        derate_frame.grid_columnconfigure(0, weight=1)
-        derate_frame.grid_columnconfigure(1, weight=0)
-        derate_frame.grid_rowconfigure(0, weight=0)
-        derate_frame.grid_rowconfigure(1, weight=0)
-
-        # Relay temperatures - full width on row 0
-        self.temp_label = ttk.Label(
-            derate_frame,
-            textvariable=self.temp_label_var,
-            anchor="w",
-            justify="left",
-        )
-        self.temp_label.grid(row=0, column=0, columnspan=2, sticky="ew", padx=2, pady=2)
-
-        # SoC + refresh button on row 1
-        self.soc_label = ttk.Label(
-            derate_frame,
-            textvariable=self.soc_label_var,
-            anchor="w",
-            justify="left",
-        )
-        self.soc_label.grid(row=1, column=0, sticky="ew", padx=2, pady=2)
-
-        self.btn_monitor = ttk.Button(
-            derate_frame,
-            text="Refresh",
-            style="Monitor.TButton",
-            width=9,
-            command=self.update_monitor,
-        )
-        self.btn_monitor.grid(row=1, column=1, sticky="e", padx=(8, 2), pady=2)
-
-
-        # ----- BOTTOM : LOGS -----
-        log_frame = ttk.Labelframe(
-            main, text="Logs", style="Section.TLabelframe", padding=5
-        )
-        log_frame.grid(
-            row=2, column=0, columnspan=2, sticky="nsew", padx=10, pady=(0, 10)
-        )
-
-        # On large displays, the log grows into the remaining area. Its
-        # requested height still keeps the operational controls prioritized
-        # on compact laptop screens.
-        main.grid_rowconfigure(2, weight=2)
-
-        log_frame.grid_columnconfigure(0, weight=1)
-        log_frame.grid_rowconfigure(0, weight=1)
-
-        self.log_text = tk.Text(
-            log_frame,
-            height=5,
-            wrap="word",
-            state="disabled",
-        )
-        self.log_text.grid(row=0, column=0, sticky="nsew")
-
-        log_scroll = ttk.Scrollbar(
-            log_frame, orient="vertical", command=self.log_text.yview
-        )
-        log_scroll.grid(row=0, column=1, sticky="ns")
-
-        self.log_text.configure(yscrollcommand=log_scroll.set)
-
-        # style du log en fonction du thème
-        self._style_logs()
+        build_main_workspace(self)
 
     # ==================================================================
     # LOG & LED
@@ -1542,6 +966,12 @@ class RemoteBorneApp:
         else:
             self.simulation_var.set("")
             self.root.title("Remote Borne Control Interface")
+
+        if hasattr(self, "main_panes"):
+            if enabled:
+                self.simulation_banner.pack(fill="x", before=self.main_panes)
+            else:
+                self.simulation_banner.pack_forget()
 
     def _ssh_queue_is_idle(self):
         """Do not retarget an EVSE while a real command could still be queued."""
@@ -2222,10 +1652,17 @@ class RemoteBorneApp:
                         foreground=("red" if (max_temp or 0) > 80 else "green")
                     )
                 self.soc_label_var.set(
-                    f"Battery SoC (last known): {soc_value}"
+                    f"Battery SoC (last known): {soc_value} %"
                     if soc_value is not None
                     else "Battery SoC: --"
                 )
+                if hasattr(self, "monitor_updated_var"):
+                    self.monitor_updated_var.set(
+                        f"Last retrieval: {time.strftime('%H:%M:%S')}"
+                        if temp_display is not None or soc_value is not None
+                        else "No measurement received"
+                    )
+
 
             try:
                 if not self._closing and self.root.winfo_exists():
@@ -2291,6 +1728,8 @@ class RemoteBorneApp:
                 self.temp_label.configure(foreground="")
                 self.soc_label_var.set("Battery SoC: --")
                 self.last_active_power_var.set("--")
+                if hasattr(self, "monitor_updated_var"):
+                    self.monitor_updated_var.set("No measurement received")
                 self._update_controls_state()
 
             elif ev_type == "reconnecting":
@@ -2309,6 +1748,8 @@ class RemoteBorneApp:
                 self.temp_label.configure(foreground="")
                 self.soc_label_var.set("Battery SoC: --")
                 self.last_active_power_var.set("--")
+                if hasattr(self, "monitor_updated_var"):
+                    self.monitor_updated_var.set("No measurement received")
                 self._update_controls_state()
 
             elif ev_type == "reconnected":
@@ -2368,6 +1809,7 @@ class RemoteBorneApp:
             self.btn_monitor,
             self.btn_find,
             self.btn_clear_find,
+            getattr(self, "btn_more_file_actions", None),
         ]
 
         # ----- Bouton Connect -----
@@ -2459,6 +1901,7 @@ class RemoteBorneApp:
             self.btn_copy_panel,
             self.btn_edit_current_properties,
             self.btn_netlogger,
+            getattr(self, "btn_more_file_actions", None),
         ]:
             try:
                 if b:
@@ -2480,6 +1923,7 @@ class RemoteBorneApp:
             self.btn_copy_panel,
             self.btn_edit_current_properties,
             self.btn_netlogger,
+            getattr(self, "btn_more_file_actions", None),
         ]:
             try:
                 if b:

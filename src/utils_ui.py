@@ -118,6 +118,12 @@ class ScrollableFrame(ttk.Frame):
         if widget.winfo_class() in native:
             return
         while widget is not None and widget is not self.content:
+            if (
+                isinstance(widget, ScrollableFrame)
+                and widget is not self
+                and widget.content.winfo_reqheight() > widget.canvas.winfo_height()
+            ):
+                return  # Let the inner scrollable panel consume this wheel event.
             widget = getattr(widget, "master", None)
         if (
             widget is None

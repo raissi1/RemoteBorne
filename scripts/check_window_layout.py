@@ -12,6 +12,7 @@ import tempfile
 import configparser
 import tkinter as tk
 from unittest.mock import Mock, patch
+from types import SimpleNamespace
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -107,35 +108,22 @@ def audit(name, w):
         if inactive:
             continue
         if not visible(widget):
+            ancestors = []
             p = widget.master
-            scroll = None
             while p and p is not w:
                 if isinstance(p, ScrollableFrame):
-                    scroll = p
-                    break
+                    ancestors.append(p)
                 p = p.master
-            if scroll:
-                content = scroll.content
-                canvas = scroll.canvas
-                canvas.xview_moveto(
-                    max(
-                        0,
-                        (widget.winfo_rootx() - content.winfo_rootx() - 8)
-                        / content.winfo_width(),
-                    )
-                )
-                canvas.yview_moveto(
-                    max(
-                        0,
-                        (widget.winfo_rooty() - content.winfo_rooty() - 8)
-                        / content.winfo_height(),
-                    )
-                )
-                r.update()
-                scroll_count += 1
-            if not visible(widget) and scroll:
-                scroll.canvas.yview_moveto(0)
-                r.update()
+            # Inner content and its containing workspace can both scroll.
+            # Bring the action into each ancestor viewport, then verify the
+            # actual bounds against every ancestor (not just the screen).
+            for _attempt in range(2):
+                for scroll in ancestors:
+                    scroll._focus(SimpleNamespace(widget=widget))
+                    r.update()
+                    scroll_count += 1
+                if visible(widget):
+                    break
             if not visible(widget):
                 bad.append(str(widget.cget("text")))
                 chain = []
@@ -257,6 +245,13 @@ with tempfile.TemporaryDirectory() as d:
     w = app._browser_find_dialog
     bad += audit("find", w)
     w.destroy()
+    app._render_file_entries()
+    r.update()
+    if app.file_list.get_children():
+        first_row = app.file_list.bbox(app.file_list.get_children()[0])
+        assert (
+            first_row and first_row[1] + first_row[3] <= app.file_list.winfo_height()
+        ), "The main file browser hides its data rows"
     bad += audit("main", r)
 print("Callback errors", errors, flush=True)
 r.destroy()
