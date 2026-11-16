@@ -206,7 +206,8 @@ class EnergyManagerWindow:
             command=self.close,
         ).pack(side="right")
 
-        scroll = ScrollableFrame(self.win)
+        scroll = ScrollableFrame(self.win, horizontal=False)
+        self._energy_scroll = scroll
         scroll.pack(fill="both", expand=True)
         main = ttk.Frame(scroll.content, padding=(14, 10, 14, 6))
         main.pack(fill="both", expand=True)
@@ -234,6 +235,14 @@ class EnergyManagerWindow:
         self._build_section_pq_cosphi(top)
         self._build_section_history(bottom_left)
         self._build_section_monitor(bottom_right)
+        self._energy_main = main
+        self._history_panel = bottom_left
+        self._monitor_panel = bottom_right
+        self._lower_min_width = None
+        main.bind("<Configure>", scroll._layout, add="+")
+        self._mode_container.bind("<Configure>", scroll._layout, add="+")
+        scroll.canvas.bind("<Configure>", self._layout_energy_panels, add="+")
+        self.win.after_idle(self._layout_energy_panels)
 
     # ------------------------------------------------------------
     # SECTION P/Q & COSPHI  — cote a cote, adaptatif
@@ -272,7 +281,7 @@ class EnergyManagerWindow:
             width=14,
             validate="key",
             validatecommand=vcmd,
-        ).grid(row=0, column=1, padx=8, sticky="ew")
+        ).grid(row=0, column=1, padx=8, sticky="w")
 
         ttk.Label(pq_frame, text="Reactive Power Q (VAR) :").grid(
             row=1, column=0, sticky="w", pady=5
@@ -283,7 +292,7 @@ class EnergyManagerWindow:
             width=14,
             validate="key",
             validatecommand=vcmd,
-        ).grid(row=1, column=1, padx=8, sticky="ew")
+        ).grid(row=1, column=1, padx=8, sticky="w")
 
         self.btn_send_pq = ttk.Button(
             pq_frame,
@@ -308,7 +317,7 @@ class EnergyManagerWindow:
             width=14,
             validate="key",
             validatecommand=vcmd,
-        ).grid(row=0, column=1, padx=8, sticky="ew")
+        ).grid(row=0, column=1, padx=8, sticky="w")
 
         ttk.Label(cos_frame, text="CosPhi (-1 → 1] :").grid(
             row=1, column=0, sticky="w", pady=5
@@ -319,7 +328,7 @@ class EnergyManagerWindow:
             width=14,
             validate="key",
             validatecommand=vcmd,
-        ).grid(row=1, column=1, padx=8, sticky="ew")
+        ).grid(row=1, column=1, padx=8, sticky="w")
 
         ttk.Label(cos_frame, text="Q auto (VAR) :").grid(
             row=2, column=0, sticky="w", pady=5
@@ -330,7 +339,7 @@ class EnergyManagerWindow:
             width=14,
             state="readonly",
         )
-        q_auto_entry.grid(row=2, column=1, padx=8, sticky="ew")
+        q_auto_entry.grid(row=2, column=1, padx=8, sticky="w")
 
         btn_row = ttk.Frame(cos_frame)
         btn_row.grid(row=3, column=0, columnspan=2, pady=(12, 4))
@@ -351,25 +360,39 @@ class EnergyManagerWindow:
         )
         self.btn_send_cosphi.pack(side="left", padx=4)
 
-        # Auto-adaptation : si la fenetre devient trop etroite,
-        # basculer en colonne unique
-        def _on_resize(event):
-            w = frm.winfo_width()
-            if w > 0 and w < 600:
-                # Colonne unique
-                pq_frame.grid(row=0, column=0, columnspan=2, sticky="nsew",
-                              padx=0, pady=4)
-                cos_frame.grid(row=1, column=0, columnspan=2, sticky="nsew",
-                               padx=0, pady=4)
-            else:
-                # Cote a cote
-                pq_frame.grid(row=0, column=0, columnspan=1, sticky="nsew",
-                              padx=(0, 6), pady=4)
-                cos_frame.grid(row=0, column=1, columnspan=1, sticky="nsew",
-                               padx=(6, 0), pady=4)
+        self._mode_container = side_frame
+        self._pq_panel = pq_frame
+        self._cosphi_panel = cos_frame
 
-        frm.bind("<Configure>", _on_resize)
-
+    def _layout_energy_panels(self, _event=None):
+        """Use viewport width, never the expanded content width, for reflow."""
+        available = max(1, self._energy_scroll.canvas.winfo_width() - 28)
+        mode_width = max(self._pq_panel.winfo_reqwidth(), self._cosphi_panel.winfo_reqwidth())
+        stacked = available < 2 * mode_width + 12
+        self._mode_container.columnconfigure(0, weight=1, minsize=0, uniform="energy_modes")
+        self._mode_container.columnconfigure(1, weight=0 if stacked else 1,
+                                             minsize=0, uniform="" if stacked else "energy_modes")
+        self._pq_panel.grid(row=0, column=0, columnspan=2 if stacked else 1,
+                            sticky="nsew", padx=0 if stacked else (0, 6), pady=4)
+        self._cosphi_panel.grid(row=1 if stacked else 0, column=0 if stacked else 1,
+                                columnspan=2 if stacked else 1, sticky="nsew",
+                                padx=0 if stacked else (6, 0), pady=4)
+        if self._lower_min_width is None:
+            self._lower_min_width = max(450, self._history_panel.winfo_reqwidth(),
+                                        self._monitor_panel.winfo_reqwidth())
+        stacked_lower = available < 2 * self._lower_min_width + 10
+        self._history_panel.grid(row=1, column=0, columnspan=2 if stacked_lower else 1,
+                                  sticky="nsew", padx=0 if stacked_lower else (0, 10))
+        self._monitor_panel.grid(row=2 if stacked_lower else 1, column=0 if stacked_lower else 1,
+                                  columnspan=2 if stacked_lower else 1, sticky="nsew",
+                                  pady=(10, 0) if stacked_lower else 0)
+        minimum_height = max(240, self.btn_send_pq.winfo_reqheight() * 5)
+        self._energy_main.rowconfigure(1, weight=1, minsize=minimum_height)
+        self._energy_main.rowconfigure(2, weight=1 if stacked_lower else 0,
+                                        minsize=minimum_height if stacked_lower else 0)
+        # Reflow changes the requested height without resizing the canvas item.
+        # Refresh its scroll region after Tk has propagated the new grid sizes.
+        self._energy_scroll.after_idle(self._energy_scroll._layout)
 
     # ------------------------------------------------------------
     # SECTION HISTORIQUE
@@ -398,7 +421,7 @@ class EnergyManagerWindow:
         self.table.pack(fill="both", expand=True, pady=(0, 10))
 
         btns = ttk.Frame(frm)
-        btns.pack(fill="x")
+        btns.pack(side="bottom", fill="x", before=self.table)
 
         ttk.Button(
             btns,
@@ -417,6 +440,7 @@ class EnergyManagerWindow:
 
         self.monitor_text = tk.Text(
             frm,
+            width=32,
             height=10,
             font=("Consolas", 10),
             wrap="word",
@@ -429,7 +453,7 @@ class EnergyManagerWindow:
         self.monitor_text.pack(fill="both", expand=True, pady=(0, 10))
 
         btns = ttk.Frame(frm)
-        btns.pack(fill="x")
+        btns.pack(side="bottom", fill="x", before=self.monitor_text)
 
         ttk.Button(
             btns,

@@ -201,6 +201,14 @@ with tempfile.TemporaryDirectory() as d:
     assert saved["PATHS"]["local_path"].endswith("exports.v17")
     energy = EnergyManagerWindow(r, app.ssh, app.ssh_queue)
     bad += audit("energy", energy.win)
+    for width in (900, min(1280, r.winfo_width())):
+        energy.win.geometry(f"{width}x{energy.win.winfo_height()}")
+        r.update()
+        assert (
+            not energy._energy_scroll.horizontal.winfo_ismapped()
+        ), "Energy Manager requires horizontal scrolling"
+        assert energy._energy_scroll.canvas.xview() == (0.0, 1.0)
+        bad += audit(f"energy-width-{width}", energy.win)
     energy.close()
     seq = TestSequenceWindow(r, app.ssh_queue, lambda: True, lambda: 11000)
     seq.win.deiconify()

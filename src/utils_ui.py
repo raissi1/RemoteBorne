@@ -53,12 +53,15 @@ def center_window(parent, win, width=900, height=600):
 class ScrollableFrame(ttk.Frame):
     """Content grows naturally, with scrollbars only when the viewport is smaller.
 
+    Set horizontal=False when children reflow to fit the canvas viewport.
+
     Wheel handling is scoped to this content's toplevel and descendants. Native
     Text/Listbox/Treeview scrolling is left alone; no bind_all is installed.
     """
 
-    def __init__(self, parent, **kwargs):
+    def __init__(self, parent, horizontal=True, **kwargs):
         super().__init__(parent, **kwargs)
+        self.allow_horizontal = horizontal
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
         self.canvas = tk.Canvas(self, highlightthickness=0, width=400, height=300)
@@ -93,17 +96,18 @@ class ScrollableFrame(ttk.Frame):
             self.content.winfo_reqwidth(),
             self.content.winfo_reqheight(),
         )
+        content_width = max(width, requested_w) if self.allow_horizontal else width
         self.canvas.itemconfigure(
-            self._item, width=max(width, requested_w), height=max(height, requested_h)
+            self._item, width=content_width, height=max(height, requested_h)
         )
         self.canvas.configure(
-            scrollregion=(0, 0, max(width, requested_w), max(height, requested_h))
+            scrollregion=(0, 0, content_width, max(height, requested_h))
         )
         if requested_h > height + 1:
             self.vertical.grid(row=0, column=1, sticky="ns")
         else:
             self.vertical.grid_remove()
-        if requested_w > width + 1:
+        if self.allow_horizontal and requested_w > width + 1:
             self.horizontal.grid(row=1, column=0, sticky="ew")
         else:
             self.horizontal.grid_remove()
