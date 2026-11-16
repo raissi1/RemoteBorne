@@ -21,6 +21,11 @@ except ImportError:
     except ImportError:
         from src.utils_ui import center_window, ScrollableFrame
 
+try:
+    from .diagnostic_capture import DiagnosticRecorder
+except ImportError:
+    from diagnostic_capture import DiagnosticRecorder
+
 MAX_LINES = 10000  # max lignes conservÃ©es en mÃ©moire ET dans la vue
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
@@ -290,7 +295,7 @@ class DebugLogsWindow:
       - sauvegarde de la vue filtrÃ©e
     """
 
-    def __init__(self, parent, ssh_info, host_key=None):
+    def __init__(self, parent, ssh_info, host_key=None, recorder=None, snapshot_callback=None):
         """
         ssh_info:
             - (host, user, password)
@@ -301,6 +306,10 @@ class DebugLogsWindow:
             secure and does not fail for a newly approved EVSE.
         """
         self.parent = parent
+        self.recorder = recorder or DiagnosticRecorder()
+        self.snapshot_callback = snapshot_callback
+        self._capture_started_logs = set()
+        self._capture_poll = None
         if len(ssh_info) == 4:
             self.host, self.user, self.password, self.port = ssh_info
         elif len(ssh_info) == 3:
@@ -603,7 +612,16 @@ class DebugLogsWindow:
         actions.pack(fill="x")
         ttk.Button(actions, text="Start all", command=self.start_all_logs).pack(side="left", padx=(0, 6))
         ttk.Button(actions, text="Stop all", command=self.stop_all_logs).pack(side="left", padx=(0, 6))
-        ttk.Button(actions, text="Capture incident", command=self.capture_incident).pack(side="left")
+        self.capture_button = ttk.Menubutton(actions, text="Capture")
+        self.capture_menu = tk.Menu(self.capture_button, tearoff=False)
+        self.capture_menu.add_command(label="Capture incident (snapshot)", command=self.capture_incident)
+        self.capture_menu.add_separator()
+        self.capture_menu.add_command(label="Start test capture", command=self.start_test_capture)
+        self.capture_menu.add_command(label="Finish test capture", command=self.finish_test_capture, state="disabled")
+        self.capture_menu.add_command(label="Open last capture folder", command=self.open_capture_folder,
+                                      state="normal" if self.recorder.session else "disabled")
+        self.capture_button.configure(menu=self.capture_menu)
+        self.capture_button.pack(side="left")
         self._create_global_find_bar(actions)
 
         # Keep optional search settings and the update status out of the
@@ -618,6 +636,66 @@ class DebugLogsWindow:
             options, text="Follow results", variable=self.global_follow_var,
         ).pack(side="left")
         ttk.Label(options, textvariable=self.diagnosis_last_update).pack(side="right")
+
+    def start_test_capture(self):
+        try:
+            session = self.recorder.start(_runtime_incidents_dir(), {
+                "host": self.host, "port": self.port,
+                "expected_logs": self.logs_paths,
+                "scope": "Local arrival order; only received data during this test. Closing Debug Logs ends capture.",
+            })
+        except Exception as exc:
+            self._popup_error("Test capture", str(exc))
+            return
+        self.capture_button.configure(text="Capture (recording)")
+        self.capture_menu.entryconfigure(2, state="disabled")
+        self.capture_menu.entryconfigure(3, state="normal")
+        self.capture_menu.entryconfigure(4, state="disabled")
+        try:
+            if self.snapshot_callback:
+                self.snapshot_callback(session)
+            for name in self.logs_paths:
+                if name not in self.processes:
+                    self.start_log(name)
+                    if name in self.processes:
+                        self._capture_started_logs.add(name)
+                session.event("stream_status", source=name, running=name in self.processes)
+        except Exception as exc:
+            session.event("capture_error", error=str(exc))
+        self._poll_capture()
+
+    def finish_test_capture(self, reason="operator finished"):
+        session = self.recorder.session
+        if session:
+            session.stop(reason)
+        for name in list(self._capture_started_logs):
+            self.stop_log(name, silent=True)
+        self._capture_started_logs.clear()
+        self.capture_menu.entryconfigure(3, state="disabled")
+        self.capture_button.configure(text="Capture (saving)")
+
+    def _poll_capture(self):
+        session = self.recorder.session
+        if session and session.finished.is_set():
+            self.capture_button.configure(text="Capture (check report)" if session.state != "finished" else "Capture (saved)")
+            self.capture_menu.entryconfigure(2, state="normal")
+            self.capture_menu.entryconfigure(3, state="disabled")
+            self.capture_menu.entryconfigure(4, state="normal")
+            self._capture_poll = None
+        else:
+            self._capture_poll = self.window.after(150, self._poll_capture)
+
+    def open_capture_folder(self):
+        session = self.recorder.session
+        if not session:
+            return
+        try:
+            if os.name == "nt":
+                os.startfile(str(session.path))
+            else:
+                subprocess.Popen(["xdg-open", str(session.path)])
+        except Exception as exc:
+            self._popup_error("Test capture", str(exc))
 
     def _update_diagnosis(self, log_name: str, line: str):
         updates = parse_diagnostic_line(log_name, line)
@@ -921,6 +999,9 @@ class DebugLogsWindow:
                     line = proc.stdout.readline()
                     if not line:
                         break
+                    recorder = getattr(self, "recorder", None)
+                    if recorder:
+                        recorder.log(log_name, line)
                     try:
                         if self.parent.winfo_exists():
                             self.parent.after(0, self.insert_line, log_name, line)
@@ -932,6 +1013,10 @@ class DebugLogsWindow:
                     log_file.write(line)
                     log_file.flush()
             finally:
+                recorder = getattr(self, "recorder", None)
+                if recorder:
+                    recorder.event("stream_ended", source=log_name, returncode=proc.poll(),
+                                   unexpected=self.running.get(log_name, False))
                 stopped_by_operator = not self.running.get(log_name, False)
                 try:
                     if proc.poll() is None:
@@ -1171,6 +1256,12 @@ class DebugLogsWindow:
         self.on_close()
 
     def on_close(self):
+        recorder = getattr(self, "recorder", None)
+        if recorder and recorder.session:
+            recorder.session.stop("Debug Logs closed or connection ended")
+        poll = getattr(self, "_capture_poll", None)
+        if poll:
+            self.window.after_cancel(poll)
         self._cancel_global_search()
         for log_name in list(self.processes.keys()):
             self.stop_log(log_name, silent=True)
@@ -1184,6 +1275,8 @@ def open_debug_logs_window(
     password: str,
     port: int = 22,
     host_key: str = None,
+    recorder=None,
+    snapshot_callback=None,
 ):
     """
     Appel simple depuis RemoteBorneManager:
@@ -1192,5 +1285,5 @@ def open_debug_logs_window(
         )
     """
     ssh_info = (host, user, password, port)
-    return DebugLogsWindow(parent, ssh_info, host_key=host_key)
+    return DebugLogsWindow(parent, ssh_info, host_key=host_key, recorder=recorder, snapshot_callback=snapshot_callback)
 

@@ -497,6 +497,9 @@ class RemoteBorneApp:
             retry_max_delay=self.retry_max_delay,
         )
 
+        self.diagnostic_recorder = debug_logs.DiagnosticRecorder()
+        self.ssh.backend.diagnostic_recorder = self.diagnostic_recorder
+
         # Callbacks pour que ssh_manager remonte les événements à l’UI
         self.ssh.set_ui_callback(self.on_ssh_event)
         self.ssh.set_log_callback(self.log)
@@ -1449,6 +1452,9 @@ class RemoteBorneApp:
         """
         ts = time.strftime("%H:%M:%S")
         line = f"[{ts}] {msg}\n"
+        recorder = getattr(self, "diagnostic_recorder", None)
+        if recorder:
+            recorder.log("application.log", line)
         print(line, end="")
 
         if self.log_text is None:
@@ -6608,6 +6614,16 @@ class RemoteBorneApp:
         self.on_exit()
 
        
+    def _capture_gridcodes_snapshot(self, session):
+        session.metadata["app_version"] = APP_VERSION
+        remote = posixpath.join(self.default_path, self.remote_file)
+        session.event("configuration_requested", remote_path=remote)
+        self.ssh_queue.execute(
+            "cat -- " + shlex.quote(remote), callback=session.configuration,
+            timeout=self.ssh_timeout, auto_retry=False, silent=True,
+            label="Diagnostic configuration snapshot",
+        )
+
     def open_debug_logs(self):
         """Ouvre la fenÃªtre Debug Logs seulement si SSH connectÃ©."""
         if self._sequence_operation_blocked("Opening Debug logs"):
@@ -6636,6 +6652,8 @@ class RemoteBorneApp:
                 self.ssh.password,
                 self.ssh.port,
                 host_key=getattr(getattr(self.ssh, "backend", None), "host_key", None),
+                recorder=self.diagnostic_recorder,
+                snapshot_callback=self._capture_gridcodes_snapshot,
             )
         except Exception as e:
             self._debug_logs_window = None
@@ -6655,6 +6673,9 @@ class RemoteBorneApp:
     # ==================================================================
     def on_exit(self):
         self._closing = True
+        recorder = getattr(self, "diagnostic_recorder", None)
+        if recorder and recorder.session:
+            recorder.session.stop("application exit")
         self._alive_stop = True
         self._monitor_stop = True
         try:

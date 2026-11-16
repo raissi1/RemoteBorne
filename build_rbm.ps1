@@ -37,7 +37,7 @@ $distStage = Join-Path $distRoot ".rbm-staging"
 if (Test-Path $distStage) { Remove-Item $distStage -Recurse -Force }
 $distApp = Join-Path $distStage "RBM"
 
-& $python -m PyInstaller --clean --noconfirm --distpath $distStage --name RBM --noconsole --icon=BorneCommander.ico --add-data "BorneCommander.ico;." --add-data "tools\simulator\rbm_local_evse_simulator.py;tools\simulator" --collect-all ttkbootstrap --collect-all reportlab --collect-all paramiko --hidden-import=debug_logs --hidden-import=energy_manager --hidden-import=gridcodes_migrator --hidden-import=gridcodes_migration_ui --hidden-import=network_config --hidden-import=plink_backend --hidden-import=setpoint_validation --hidden-import=ssh_manager --hidden-import=test_sequence src/RemoteBorneManager.py
+& $python -m PyInstaller --clean --noconfirm --distpath $distStage --name RBM --noconsole --icon=BorneCommander.ico --add-data "BorneCommander.ico;." --add-data "tools\simulator\rbm_local_evse_simulator.py;tools\simulator" --collect-all ttkbootstrap --collect-all reportlab --collect-all paramiko --hidden-import=diagnostic_capture --hidden-import=debug_logs --hidden-import=energy_manager --hidden-import=gridcodes_migrator --hidden-import=gridcodes_migration_ui --hidden-import=network_config --hidden-import=plink_backend --hidden-import=setpoint_validation --hidden-import=ssh_manager --hidden-import=test_sequence src/RemoteBorneManager.py
 
 if ($LASTEXITCODE -ne 0) {
     throw "PyInstaller failed. Build stopped; the previous portable version is unchanged."

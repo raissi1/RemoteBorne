@@ -1,6 +1,10 @@
 # plink_backend.py — version avec chemins tools\plink.exe et tools\pscp.exe
 
 import os
+try:
+    from .diagnostic_capture import observe_operation
+except ImportError:
+    from diagnostic_capture import observe_operation
 import queue
 import subprocess
 import sys
@@ -68,6 +72,7 @@ class PlinkBackend:
     # ----------------------------------------------------------
     # SSH COMMAND
     # ----------------------------------------------------------
+    @observe_operation("command")
     def exec(self, remote_cmd, timeout=None):
         if not remote_cmd or not str(remote_cmd).strip():
             return 1, "", "Empty remote command"
@@ -104,6 +109,7 @@ class PlinkBackend:
         except Exception as e:
             return 1, "", str(e)
 
+    @observe_operation("stream")
     def exec_stream(self, remote_cmd, on_output=None, timeout=None, cancel_event=None):
         """Run a remote command while forwarding stdout/stderr line by line."""
         if not remote_cmd or not str(remote_cmd).strip():
@@ -181,6 +187,7 @@ class PlinkBackend:
                 pass
             return 1, "".join(output_lines), str(e)
 
+    @observe_operation("download")
     def scp_get(self, remote_path, local_path, timeout=None):
         if not remote_path:
             return False, "", "Empty remote path"
@@ -221,6 +228,7 @@ class PlinkBackend:
         except Exception as e:
             return False, "", str(e)
 
+    @observe_operation("upload")
     def scp_put(self, local_path, remote_path, timeout=None):
         if not local_path:
             return False, "", "Empty local path"

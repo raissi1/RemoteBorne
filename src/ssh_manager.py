@@ -473,7 +473,9 @@ class SSHManager:
         self._stop = False
         self._connect_generation += 1
         self._cancel_reconnect_event.set()
+        recorder = getattr(self.backend, "diagnostic_recorder", None)
         self.backend = PlinkBackend(host, user, password, port)
+        self.backend.diagnostic_recorder = recorder
         self.report_connection_lost(
             f"Target changed to {host}:{port}", force_event=True
         )
