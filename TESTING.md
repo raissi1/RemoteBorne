@@ -70,14 +70,14 @@ La branche `main` reste la version de référence. Fermer RBM avant de changer d
 
 ```powershell
 git stash push -m "RBM.spec avant essai A" -- RBM.spec
-git fetch origin
-git switch --track origin/essai-interface-a
+git fetch origin essai-interface-a
+git switch -c essai-interface-a FETCH_HEAD
 .\.venv-build\Scripts\python.exe .\src\RemoteBorneManager.py
 ```
 
 La commande `git stash` met de côté le fichier de build régénéré s'il a été modifié.
 Si la branche locale existe déjà, utiliser `git switch essai-interface-a` puis
-`git pull --ff-only` à la place de `git switch --track`.
+`git pull --ff-only origin essai-interface-a` à la place de la création de branche.
 
 Pour revenir à l'interface de référence, fermer RBM puis lancer `git switch main`.
 Lancer d'abord les essais depuis les sources ; l'exécutable portable existant reste indépendant.
