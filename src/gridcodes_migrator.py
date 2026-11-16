@@ -251,12 +251,6 @@ def _migrate_one(
         values[key] = source.values[key]
     renamed, warnings = [], []
     applied_overrides = []
-    for key, value in power_overrides.items():
-        if key in template.values:
-            values[key] = value
-            applied_overrides.append(f"{key}={value}")
-        else:
-            warnings.append(f"Profile override ignored because {key} is absent from the template")
     used_targets = set()
     for old, new in sorted(valid_rules.items()):
         if old not in source.values or new in source.values or new in used_targets:
@@ -264,6 +258,12 @@ def _migrate_one(
         values[new] = source.values[old]
         used_targets.add(new)
         renamed.append(f"{old} -> {new}")
+    for key, value in power_overrides.items():
+        if key in template.values:
+            values[key] = value
+            applied_overrides.append(f"{key}={value}")
+        else:
+            warnings.append(f"Profile override ignored because {key} is absent from the template")
     old_only = sorted(set(source.values) - set(template.values))
     renamed_sources = {rule.split(" -> ", 1)[0] for rule in renamed}
     unresolved = [key for key in old_only if key not in renamed_sources]
@@ -351,6 +351,22 @@ def export_plan(plan: MigrationPlan, output_dir: str | Path) -> Tuple[Path, Path
             raise MigrationError("Output folder must not be inside the source folder")
     if not plan.items:
         raise MigrationError("There are no successfully analysed files to export")
+    # Validate the complete output set before writing any file. Vehicle renames
+    # can otherwise silently collapse GC_A_Test and GC_B_Test into one output.
+    destinations = set()
+    for item in plan.items:
+        relative = item.relative_output
+        destination = (target / relative).resolve()
+        if relative.is_absolute() or target not in destination.parents:
+            raise MigrationError(f"Output escapes the export folder: {relative}")
+        key = str(destination).casefold()
+        if key in destinations:
+            raise MigrationError(f"Duplicate output filename after migration: {relative}")
+        destinations.add(key)
+        if destination == item.source.resolve() or destination == plan.template.resolve():
+            raise MigrationError("Export must not overwrite a source file or the template")
+    if target.exists() and any(target.iterdir()):
+        raise MigrationError("Export folder must be empty; choose a new folder to avoid mixing migration outputs")
     target.mkdir(parents=True, exist_ok=True)
     for item in plan.items:
         destination = target / item.relative_output

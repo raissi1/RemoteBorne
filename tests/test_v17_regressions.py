@@ -14,7 +14,7 @@ from unittest.mock import Mock, patch
 from src.test_sequence import TestSequenceWindow
 from src.RemoteBorneManager import RemoteBorneApp
 from src.debug_logs import DebugLogsWindow, parse_diagnostic_line, search_log_buffers
-from src.gridcodes_migrator import analyze_migration, export_plan
+from src.gridcodes_migrator import MigrationError, analyze_migration, export_plan
 from src.plink_backend import PlinkBackend
 from src.setpoint_validation import (
     validate_active_power,
@@ -45,6 +45,155 @@ def _sequence_form(mode="P/Q", active="1000", reactive="", cosphi="1", hold="10"
     sequence.hold_var = _Value(hold)
     sequence.pn_limit_provider = lambda: 11000
     return sequence
+
+
+class TestStabilityFixes(unittest.TestCase):
+    def test_export_directories_with_dots_are_preserved_and_empty_uses_exports(self):
+        from src.RemoteBorneManager import _local_export_dir, EXPORTS_DIR
+        self.assertEqual(pathlib.Path(_local_export_dir("exports.v17")), ROOT / "exports.v17")
+        self.assertEqual(_local_export_dir(""), EXPORTS_DIR)
+        self.assertEqual(pathlib.Path(_local_export_dir("exports/old.properties")), ROOT / "exports")
+
+    def test_config_supports_percent_signs_in_passwords(self):
+        import src.RemoteBorneManager as manager
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = pathlib.Path(directory) / "config.ini"
+            template = (ROOT / "config/config.example.ini").read_text()
+            config_path.write_text(template.replace("CHANGE_ME", "test%password"))
+            with patch.object(manager, "CONFIG_PATH", str(config_path)):
+                cfg = manager.load_config()
+            self.assertEqual(cfg["SSH"]["password"], "test%password")
+
+    def test_center_window_clamps_geometry_and_minimum_to_the_work_area(self):
+        from src.utils_ui import center_window
+        window = Mock()
+        window.minsize.return_value = (1200, 800)
+        with patch("src.utils_ui.screen_work_area", return_value=(0, 0, 1024, 600)):
+            center_window(None, window, 1500, 1000)
+        window.minsize.assert_called_with(1000, 552)
+        window.geometry.assert_called_with("1000x552+12+12")
+
+    def test_target_cannot_change_during_an_upload_or_scp_operation(self):
+        app = RemoteBorneApp.__new__(RemoteBorneApp)
+        app.ssh_queue = Mock(busy=False)
+        app.ssh_queue.q.empty.return_value = True
+        app._scp_lock = threading.Lock()
+        app._file_transfer_active = True
+        self.assertFalse(app._ssh_queue_is_idle())
+        app._file_transfer_active = False
+        with app._scp_lock:
+            self.assertFalse(app._ssh_queue_is_idle())
+        self.assertTrue(app._ssh_queue_is_idle())
+
+    def test_manual_disconnect_waits_for_uploads(self):
+        app = RemoteBorneApp.__new__(RemoteBorneApp)
+        app._file_transfer_active = True
+        app._scp_lock = threading.Lock()
+        app._popup_warning = Mock()
+        app.ssh = Mock()
+        app._manual_disconnect()
+        app.ssh.close.assert_not_called()
+        app._popup_warning.assert_called_once()
+
+    def test_migration_profile_overrides_take_precedence_over_rename_rules(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            source = root / "old.properties"
+            template = root / "template.properties"
+            rules = root / "rules.json"
+            source.write_text("LegacyLimit=6000\n")
+            template.write_text("PowerMax_1Ph_VAr=11000\n")
+            rules.write_text('{"rename_rules":{"LegacyLimit":"PowerMax_1Ph_VAr"}}')
+            plan = analyze_migration(source, template, rules, power_max_1ph_var="7200")
+            self.assertIn("PowerMax_1Ph_VAr=7200", plan.items[0].content)
+            self.assertEqual(plan.items[0].report.profile_overrides, ["PowerMax_1Ph_VAr=7200"])
+
+    def test_migration_name_collision_is_rejected_before_any_output_is_written(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            source = root / "inputs"
+            source.mkdir()
+            for vehicle in ("A", "B"):
+                (source / f"GC_{vehicle}_Test").write_text("Country=FR\n")
+            template = root / "template.properties"
+            template.write_text("Country=DE\n")
+            plan = analyze_migration(source, template, vehicle_name="R5")
+            with self.assertRaisesRegex(MigrationError, "Duplicate output"):
+                export_plan(plan, root / "output")
+            self.assertFalse((root / "output").exists())
+
+    def test_migration_refuses_to_mix_new_files_with_an_older_export(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            source = root / "source.properties"
+            template = root / "template.properties"
+            source.write_text("Country=FR\n")
+            template.write_text("Country=DE\n")
+            output = root / "output"
+            output.mkdir()
+            (output / "previous.properties").write_text("preserved")
+            with self.assertRaisesRegex(MigrationError, "must be empty"):
+                export_plan(analyze_migration(source, template), output)
+            self.assertEqual((output / "previous.properties").read_text(), "preserved")
+            self.assertFalse((output / source.name).exists())
+
+    def test_simulator_reset_refreshes_existing_monitor_method(self):
+        app = RemoteBorneApp.__new__(RemoteBorneApp)
+        app.root = Mock()
+        app._local_simulator_evse = Mock()
+        app._simulation_mode = app.connected = True
+        app.log = Mock()
+        app.refresh_file_list = Mock()
+        app.update_temp_and_soc = Mock()
+        with patch("src.RemoteBorneManager.messagebox.askyesno", return_value=True):
+            app.reset_local_simulator()
+        app._local_simulator_evse.reset.assert_called_once()
+        app.refresh_file_list.assert_called_once()
+        app.update_temp_and_soc.assert_called_once_with(manual=True)
+
+    def test_simulator_handles_compound_size_checks_and_cosphi_polling(self):
+        from tools.simulator.rbm_local_evse_simulator import SimulatedEvse, CommandProcessor, GRID_CODES
+        with tempfile.TemporaryDirectory() as directory:
+            evse = SimulatedEvse(directory, "test")
+            processor = CommandProcessor(evse)
+            path = f"{GRID_CODES}/GridCodes.properties"
+            code, output, _error = processor.execute(f"test -f {path} && wc -c < {path}")
+            self.assertEqual(code, 0)
+            self.assertEqual(int(output.strip()), evse.resolve(path).stat().st_size)
+            code, output, _error = processor.execute(
+                'if [ -f "/tmp/rbm_cosphi_demo.status" ]; then '
+                'echo "===RBM_STATUS===$(cat /tmp/rbm_cosphi_demo.status)"; '
+                'rm -f /tmp/rbm_cosphi_demo.status /tmp/rbm_cosphi_demo.log; fi'
+            )
+            self.assertEqual(code, 0)
+            self.assertIn("===RBM_STATUS===0", output)
+
+    def test_simulator_tail_keeps_streaming_new_lines(self):
+        from tools.simulator.rbm_local_evse_simulator import SimulatedEvse, LocalSshServer, OCPP_LOG, paramiko
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            evse = SimulatedEvse(root / "fs", "test")
+            server = LocalSshServer("127.0.0.1", 0, evse, root / "key.pem")
+            server.start()
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            try:
+                client.connect("127.0.0.1", port=server.listener.getsockname()[1], username="root", password="test", timeout=5)
+                channel = client.get_transport().open_session()
+                channel.settimeout(3)
+                channel.exec_command(f"tail -f {OCPP_LOG}")
+                self.assertIn(b"Connected", channel.recv(4096))
+                evse.append_log(OCPP_LOG, "unique live marker")
+                output = b""
+                while b"unique live marker" not in output:
+                    chunk = channel.recv(4096)
+                    self.assertTrue(chunk, "The simulator closed the live stream")
+                    output += chunk
+                self.assertFalse(channel.closed)
+                channel.close()
+            finally:
+                client.close()
+                server.stop()
 
 
 class TestSequencePauseResume(unittest.TestCase):
@@ -489,7 +638,7 @@ class TestSafetyRegressionGuards(unittest.TestCase):
             tuple(pathlib.PurePosixPath(part.replace("\\", "/")).as_posix() for part in entry)
             for entry in ast.literal_eval(data_assignment.value)
         }
-        self.assertIn(("tools/simulator", "tools/simulator"), data_entries)
+        self.assertIn(("tools/simulator/rbm_local_evse_simulator.py", "tools/simulator"), data_entries)
         self.assertIn("collect_all('paramiko')", spec)
         self.assertIn("RBM_V17_", script)
         self.assertIn("'setpoint_validation'", spec)
@@ -786,7 +935,7 @@ class TestSafetyRegressionGuards(unittest.TestCase):
 
     def test_build_bundles_the_integrated_simulator(self):
         source = (ROOT / "build_rbm.ps1").read_text(encoding="utf-8")
-        self.assertIn('--add-data "tools\\simulator;tools\\simulator"', source)
+        self.assertIn('--add-data "tools\\simulator\\rbm_local_evse_simulator.py;tools\\simulator"', source)
         self.assertIn('$simulatorTarget = Join-Path $distApp "tools\\simulator"', source)
         self.assertIn('Copy-Item (Join-Path $simulatorSource "rbm_local_evse_simulator.py") $simulatorTarget -Force', source)
         self.assertIn('"tools\\simulator\\rbm_local_evse_simulator.py"', source)

@@ -24,6 +24,8 @@ DERATE_LOG = "/var/aux/ChargerApp/derate.log"
 CHARGER_LOG = "/var/aux/ChargerApp/ChargerApp.log"
 ENERGY_LOG = "/var/aux/EnergyManager/EnergyManager.log"
 DISPATCHER_LOG = "/var/log/iotc-meter-dispatcher.log"
+DISPATCHER_SERVICE_LOG = "/var/aux/iotc-meter-dispatcher/iotc-meter-dispatcher.log"
+OCPP_LOG = "/var/aux/ocpp-framework/ocpp-service.log"
 
 
 class SimulatedEvse:
@@ -88,6 +90,8 @@ class SimulatedEvse:
         self._write_text(CHARGER_LOG, charger)
         self._write_text(ENERGY_LOG, "2026-09-10 10:00:00 [SIM] Energy Manager ready\n")
         self._write_text(DISPATCHER_LOG, "2026-09-10 10:00:00 [SIM] iotc meter dispatcher ready\n")
+        self._write_text(DISPATCHER_SERVICE_LOG, "[SIM] activePower=0 reactivePower=0 frequency=50\n")
+        self._write_text(OCPP_LOG, "NetConnection: Connected\nBoot: BootNotificationResponse received: ACCEPTED\n")
 
     def _write_text(self, remote_path, content):
         path = self.resolve(remote_path)
@@ -171,20 +175,21 @@ class CommandProcessor:
             return self._telemetry()
         if re.search(r"\bls\s+-[A-Za-z]*p", command):
             return self._list_directory(command)
+        # Handle RBM's compound operations before their individual shell tokens.
+        if "rbm_cosphi_" in command:
+            return self._cosphi(command)
+        if re.search(r"\bwc\s+-c\b", command):
+            return self._file_size(command)
         if re.search(r"\btest\s+-d\b", command):
             return self._test_path(command, want_directory=True)
         if re.search(r"\btest\s+-[ef]\b", command):
             return self._test_path(command, want_directory=False)
-        if re.search(r"\bwc\s+-c\b", command):
-            return self._file_size(command)
         if re.search(r"\bcp\s+", command):
             return self._copy(command)
         if re.search(r"\brm\s+", command):
             return self._remove(command)
         if re.search(r"\bmkdir\s+", command):
             return self._mkdir(command)
-        if "rbm_cosphi_" in command:
-            return self._cosphi(command)
         if any(path in command for path in (DERATE_LOG, CHARGER_LOG, ENERGY_LOG, DISPATCHER_LOG)):
             return self._read_log(command)
         if re.search(r"\bcat\s+", command):
@@ -458,6 +463,9 @@ class LocalSshServer:
 
     def _handle_channel(self, channel, command):
         try:
+            if re.match(r"^tail\s+-f\s+", command):
+                self._tail_log(channel, command)
+                return
             if command.startswith("scp -f "):
                 self._scp_get(channel, command)
                 return
@@ -478,6 +486,32 @@ class LocalSshServer:
                 pass
         finally:
             channel.close()
+
+    def _tail_log(self, channel, command):
+        guard = self.evse.command_guard()
+        if guard:
+            status, _out, error = guard
+            channel.send_stderr(error.encode("utf-8"))
+            channel.send_exit_status(status)
+            return
+        path = self.evse.resolve(shlex.split(command)[-1])
+        if not path.is_file():
+            channel.send_stderr(b"Simulator: log file not found\n")
+            channel.send_exit_status(1)
+            return
+        previous = path.read_text(encoding="utf-8", errors="replace")
+        channel.sendall("".join(previous.splitlines(keepends=True)[-10:]).encode("utf-8"))
+        while not self.stop_event.wait(0.1) and not channel.closed:
+            if self.evse.offline:
+                channel.send_exit_status(255)
+                return
+            if not path.is_file():
+                continue
+            current = path.read_text(encoding="utf-8", errors="replace")
+            added = current[len(previous):] if current.startswith(previous) else current
+            if added:
+                channel.sendall(added.encode("utf-8"))
+            previous = current
 
     def _scp_get(self, channel, command):
         remote_path = self._scp_path(command)

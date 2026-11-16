@@ -8,16 +8,49 @@ Set-Location $root
 
 Write-Host "== RBM build start ==" -ForegroundColor Cyan
 
-if (Test-Path $distApp) {
-    Write-Host "Removing previous dist\RBM..." -ForegroundColor Yellow
-    Remove-Item $distApp -Recurse -Force
+# Prefer the project environment even when the caller forgot to activate it.
+$venvPython = Join-Path $root ".venv\Scripts\python.exe"
+if ($env:RBM_PYTHON) {
+    $python = $env:RBM_PYTHON
+} elseif (Test-Path $venvPython) {
+    $python = $venvPython
+} else {
+    $python = (Get-Command python -ErrorAction Stop).Source
+}
+Write-Host "Python: $python"
+& $python -c "import sys; sys.exit(0 if (3, 10) <= sys.version_info[:2] < (3, 15) else 1)"
+if ($LASTEXITCODE -ne 0) {
+    throw "Use Python 3.10-3.14 (recommended: 3.12) in .venv. This Python version is unsupported for this build."
+}
+& $python -c "import PyInstaller, ttkbootstrap, reportlab, paramiko"
+if ($LASTEXITCODE -ne 0) {
+    throw "Missing build dependencies. Run: & '$python' -m pip install -r requirements.txt"
+}
+& $python -B scripts/pre_commit_quality_gate.py
+if ($LASTEXITCODE -ne 0) {
+    throw "Quality gate failed. Build stopped; the previous portable version is unchanged."
 }
 
-$python = (Get-Command python -ErrorAction Stop).Source
-& $python -m PyInstaller --clean --noconfirm --name RBM --noconsole --icon=BorneCommander.ico --add-data "BorneCommander.ico;." --add-data "tools\simulator;tools\simulator" --collect-all ttkbootstrap --collect-all reportlab --collect-all paramiko --hidden-import=debug_logs --hidden-import=energy_manager --hidden-import=gridcodes_migrator --hidden-import=gridcodes_migration_ui --hidden-import=network_config --hidden-import=plink_backend --hidden-import=setpoint_validation --hidden-import=ssh_manager --hidden-import=test_sequence src/RemoteBorneManager.py
+# Build and verify in staging; preserve the previous portable version on error.
+$finalApp = $distApp
+$distStage = Join-Path $distRoot ".rbm-staging"
+if (Test-Path $distStage) { Remove-Item $distStage -Recurse -Force }
+$distApp = Join-Path $distStage "RBM"
+
+& $python -m PyInstaller --clean --noconfirm --distpath $distStage --name RBM --noconsole --icon=BorneCommander.ico --add-data "BorneCommander.ico;." --add-data "tools\simulator\rbm_local_evse_simulator.py;tools\simulator" --collect-all ttkbootstrap --collect-all reportlab --collect-all paramiko --hidden-import=debug_logs --hidden-import=energy_manager --hidden-import=gridcodes_migrator --hidden-import=gridcodes_migration_ui --hidden-import=network_config --hidden-import=plink_backend --hidden-import=setpoint_validation --hidden-import=ssh_manager --hidden-import=test_sequence src/RemoteBorneManager.py
+
+if ($LASTEXITCODE -ne 0) {
+    throw "PyInstaller failed. Build stopped; the previous portable version is unchanged."
+}
+if (!(Test-Path (Join-Path $distApp "RBM.exe"))) {
+    throw "PyInstaller did not produce RBM.exe. No runtime files were copied."
+}
 
 Write-Host "Copying runtime folders..." -ForegroundColor Cyan
-Copy-Item "src\config" $distApp -Recurse -Force
+$configTarget = Join-Path $distApp "config"
+New-Item -ItemType Directory -Path $configTarget -Force | Out-Null
+Copy-Item "src\config\config.example.ini" $configTarget -Force
+Copy-Item "BorneCommander.ico" $distApp -Force
 New-Item -ItemType Directory -Path "$distApp\documents" -Force | Out-Null
 foreach ($language in @("FR", "EN")) {
     $sourceFolder = Join-Path "src\documents" $language
@@ -77,7 +110,7 @@ Write-Host "Documents copied: $docCount"
 if ($docCount -ne 4) {
     throw "Expected 4 V17 delivery documents in the package; found $docCount."
 }
-Write-Host "Runtime configuration copied from src\config."
+Write-Host "Clean configuration template copied; personal credentials are not packaged."
 
 $imgCount = 0
 if (Test-Path (Join-Path $distApp "imgs")) {
@@ -86,5 +119,13 @@ if (Test-Path (Join-Path $distApp "imgs")) {
 Write-Host "Images copied: $imgCount"
 
 Write-Host ""
+if (Test-Path $finalApp) {
+    $backup = "$finalApp-backup-$(Get-Date -Format 'yyyyMMdd-HHmmss-fff')"
+    Move-Item $finalApp $backup
+    Write-Host "Previous portable version preserved: $backup"
+}
+Move-Item $distApp $finalApp
+Remove-Item $distStage -Recurse -Force
+$distApp = $finalApp
 Write-Host "RBM build completed successfully." -ForegroundColor Green
 Write-Host "Output: $distApp" -ForegroundColor Green

@@ -338,11 +338,7 @@ def open_help(parent=None):
     search_entry.bind("<Return>", lambda _e: find_text())
 
     bottom = ttk.Frame(main)
-    bottom.pack(fill="x", pady=(10, 0))
-    ttk.Label(
-        bottom,
-        text="Tip: press Enter in the search box to highlight matching text.",
-    ).pack(side="left", padx=(0, 12))
+    bottom.pack(side="bottom", fill="x", before=text_frame, pady=(10, 0))
     ttk.Button(bottom, text="Find", command=find_text).pack(side="left")
     ttk.Button(bottom, text="Close", command=_close).pack(side="right")
 

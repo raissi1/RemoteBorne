@@ -14,12 +14,12 @@ from tkinter import ttk, filedialog, messagebox
 from tkinter.scrolledtext import ScrolledText
 
 try:
-    from .utils_ui import center_window
+    from .utils_ui import center_window, ScrollableFrame
 except ImportError:
     try:
-        from utils_ui import center_window
+        from utils_ui import center_window, ScrollableFrame
     except ImportError:
-        from src.utils_ui import center_window
+        from src.utils_ui import center_window, ScrollableFrame
 
 MAX_LINES = 10000  # max lignes conservÃ©es en mÃ©moire ET dans la vue
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
@@ -374,15 +374,16 @@ class DebugLogsWindow:
     def _create_global_find_bar(self, parent):
         bar = ttk.Frame(parent)
         bar.pack(side="left", fill="x", expand=True, padx=(16, 0))
-        ttk.Label(bar, text="Find:").pack(side="left")
+        bar.columnconfigure(1, weight=1)
+        ttk.Label(bar, text="Find:").grid(row=0, column=0)
         self.global_find_var = tk.StringVar(master=self.window)
         self.global_ignore_case_var = tk.BooleanVar(master=self.window, value=True)
         self.global_follow_var = tk.BooleanVar(master=self.window, value=True)
         self.global_find_entry = ttk.Entry(bar, textvariable=self.global_find_var)
-        self.global_find_entry.pack(side="left", fill="x", expand=True, padx=6)
+        self.global_find_entry.grid(row=0, column=1, sticky="ew", padx=6)
         self.global_find_entry.bind("<Return>", self.find_in_all_logs)
-        ttk.Button(bar, text="Find", command=self.find_in_all_logs).pack(side="left", padx=3)
-        ttk.Button(bar, text="Clear", command=self.clear_global_find).pack(side="left", padx=3)
+        ttk.Button(bar, text="Find", command=self.find_in_all_logs).grid(row=0, column=2, padx=3)
+        ttk.Button(bar, text="Clear", command=self.clear_global_find).grid(row=0, column=3, padx=3)
 
     def _create_global_results_tab(self):
         self.global_results_tab = ttk.Frame(self.notebook, padding=6)
@@ -529,9 +530,15 @@ class DebugLogsWindow:
 
     def _create_diagnosis_tab(self):
         """Create a concise, read-only view across the monitored service logs."""
-        frame = ttk.Frame(self.notebook, padding=12)
-        self.notebook.add(frame, text="Live diagnosis")
-        self.diagnosis_tab = frame
+        page = ttk.Frame(self.notebook)
+        self.notebook.add(page, text="Live diagnosis")
+        self.diagnosis_tab = page
+        footer = ttk.Frame(page, padding=(12, 6))
+        footer.pack(side="bottom", fill="x")
+        scroll = ScrollableFrame(page)
+        scroll.pack(fill="both", expand=True)
+        frame = ttk.Frame(scroll.content, padding=12)
+        frame.pack(fill="both", expand=True)
         frame.columnconfigure(0, weight=1)
         frame.columnconfigure(1, weight=1)
         frame.rowconfigure(3, weight=1)
@@ -592,8 +599,8 @@ class DebugLogsWindow:
                     row=metric_row, column=label_column + 1, sticky="w", padx=(0, 12), pady=2
                 )
 
-        actions = ttk.Frame(frame)
-        actions.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        actions = ttk.Frame(footer)
+        actions.pack(fill="x")
         ttk.Button(actions, text="Start all", command=self.start_all_logs).pack(side="left", padx=(0, 6))
         ttk.Button(actions, text="Stop all", command=self.stop_all_logs).pack(side="left", padx=(0, 6))
         ttk.Button(actions, text="Capture incident", command=self.capture_incident).pack(side="left")
@@ -601,8 +608,8 @@ class DebugLogsWindow:
 
         # Keep optional search settings and the update status out of the
         # main button row, leaving the query entry room on narrow windows.
-        options = ttk.Frame(frame)
-        options.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        options = ttk.Frame(footer)
+        options.pack(fill="x", pady=(4, 0))
         ttk.Checkbutton(
             options, text="Ignore case", variable=self.global_ignore_case_var,
             command=self.find_in_all_logs,

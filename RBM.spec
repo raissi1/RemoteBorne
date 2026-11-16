@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('BorneCommander.ico', '.'), ('tools\\simulator', 'tools\\simulator')]
+datas = [('BorneCommander.ico', '.'), ('tools/simulator/rbm_local_evse_simulator.py', 'tools/simulator')]
 binaries = []
 hiddenimports = ['debug_logs', 'energy_manager', 'gridcodes_migrator', 'gridcodes_migration_ui', 'network_config', 'plink_backend', 'setpoint_validation', 'ssh_manager', 'test_sequence']
 tmp_ret = collect_all('ttkbootstrap')

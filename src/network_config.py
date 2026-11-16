@@ -5,12 +5,12 @@ import os
 import ipaddress
 
 try:
-    from .utils_ui import center_window
+    from .utils_ui import center_window, ScrollableFrame
 except ImportError:
     try:
-        from utils_ui import center_window
+        from utils_ui import center_window, ScrollableFrame
     except ImportError:
-        from src.utils_ui import center_window
+        from src.utils_ui import center_window, ScrollableFrame
 
 
 def open_network_config(parent, config_path, on_saved=None):
@@ -23,10 +23,10 @@ def open_network_config(parent, config_path, on_saved=None):
     """
     # S'assure que le dossier de config existe
     config_dir = os.path.dirname(config_path)
-    os.makedirs(config_dir, exist_ok=True)
+    os.makedirs(config_dir or ".", exist_ok=True)
 
     # Charger ou créer la config
-    cfg = configparser.ConfigParser()
+    cfg = configparser.ConfigParser(interpolation=None)
     if os.path.exists(config_path):
         cfg.read(config_path, encoding="utf-8")
     if "SSH" not in cfg:
@@ -40,8 +40,11 @@ def open_network_config(parent, config_path, on_saved=None):
     export_dir = os.path.join(runtime_root, "exports")
 
     def normalize_local_dir(value: str) -> str:
-        candidate = os.path.normpath(os.path.expanduser((value or "").strip()))
-        if candidate and os.path.splitext(os.path.basename(candidate))[1]:
+        raw = (value or "").strip()
+        if not raw:
+            return export_dir
+        candidate = os.path.normpath(os.path.expanduser(raw))
+        if os.path.isfile(candidate) or os.path.splitext(candidate)[1].lower() in {".properties", ".ini", ".txt", ".csv", ".json"}:
             candidate = os.path.dirname(candidate)
         if candidate and not os.path.isabs(candidate):
             candidate = os.path.join(runtime_root, candidate)
@@ -61,7 +64,6 @@ def open_network_config(parent, config_path, on_saved=None):
     win.title("Network Configuration")
     win.geometry("640x475")
     win.resizable(True, True)
-    center_window(parent, win, 640, 430)
 
     def show_error(title: str, message: str):
         win.lift()
@@ -87,7 +89,11 @@ def open_network_config(parent, config_path, on_saved=None):
 
     win.protocol("WM_DELETE_WINDOW", close_window)
 
-    main_frame = ttk.Frame(win, padding=20)
+    footer = ttk.Frame(win, padding=(16, 10))
+    footer.pack(side="bottom", fill="x")
+    scroll = ScrollableFrame(win)
+    scroll.pack(fill="both", expand=True)
+    main_frame = ttk.Frame(scroll.content, padding=16)
     main_frame.pack(expand=True, fill="both")
 
     # Titre
@@ -184,7 +190,7 @@ def open_network_config(parent, config_path, on_saved=None):
     def save_and_close():
         host = ip_entry.get().strip()
         username = user_entry.get().strip()
-        password = pass_entry.get().strip()
+        password = pass_entry.get()
         port_raw = port_entry.get().strip()
         remote_path = rpath_entry.get().strip()
         remote_file = rfile_entry.get().strip()
@@ -245,15 +251,14 @@ def open_network_config(parent, config_path, on_saved=None):
         except Exception as e:
             show_error("Error", f"Error saving configuration:\n{e}")
 
-    ttk.Button(main_frame, text="Save", command=save_and_close).grid(
-        row=9, column=1, pady=(24, 8), sticky="e", padx=5
-    )
-    ttk.Button(main_frame, text="Cancel", command=close_window).grid(
-        row=9, column=2, pady=(24, 8), sticky="w", padx=5
-    )
-
+    ttk.Button(footer, text="Cancel", command=close_window).pack(side="right", padx=(6, 0))
+    ttk.Button(footer, text="Save", command=save_and_close).pack(side="right")
+    win.bind("<Escape>", lambda _event: close_window())
     main_frame.columnconfigure(1, weight=1)
-    win.minsize(620, 465)
+    win.update_idletasks()
+    win.minsize(480, 300)
+    center_window(parent, win, max(640, main_frame.winfo_reqwidth() + 24),
+                  main_frame.winfo_reqheight() + footer.winfo_reqheight() + 24)
 
     # Build first, then show the completed modal window above RBM only.
     win.transient("")

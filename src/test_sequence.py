@@ -26,7 +26,7 @@ try:
         validate_cosphi,
         validate_reactive_power,
     )
-    from .utils_ui import center_window
+    from .utils_ui import center_window, ScrollableFrame
 except ImportError:
     try:
         from energy_manager import ENERGY_TOOL_RESOLVE
@@ -37,7 +37,7 @@ except ImportError:
             validate_cosphi,
             validate_reactive_power,
         )
-        from utils_ui import center_window
+        from utils_ui import center_window, ScrollableFrame
     except ImportError:
         from src.energy_manager import ENERGY_TOOL_RESOLVE
         from src.setpoint_validation import (
@@ -47,7 +47,7 @@ except ImportError:
             validate_cosphi,
             validate_reactive_power,
         )
-        from src.utils_ui import center_window
+        from src.utils_ui import center_window, ScrollableFrame
 
 
 class TestSequenceWindow:
@@ -115,7 +115,17 @@ class TestSequenceWindow:
         self._on_mode_changed()
 
     def _build_ui(self):
-        root = ttk.Frame(self.win, padding=10)
+        footer = ttk.Frame(self.win, padding=10)
+        footer.pack(side="bottom", fill="x")
+        controls = ttk.Frame(footer)
+        controls.pack(fill="x")
+        controls.columnconfigure(0, weight=1)
+        controls.columnconfigure(1, weight=1)
+        file_controls = ttk.Frame(footer)
+        file_controls.pack(fill="x", pady=(6, 0))
+        scroll = ScrollableFrame(self.win)
+        scroll.pack(fill="both", expand=True)
+        root = ttk.Frame(scroll.content, padding=10)
         root.pack(fill="both", expand=True)
         root.columnconfigure(0, weight=1)
         root.rowconfigure(2, weight=1)
@@ -237,16 +247,14 @@ class TestSequenceWindow:
         )
         progress.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
 
-        controls = ttk.Frame(root)
-        controls.grid(row=3, column=0, sticky="ew", pady=(0, 8))
         self.btn_start = ttk.Button(
             controls, text="Start sequence", bootstyle="success", command=self.start
         )
-        self.btn_start.pack(side="left", padx=(0, 6))
+        self.btn_start.grid(row=0, column=0, sticky="ew", padx=(0, 6), pady=(0, 4))
         self.btn_pause = ttk.Button(
             controls, text="Pause", command=self.toggle_pause, state="disabled"
         )
-        self.btn_pause.pack(side="left", padx=(0, 6))
+        self.btn_pause.grid(row=0, column=1, sticky="ew", pady=(0, 4))
         self.btn_stop = ttk.Button(
             controls,
             text="Stop after current command",
@@ -254,7 +262,7 @@ class TestSequenceWindow:
             command=self.stop,
             state="disabled",
         )
-        self.btn_stop.pack(side="left")
+        self.btn_stop.grid(row=1, column=0, sticky="ew", padx=(0, 6))
         self.btn_safe_stop = ttk.Button(
             controls,
             text="Stop + send P=0",
@@ -262,17 +270,17 @@ class TestSequenceWindow:
             command=self.stop_and_send_zero,
             state="disabled",
         )
-        self.btn_safe_stop.pack(side="left", padx=(6, 0))
-        ttk.Button(controls, text="Close", bootstyle="danger", command=self.close).pack(
+        self.btn_safe_stop.grid(row=1, column=1, sticky="ew")
+        ttk.Button(file_controls, text="Close", bootstyle="danger", command=self.close).pack(
             side="right"
         )
         self.btn_import = ttk.Button(
-            controls, text="Import sequence", command=self.import_csv
+            file_controls, text="Import sequence", command=self.import_csv
         )
         self.btn_import.pack(
             side="right", padx=(0, 6)
         )
-        ttk.Button(controls, text="Save as CSV", command=self.export_csv).pack(
+        ttk.Button(file_controls, text="Save as CSV", command=self.export_csv).pack(
             side="right", padx=(0, 6)
         )
 

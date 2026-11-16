@@ -13,10 +13,10 @@ import ttkbootstrap as ttk
 
 try:
     from .gridcodes_migrator import MigrationError, analyze_migration, export_plan
-    from .utils_ui import center_window
+    from .utils_ui import center_window, ScrollableFrame
 except ImportError:
     from gridcodes_migrator import MigrationError, analyze_migration, export_plan
-    from utils_ui import center_window
+    from utils_ui import center_window, ScrollableFrame
 
 
 class GridCodesMigrationWindow:
@@ -66,7 +66,11 @@ class GridCodesMigrationWindow:
         self.window.grab_set()
 
     def _build_ui(self):
-        root = ttk.Frame(self.window, padding=12)
+        actions = ttk.Frame(self.window, padding=(12, 8))
+        actions.pack(side="bottom", fill="x")
+        scroll = ScrollableFrame(self.window)
+        scroll.pack(fill="both", expand=True)
+        root = ttk.Frame(scroll.content, padding=12)
         root.pack(fill="both", expand=True)
         root.columnconfigure(1, weight=1)
         root.rowconfigure(7, weight=3)
@@ -112,15 +116,15 @@ class GridCodesMigrationWindow:
             bootstyle="secondary",
         ).grid(row=1, column=0, columnspan=6, sticky="w", pady=(4, 0))
 
-        actions = ttk.Frame(root)
-        actions.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(10, 8))
         self.analyze_button = ttk.Button(actions, text="Analyze migration", bootstyle="primary", command=self.analyze)
-        self.analyze_button.pack(side="left", padx=(0, 6))
+        actions.columnconfigure(0, weight=1)
+        actions.columnconfigure(1, weight=1)
+        self.analyze_button.grid(row=0, column=0, sticky="ew", padx=(0, 6), pady=(0, 4))
         self.export_button = ttk.Button(actions, text="Export migrated files", bootstyle="success", state="disabled", command=self.export)
-        self.export_button.pack(side="left", padx=(0, 6))
+        self.export_button.grid(row=0, column=1, sticky="ew", pady=(0, 4))
         self.upload_button = ttk.Button(actions, text="Upload exported files to EVSE", bootstyle="warning", state="disabled", command=self.upload)
-        self.upload_button.pack(side="left")
-        ttk.Button(actions, text="Close", bootstyle="secondary", command=self.close).pack(side="right")
+        self.upload_button.grid(row=1, column=0, columnspan=2, sticky="ew")
+        ttk.Button(actions, text="Close", bootstyle="secondary", command=self.close).grid(row=0, column=2, rowspan=2, padx=(8, 0), sticky="ns")
 
         ttk.Label(root, textvariable=self.status_var, bootstyle="info").grid(
             row=5, column=0, columnspan=3, sticky="w", pady=(0, 6)
@@ -203,25 +207,35 @@ class GridCodesMigrationWindow:
         self.export_button.configure(state="disabled")
         self.upload_button.configure(state="disabled")
         self.status_var.set("Analyzing locally; source files and EVSE are unchanged...")
+        self.export_dir = None
+        rules = self.rules_var.get().strip() or None
+        vehicle = self.vehicle_var.get()
+        power_1ph = self.power_1ph_var.get()
+        power_3ph = self.power_3ph_var.get()
 
         def worker():
             try:
                 plan = analyze_migration(
                     source,
                     template,
-                    self.rules_var.get().strip() or None,
-                    vehicle_name=self.vehicle_var.get(),
-                    power_max_1ph_var=self.power_1ph_var.get(),
-                    power_max_3ph_var=self.power_3ph_var.get(),
+                    rules,
+                    vehicle_name=vehicle,
+                    power_max_1ph_var=power_1ph,
+                    power_max_3ph_var=power_3ph,
                 )
                 result = (plan, None)
             except Exception as exc:
                 result = (None, exc)
-            self.window.after(0, lambda: self._analysis_finished(*result))
+            try:
+                self.window.after(0, lambda: self._analysis_finished(*result))
+            except (tk.TclError, RuntimeError):
+                pass  # The operator closed the window while analysis ran.
 
         threading.Thread(target=worker, daemon=True).start()
 
     def _analysis_finished(self, plan, error):
+        if not self.window.winfo_exists():
+            return
         self.analyze_button.configure(state="normal")
         if error:
             self.plan = None
@@ -275,7 +289,7 @@ class GridCodesMigrationWindow:
             return
         try:
             target, report = export_plan(self.plan, self.output_var.get().strip())
-        except MigrationError as exc:
+        except (MigrationError, OSError) as exc:
             messagebox.showerror("GridCodes Migration", str(exc), parent=self.window)
             return
         self.export_dir = target

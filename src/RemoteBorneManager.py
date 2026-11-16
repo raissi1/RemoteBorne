@@ -50,6 +50,7 @@ from ttkbootstrap.constants import *
 try:
     from .ssh_manager import SSHManager
     from .ssh_queue import SSHQueue
+    from .utils_ui import center_window, ScrollableFrame
     from .network_config import open_network_config
     from .open_help import open_help
     from .setpoint_validation import (
@@ -65,6 +66,7 @@ except ImportError:
     try:
         from ssh_manager import SSHManager
         from ssh_queue import SSHQueue
+        from utils_ui import center_window, ScrollableFrame
         from network_config import open_network_config
         from open_help import open_help
         from setpoint_validation import (
@@ -79,6 +81,7 @@ except ImportError:
     except ImportError:
         from src.ssh_manager import SSHManager
         from src.ssh_queue import SSHQueue
+        from src.utils_ui import center_window, ScrollableFrame
         from src.network_config import open_network_config
         from src.open_help import open_help
         from src.setpoint_validation import (
@@ -174,8 +177,11 @@ IMG_DIR_2  = os.path.join(BASE_DIR, "imgs")
 
 def _local_export_dir(value: str) -> str:
     """Return a usable export directory and migrate legacy file paths."""
-    candidate = os.path.normpath(os.path.expanduser((value or "").strip()))
-    if candidate and os.path.splitext(os.path.basename(candidate))[1]:
+    raw = (value or "").strip()
+    if not raw:
+        return EXPORTS_DIR
+    candidate = os.path.normpath(os.path.expanduser(raw))
+    if os.path.isfile(candidate) or os.path.splitext(candidate)[1].lower() in {".properties", ".ini", ".txt", ".csv", ".json"}:
         candidate = os.path.dirname(candidate)
     if candidate and not os.path.isabs(candidate):
         candidate = os.path.join(BASE_DIR, candidate)
@@ -201,7 +207,7 @@ def _ensure_local_export_dir(value: str) -> str:
 # Lecture config.ini
 # ----------------------------------------------------------------------
 def load_config() -> configparser.ConfigParser:
-    cfg = configparser.ConfigParser()
+    cfg = configparser.ConfigParser(interpolation=None)
 
     if not os.path.isfile(CONFIG_PATH):
         # Portable builds ship a template only; each installation creates its
@@ -362,6 +368,8 @@ class RemoteBorneApp:
                 self.root.geometry("1200x800")
 
         self.root.minsize(1000, 700)
+        self.root.update_idletasks()
+        center_window(None, self.root, self.root.winfo_width(), self.root.winfo_height())
 
         # style ttkbootstrap
         self.style = self.root.style
@@ -506,7 +514,8 @@ class RemoteBorneApp:
         self._set_led(False)
         self._update_controls_state()
         self._start_ui_connection_guard()
-
+        self.root.update_idletasks()
+        center_window(None, self.root, self.root.winfo_width(), self.root.winfo_height())
 
         self.log(f"[INFO] RemoteBorne version: {APP_VERSION} ({os.path.basename(__file__)})")
         self.log("[INFO] Application started. Waiting for SSH events...")
@@ -594,26 +603,9 @@ class RemoteBorneApp:
             self._popup_error("Theme", f"Cannot switch theme:\n{e}")
 
     def _center_toplevel(self, win: tk.Toplevel, width: int, height: int, parent=None):
-        """Centre une fenêtre fille par rapport à la fenêtre parente (fallback écran)."""
-        parent = parent or self.root
-        try:
-            parent.update_idletasks()
-            px, py = parent.winfo_rootx(), parent.winfo_rooty()
-            pw, ph = parent.winfo_width(), parent.winfo_height()
-            if pw > 1 and ph > 1:
-                x = px + max(0, (pw - width) // 2)
-                y = py + max(0, (ph - height) // 2)
-                win.geometry(f"{width}x{height}+{x}+{y}")
-                return
-        except Exception:
-            pass
+        """Keep secondary windows inside the usable desktop area."""
+        center_window(parent or self.root, win, width, height)
 
-        # fallback : centre écran
-        win.update_idletasks()
-        x = (win.winfo_screenwidth() - width) // 2
-        y = (win.winfo_screenheight() - height) // 2
-        win.geometry(f"{width}x{height}+{x}+{y}")
-            
     # ==========================================================
     # Validation clavier pour les champs numériques (float + signe)
     # ==========================================================
@@ -864,7 +856,9 @@ class RemoteBorneApp:
         self._configure_ui_styles()
 
         # ----- MAIN -----
-        main = ttk.Frame(self.root)
+        scroll = ScrollableFrame(self.root)
+        scroll.pack(fill="both", expand=True)
+        main = ttk.Frame(scroll.content)
         main.pack(fill="both", expand=True)
 
         # Keep the control area compact and use any additional display height
@@ -1552,7 +1546,9 @@ class RemoteBorneApp:
     def _ssh_queue_is_idle(self):
         """Do not retarget an EVSE while a real command could still be queued."""
         try:
-            return not self.ssh_queue.busy and self.ssh_queue.q.empty()
+            return (not self.ssh_queue.busy and self.ssh_queue.q.empty()
+                    and not getattr(self, "_file_transfer_active", False)
+                    and not self._scp_lock.locked())
         except Exception:
             return False
 
@@ -1711,7 +1707,7 @@ class RemoteBorneApp:
         self.log("[SIMULATOR] Local EVSE reset to demo state.")
         if self._simulation_mode and self.connected:
             self.refresh_file_list()
-            self.refresh_temperature_and_soc()
+            self.update_temp_and_soc(manual=True)
 
     def return_to_configured_charger(self):
         if not self._simulation_mode:
@@ -1753,6 +1749,9 @@ class RemoteBorneApp:
         self._stop_local_simulator_server()
 
     def _manual_disconnect(self):
+        if getattr(self, "_file_transfer_active", False) or self._scp_lock.locked():
+            self._popup_warning("File transfer", "Wait for the current file transfer before disconnecting or changing its target.")
+            return
         self._manual_disconnect_mode = True
         self._refresh_running = False
         self._refresh_pending = False
@@ -2856,6 +2855,8 @@ class RemoteBorneApp:
         query_entry.bind("<Return>", apply_filter)
         dialog.bind("<Escape>", lambda _event: close_dialog())
         dialog.protocol("WM_DELETE_WINDOW", close_dialog)
+        dialog.update_idletasks()
+        self._center_toplevel(dialog, max(460, frame.winfo_reqwidth()), frame.winfo_reqheight() + 24)
         dialog.deiconify()
         dialog.lift()
         dialog.focus_force()
@@ -3715,6 +3716,22 @@ class RemoteBorneApp:
 
         threading.Thread(target=worker, daemon=True).start()
                 
+    def _start_transfer_worker(self, worker):
+        """Keep one upload on its original target until the complete batch ends."""
+        if getattr(self, "_file_transfer_active", False):
+            self._popup_warning("File transfer", "Wait for the current file transfer to finish.")
+            return
+        self._file_transfer_active = True
+        def run():
+            try:
+                with self._scp_lock:
+                    worker()
+            except Exception as exc:
+                self.log(f"[TRANSFER ERROR] {exc}")
+            finally:
+                self._file_transfer_active = False
+        threading.Thread(target=run, daemon=True).start()
+
     def upload_files_to_current_path(self):
         if self._sequence_operation_blocked("Uploading a file"):
             return
@@ -3804,7 +3821,7 @@ class RemoteBorneApp:
             except Exception:
                 pass
 
-        threading.Thread(target=worker, daemon=True).start()
+        self._start_transfer_worker(worker)
 
     def open_gridcodes_migration(self):
         """Open the local migration assistant without changing the EVSE."""
@@ -3921,7 +3938,7 @@ class RemoteBorneApp:
             except Exception:
                 pass
 
-        threading.Thread(target=worker, daemon=True).start()
+        self._start_transfer_worker(worker)
 
     def _menu_edit(self):
         remote = self._selected_remote_file()
@@ -4577,8 +4594,8 @@ class RemoteBorneApp:
         win = tk.Toplevel(self.root)
         win.withdraw()
         win.title(f"Edit: {remote_path}")
-        self._center_toplevel(win, 960, 680, parent=self.root)
         win.minsize(820, 560)
+        self._center_toplevel(win, 960, 680, parent=self.root)
         self._editor_window = win
         self._editor_remote_path = remote_path
 
@@ -4603,10 +4620,10 @@ class RemoteBorneApp:
             self.log(f"[EDIT ERROR] {e}")
 
         btn_bar = ttk.Frame(win)
-        btn_bar.pack(fill="x", side="bottom")
+        btn_bar.pack(fill="x", side="bottom", before=editor_frame)
 
         status_bar = ttk.Label(win, text="")
-        status_bar.pack(fill="x", side="bottom", padx=6, pady=(0, 4))
+        status_bar.pack(fill="x", side="bottom", before=editor_frame, padx=6, pady=(0, 4))
 
         def clear_find_highlight():
             txt.tag_remove("find_match", "1.0", "end")
@@ -4746,6 +4763,8 @@ class RemoteBorneApp:
             dialog.bind("<F3>", next_match)
             dialog.bind("<Shift-F3>", prev_match)
             dialog.bind("<Escape>", lambda _e: close_find_dialog())
+            dialog.update_idletasks()
+            self._center_toplevel(dialog, max(520, dialog.winfo_reqwidth()), dialog.winfo_reqheight() + 20)
             dialog.deiconify()
             dialog.lift()
             dialog.focus_force()
@@ -5920,8 +5939,8 @@ class RemoteBorneApp:
         win = tk.Toplevel(self.root)
         self._terminal_window = win
         win.title("RBM SSH Terminal")
-        self._center_toplevel(win, 1100, 700, parent=self.root)
         win.minsize(900, 500)
+        self._center_toplevel(win, 1100, 700, parent=self.root)
 
         try:
             win.transient("")
@@ -6488,6 +6507,9 @@ class RemoteBorneApp:
         Ouvre la fenêtre Network config (network_config.py) en éditant CONFIG_PATH,
         puis recharge self.config / self.host / self.user / self.port après Save.
         """
+        if getattr(self, "_file_transfer_active", False) or self._scp_lock.locked():
+            self._popup_warning("File transfer", "Wait for the current file transfer before disconnecting or changing its target.")
+            return
         def on_saved():
             try:
                 previous_ssh = (self.host, self.user, self.password, self.port)

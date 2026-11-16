@@ -12,7 +12,7 @@ import csv
 import re
 
 try:
-    from .utils_ui import center_window
+    from .utils_ui import center_window, ScrollableFrame
     from .setpoint_validation import (
         finite_number,
         validate_active_power,
@@ -21,7 +21,7 @@ try:
     )
 except ImportError:
     try:
-        from utils_ui import center_window
+        from utils_ui import center_window, ScrollableFrame
         from setpoint_validation import (
             finite_number,
             validate_active_power,
@@ -29,7 +29,7 @@ except ImportError:
             validate_reactive_power,
         )
     except ImportError:
-        from src.utils_ui import center_window
+        from src.utils_ui import center_window, ScrollableFrame
         from src.setpoint_validation import (
             finite_number,
             validate_active_power,
@@ -206,10 +206,9 @@ class EnergyManagerWindow:
             command=self.close,
         ).pack(side="right")
 
-        # The dashboard content fits in the compact window. Avoid a global
-        # mouse-wheel binding and scrolling canvas, which previously made the
-        # layout look oversized and could hide the footer.
-        main = ttk.Frame(self.win, padding=(14, 10, 14, 6))
+        scroll = ScrollableFrame(self.win)
+        scroll.pack(fill="both", expand=True)
+        main = ttk.Frame(scroll.content, padding=(14, 10, 14, 6))
         main.pack(fill="both", expand=True)
 
         # ==========================================================

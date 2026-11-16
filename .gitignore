@@ -50,3 +50,6 @@ tools/simulator/*.tmp
 *.tmp
 *.log
 *.bak
+
+# Per-user simulator state and SSH host key
+tools/simulator/runtime/
