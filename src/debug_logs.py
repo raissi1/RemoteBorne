@@ -14,12 +14,12 @@ from tkinter import ttk, filedialog, messagebox
 from tkinter.scrolledtext import ScrolledText
 
 try:
-    from .utils_ui import center_window, ScrollableFrame
+    from .utils_ui import center_window, ScrollableFrame, theme_native_widget
 except ImportError:
     try:
-        from utils_ui import center_window, ScrollableFrame
+        from utils_ui import center_window, ScrollableFrame, theme_native_widget
     except ImportError:
-        from src.utils_ui import center_window, ScrollableFrame
+        from src.utils_ui import center_window, ScrollableFrame, theme_native_widget
 
 try:
     from .diagnostic_capture import DiagnosticRecorder
@@ -426,6 +426,7 @@ class DebugLogsWindow:
         self.global_results_text = ScrolledText(
             self.global_results_tab, wrap="word", state="disabled",
         )
+        theme_native_widget(self.global_results_text)
         self.global_results_text.pack(fill="both", expand=True)
         self.global_results_text.tag_configure("match", background="#ffe082", foreground="#000000")
 
@@ -800,6 +801,7 @@ class DebugLogsWindow:
 
         # Zone de texte scrollable
         text_area = ScrolledText(frame, wrap="word", height=20)
+        theme_native_widget(text_area)
         text_area.grid(row=0, column=0, sticky="nsew", padx=2, pady=(2, 0))
         text_area.tag_configure("ERROR", foreground="red")
         text_area.tag_configure("WARN", foreground="orange")

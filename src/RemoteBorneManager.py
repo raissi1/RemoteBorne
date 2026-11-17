@@ -50,7 +50,7 @@ from ttkbootstrap.constants import *
 try:
     from .ssh_manager import SSHManager
     from .ssh_queue import SSHQueue
-    from .utils_ui import center_window, ScrollableFrame
+    from .utils_ui import center_window, ScrollableFrame, theme_native_widget
     from .network_config import open_network_config
     from .open_help import open_help
     from .setpoint_validation import (
@@ -66,7 +66,7 @@ except ImportError:
     try:
         from ssh_manager import SSHManager
         from ssh_queue import SSHQueue
-        from utils_ui import center_window, ScrollableFrame
+        from utils_ui import center_window, ScrollableFrame, theme_native_widget
         from network_config import open_network_config
         from open_help import open_help
         from setpoint_validation import (
@@ -81,7 +81,7 @@ except ImportError:
     except ImportError:
         from src.ssh_manager import SSHManager
         from src.ssh_queue import SSHQueue
-        from src.utils_ui import center_window, ScrollableFrame
+        from src.utils_ui import center_window, ScrollableFrame, theme_native_widget
         from src.network_config import open_network_config
         from src.open_help import open_help
         from src.setpoint_validation import (
@@ -958,6 +958,7 @@ class RemoteBorneApp:
         self.find_entry.grid(row=0, column=1, sticky="ew", padx=2)
         self.find_entry.bind("<Return>", lambda _event: self._apply_file_filter_from_entry())
         self._file_find_var.trace_add("write", self._on_file_find_changed)
+        self.root.bind("<Control-f>", self._focus_file_find, add="+")
         self.btn_find = ttk.Button(
             find_row,
             text="Find",
@@ -989,6 +990,7 @@ class RemoteBorneApp:
             activestyle="none",
             font=("Segoe UI", 10),
         )
+        theme_native_widget(self.file_list)
         self.file_list.grid(row=0, column=0, sticky="nsew")
 
         vs = ttk.Scrollbar(
@@ -2572,6 +2574,8 @@ class RemoteBorneApp:
         if self.file_list is None:
             return 0, 0
         try:
+            self._recursive_search_active = False
+            self._recursive_search_rows = {}
             self.file_list.delete(0, "end")
             if self.current_path.rstrip("/") != self.default_path.rstrip("/"):
                 self.file_list.insert("end", "[.] (Parent)")
@@ -2587,10 +2591,16 @@ class RemoteBorneApp:
             self.log(f"[FILES ERROR] Unable to render file list: {exc}")
             return 0, 0
 
+    def _focus_file_find(self, _event=None):
+        self.find_entry.focus_set()
+        self.find_entry.selection_range(0, "end")
+        return "break"
+
     def _on_file_find_changed(self, *_):
         """Filter locally first, then search subfolders after a short pause."""
-        if not self.connected or not getattr(self, "_file_entries", []):
+        if not self.connected or getattr(self, "_file_list_path", None) != self.current_path:
             return
+        self._cancel_scheduled_recursive_file_search()
         self._apply_file_filter_from_entry(log_result=False, allow_recursive=False)
         query = self._file_find_var.get().strip()
         if query:
@@ -2644,6 +2654,7 @@ class RemoteBorneApp:
                 pass
         self._recursive_search_after_id = None
         self._recursive_search_pending_query = None
+        self._recursive_search_generation = getattr(self, "_recursive_search_generation", 0) + 1
 
     def _schedule_recursive_file_search(self, query: str, delay_ms: int = 600):
         """Start one recursive search after typing pauses, like Explorer search."""
@@ -2681,7 +2692,7 @@ class RemoteBorneApp:
             return 0, 0
         groups = {}
         for remote_path in paths:
-            parent = posixpath.dirname(remote_path) or "/"
+            parent = posixpath.dirname(remote_path.rstrip("/")) or "/"
             groups.setdefault(parent, []).append(remote_path)
 
         self.file_list.delete(0, "end")
@@ -2694,8 +2705,9 @@ class RemoteBorneApp:
             self._recursive_search_rows[row] = ("folder", folder)
             row += 1
             for remote_path in sorted(groups[folder], key=lambda item: posixpath.basename(item).casefold()):
-                self.file_list.insert("end", f"    {posixpath.basename(remote_path)}")
-                self._recursive_search_rows[row] = ("file", remote_path)
+                name = posixpath.basename(remote_path.rstrip("/"))
+                self.file_list.insert("end", "    " + name + ("/" if remote_path.endswith("/") else ""))
+                self._recursive_search_rows[row] = ("folder" if remote_path.endswith("/") else "file", remote_path.rstrip("/"))
                 row += 1
 
         if not paths:
@@ -2712,13 +2724,22 @@ class RemoteBorneApp:
             return
 
         base_path = self.current_path
+        generation = getattr(self, "_recursive_search_generation", 0)
         self._recursive_search_running = True
         self._recursive_search_pending_query = None
         self.log(f"[FILES] Searching all folders below {base_path} for '{query}'...")
-        # Matching is performed locally for consistent case-insensitive and
-        # wildcard behavior across EVSE images. Limit output to keep the UI
-        # responsive on unusually large test folders.
-        command = f"find {shlex.quote(base_path)} -type f -print 2>/dev/null | head -n 2000"
+        # Filter remotely before limiting transferred results, then validate
+        # names locally using the same matcher as the immediate folder view.
+        pattern = query.strip()
+        if "*" not in pattern and "?" not in pattern:
+            pattern = "".join("[[]" if c == "[" else "[]]" if c == "]" else c for c in pattern)
+        pattern = ("" if pattern.startswith("*") else "*") + pattern + ("" if pattern.endswith("*") else "*")
+        # Match BEFORE limiting output: scripts after the first 2000 unrelated
+        # files must remain discoverable. A 2001st match signals truncation.
+        command = (
+            f"(find {shlex.quote(base_path)} -type f -iname {shlex.quote(pattern)} -print; "
+            "rbm_find_rc=$?; printf '\n__RBM_FIND_STATUS__%s\n' \"$rbm_find_rc\") | head -n 2002"
+        )
 
         def callback(result):
             def apply_ui():
@@ -2727,8 +2748,10 @@ class RemoteBorneApp:
                 self._recursive_search_pending_query = None
                 if self._closing or not self.connected:
                     return
-                if self.current_path != base_path:
-                    self.log("[FILES] All-folder search ignored because the folder changed.")
+                if self.current_path != base_path or generation != getattr(self, "_recursive_search_generation", 0):
+                    self.log("[FILES] All-folder search ignored because the view changed.")
+                    if pending_query:
+                        self._schedule_recursive_file_search(pending_query, delay_ms=100)
                     return
                 # The operator may have cleared or changed the query while
                 # the remote find command was running. Do not overwrite the
@@ -2750,23 +2773,33 @@ class RemoteBorneApp:
                     ).strip()
                     self.log(f"[FILES] All-folder search error: {message}")
                     return
+                output = result.get("stdout") or result.get("out") or ""
+                statuses = [line.removeprefix("__RBM_FIND_STATUS__") for line in output.splitlines()
+                            if line.startswith("__RBM_FIND_STATUS__")]
+                if statuses and statuses[-1] != "0":
+                    self.log("[FILES] Find returned partial results: " +
+                             (result.get("stderr") or result.get("err") or "remote search failed").strip())
                 all_paths = [
-                    path.strip()
-                    for path in (result.get("stdout") or result.get("out") or "").splitlines()
-                    if path.strip().startswith("/")
+                    path
+                    for path in output.splitlines()
+                    if path.startswith("/")
                 ]
                 matches = [
                     path
-                    for path in all_paths
+                    for path in all_paths[:2000]
                     if self._file_name_matches_query(posixpath.basename(path), query)
                 ]
+                # Keep matching folders in the displayed directory available
+                # after recursive file results replace the immediate preview.
+                matches.extend(posixpath.join(base_path, entry) for entry in self._file_entries
+                               if entry.endswith("/") and self._file_name_matches_query(entry, query))
                 self._recursive_search_active = True
                 count, folders = self._render_recursive_search_results(matches, base_path)
                 self.log(
-                    f"[FILES] All-folder Find '{query}': {count} file(s) in {folders} folder(s)."
+                    f"[FILES] All-folder Find '{query}': {count} item(s) in {folders} folder(s)."
                 )
-                if len(all_paths) >= 2000:
-                    self.log("[FILES] All-folder search reached the 2000-file safety limit.")
+                if len(all_paths) > 2000:
+                    self.log("[FILES] More than 2000 matching files; refine Find to see additional results.")
                 if pending_query and pending_query != query:
                     self._schedule_recursive_file_search(pending_query, delay_ms=100)
 
@@ -2790,8 +2823,8 @@ class RemoteBorneApp:
         if not self.connected:
             self.log("[FILES] Please connect before using Find.")
             return
-        if not getattr(self, "_file_entries", []):
-            self._popup_warning("Find", "Refresh the file list before searching.")
+        if getattr(self, "_file_list_path", None) != self.current_path:
+            self._popup_warning("Find", "Wait for the current folder list before searching.")
             return
 
         dialog = getattr(self, "_browser_find_dialog", None)
@@ -2821,10 +2854,10 @@ class RemoteBorneApp:
             frame,
             text="Find file or folder name (example: Power or *Power*):",
         ).grid(row=0, column=0, sticky="w")
-        query_var = tk.StringVar(value=getattr(self, "_file_filter_query", ""))
+        query_var = self._file_find_var
         query_entry = ttk.Entry(frame, textvariable=query_var, width=48)
         query_entry.grid(row=1, column=0, sticky="ew", pady=(5, 8))
-        status_var = tk.StringVar(value="The search is local to the current folder.")
+        status_var = tk.StringVar(value="Search file names in this folder and its subfolders.")
         ttk.Label(frame, textvariable=status_var).grid(row=2, column=0, sticky="w")
 
         actions = ttk.Frame(frame)
@@ -2840,19 +2873,15 @@ class RemoteBorneApp:
             except Exception:
                 pass
             self._browser_find_dialog = None
+            self.find_entry.focus_set()
 
         def apply_filter(*_):
-            self._file_filter_query = query_var.get().strip()
-            shown, total = self._render_file_entries()
-            if self._file_filter_query:
-                status_var.set(f"{shown} match(es) out of {total} item(s).")
-                self.log(f"[FILES] Find '{self._file_filter_query}': {shown}/{total} match(es).")
-            else:
-                status_var.set(f"Filter cleared: {total} item(s) displayed.")
+            self._apply_file_filter_from_entry()
+            status_var.set("Results appear in the main file list; Clear restores the folder.")
 
         def clear_filter():
-            query_var.set("")
-            apply_filter()
+            self._clear_file_filter()
+            status_var.set("Filter cleared; the current folder is displayed.")
             query_entry.focus_set()
 
         ttk.Button(actions, text="Find", command=apply_filter, width=10).pack(side="left")
@@ -3011,6 +3040,8 @@ class RemoteBorneApp:
                         self.path_entry.insert(0, requested_path)
 
                     self._file_list_path = requested_path
+                    if self._file_find_var.get().strip():
+                        self._schedule_recursive_file_search(self._file_find_var.get().strip())
                     self._navigation_pending_logged = False
                     if self._file_filter_query:
                         self.log(
@@ -3283,6 +3314,9 @@ class RemoteBorneApp:
             menu.post(event.x_root, event.y_root)
             return
 
+        if self._recursive_search_active:
+            self._popup_warning("GridCodes", "Please select a matching file.")
+            return None
         item = self._get_selected_item()
         if not item or item.startswith("[.]"):
             return
@@ -3372,6 +3406,9 @@ class RemoteBorneApp:
             if kind == "file":
                 return remote_path
             self._popup_warning("GridCodes", "Please select a file, not a folder heading.")
+            return None
+        if self._recursive_search_active:
+            self._popup_warning("GridCodes", "Please select a matching file.")
             return None
         item = self._get_selected_item()
         if not item or item.startswith("[.]"):
@@ -4002,6 +4039,7 @@ class RemoteBorneApp:
         files_frame.grid_columnconfigure(0, weight=1)
         files_frame.grid_rowconfigure(0, weight=1)
         file_list = tk.Listbox(files_frame, selectmode="extended", exportselection=False)
+        theme_native_widget(file_list)
         file_list.grid(row=0, column=0, sticky="nsew")
         file_scroll = ttk.Scrollbar(
             files_frame, orient="vertical", command=file_list.yview
@@ -4610,7 +4648,8 @@ class RemoteBorneApp:
         editor_frame.grid_rowconfigure(0, weight=1)
         editor_frame.grid_columnconfigure(0, weight=1)
 
-        txt = tk.Text(editor_frame, wrap="none")
+        txt = tk.Text(editor_frame, wrap="none", undo=True)
+        theme_native_widget(txt)
         txt.grid(row=0, column=0, sticky="nsew")
 
         vs = ttk.Scrollbar(editor_frame, orient="vertical", command=txt.yview)
@@ -4902,9 +4941,14 @@ class RemoteBorneApp:
         ttk.Button(
             btn_bar, text="Close", command=on_close, style="Danger.TButton"
         ).pack(side="right", padx=5, pady=5)
-        txt.bind("<Control-f>", lambda e: (open_find_dialog(), "break"))
-        txt.bind("<Escape>", lambda e: (clear_find_highlight(), "break"))
-        txt.bind("<Control-w>", lambda e: (close_editor(), "break"))
+        def editor_shortcut(action):
+            def handle(_event):
+                action()
+                return "break"
+            return handle
+        txt.bind("<Control-f>", editor_shortcut(open_find_dialog))
+        txt.bind("<Escape>", editor_shortcut(clear_find_highlight))
+        txt.bind("<Control-w>", editor_shortcut(close_editor))
         # Display the finished modal editor in one operation. This avoids a
         # temporary empty window while the text and toolbar are being built.
         win.transient("")

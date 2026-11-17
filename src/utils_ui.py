@@ -6,6 +6,34 @@ import tkinter as tk
 from tkinter import ttk
 
 
+def theme_native_widget(widget):
+    """Explicitly theme classic Tk surfaces, including after a theme switch.
+
+    ttk themes do not consistently recolor Text/Listbox/Canvas widgets across
+    ttkbootstrap versions. Keep their selection and caret readable too.
+    """
+    def apply(_event=None):
+        if not widget.winfo_exists():
+            return
+        style = ttk.Style(widget)
+        background = style.lookup("TEntry", "fieldbackground") or style.lookup("TFrame", "background")
+        foreground = style.lookup("TLabel", "foreground")
+        selection = style.lookup("TEntry", "selectbackground") or "#375a7f"
+        selection_fg = style.lookup("TEntry", "selectforeground") or foreground
+        options = {"background": style.lookup("TFrame", "background") if widget.winfo_class() == "Canvas" else background}
+        if widget.winfo_class() != "Canvas":
+            options.update(foreground=foreground, selectbackground=selection, selectforeground=selection_fg)
+        if widget.winfo_class() == "Text":
+            options["insertbackground"] = foreground
+        widget.configure(**options)
+
+    def changed(_event=None):
+        # Apply after ttkbootstrap's own theme handlers, not before them.
+        widget.after_idle(apply)
+    widget.bind("<<ThemeChanged>>", changed, add="+")
+    apply()
+
+
 def screen_work_area(win):
     """Return the usable desktop rectangle, excluding the Windows taskbar."""
     if sys.platform == "win32":
@@ -65,6 +93,7 @@ class ScrollableFrame(ttk.Frame):
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
         self.canvas = tk.Canvas(self, highlightthickness=0, width=400, height=300)
+        theme_native_widget(self.canvas)
         self.vertical = ttk.Scrollbar(
             self, orient="vertical", command=self.canvas.yview
         )

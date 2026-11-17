@@ -13,10 +13,10 @@ import ttkbootstrap as ttk
 
 try:
     from .gridcodes_migrator import MigrationError, analyze_migration, export_plan
-    from .utils_ui import center_window, ScrollableFrame
+    from .utils_ui import center_window, ScrollableFrame, theme_native_widget
 except ImportError:
     from gridcodes_migrator import MigrationError, analyze_migration, export_plan
-    from utils_ui import center_window, ScrollableFrame
+    from utils_ui import center_window, ScrollableFrame, theme_native_widget
 
 
 class GridCodesMigrationWindow:
@@ -158,6 +158,7 @@ class GridCodesMigrationWindow:
         detail.columnconfigure(0, weight=1)
         detail.rowconfigure(0, weight=1)
         self.details = tk.Text(detail, height=8, wrap="word", state="disabled")
+        theme_native_widget(self.details)
         self.details.grid(row=0, column=0, sticky="nsew")
 
     def _path_row(self, parent, row, column, label, variable, command):

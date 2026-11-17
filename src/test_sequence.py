@@ -26,7 +26,7 @@ try:
         validate_cosphi,
         validate_reactive_power,
     )
-    from .utils_ui import center_window, ScrollableFrame
+    from .utils_ui import center_window, ScrollableFrame, theme_native_widget
 except ImportError:
     try:
         from energy_manager import ENERGY_TOOL_RESOLVE
@@ -37,7 +37,7 @@ except ImportError:
             validate_cosphi,
             validate_reactive_power,
         )
-        from utils_ui import center_window, ScrollableFrame
+        from utils_ui import center_window, ScrollableFrame, theme_native_widget
     except ImportError:
         from src.energy_manager import ENERGY_TOOL_RESOLVE
         from src.setpoint_validation import (
@@ -47,7 +47,7 @@ except ImportError:
             validate_cosphi,
             validate_reactive_power,
         )
-        from src.utils_ui import center_window, ScrollableFrame
+        from src.utils_ui import center_window, ScrollableFrame, theme_native_widget
 
 
 class TestSequenceWindow:
@@ -289,6 +289,7 @@ class TestSequenceWindow:
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
         self.log_text = tk.Text(log_frame, height=6, wrap="word", state="disabled")
+        theme_native_widget(self.log_text)
         self.log_text.grid(row=0, column=0, sticky="nsew")
         log_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
         log_scroll.grid(row=0, column=1, sticky="ns")

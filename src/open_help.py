@@ -5,12 +5,12 @@ import tkinter as tk
 from tkinter import ttk
 
 try:
-    from .utils_ui import center_window
+    from .utils_ui import center_window, theme_native_widget
 except ImportError:
     try:
-        from utils_ui import center_window
+        from utils_ui import center_window, theme_native_widget
     except ImportError:
-        from src.utils_ui import center_window
+        from src.utils_ui import center_window, theme_native_widget
 
 
 def open_help(parent=None):
@@ -72,6 +72,7 @@ def open_help(parent=None):
     )
     scroll = ttk.Scrollbar(text_frame, orient="vertical", command=text.yview)
     text.configure(yscrollcommand=scroll.set)
+    theme_native_widget(text)
     text.pack(side="left", fill="both", expand=True)
     scroll.pack(side="right", fill="y")
 

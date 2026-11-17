@@ -12,7 +12,7 @@ import csv
 import re
 
 try:
-    from .utils_ui import center_window, ScrollableFrame
+    from .utils_ui import center_window, ScrollableFrame, theme_native_widget
     from .setpoint_validation import (
         finite_number,
         validate_active_power,
@@ -21,7 +21,7 @@ try:
     )
 except ImportError:
     try:
-        from utils_ui import center_window, ScrollableFrame
+        from utils_ui import center_window, ScrollableFrame, theme_native_widget
         from setpoint_validation import (
             finite_number,
             validate_active_power,
@@ -29,7 +29,7 @@ except ImportError:
             validate_reactive_power,
         )
     except ImportError:
-        from src.utils_ui import center_window, ScrollableFrame
+        from src.utils_ui import center_window, ScrollableFrame, theme_native_widget
         from src.setpoint_validation import (
             finite_number,
             validate_active_power,
@@ -450,6 +450,7 @@ class EnergyManagerWindow:
             relief="solid",
             borderwidth=1,
         )
+        theme_native_widget(self.monitor_text)
         self.monitor_text.pack(fill="both", expand=True, pady=(0, 10))
 
         btns = ttk.Frame(frm)

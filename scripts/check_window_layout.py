@@ -36,6 +36,7 @@ parser.add_argument(
 parser.add_argument(
     "--compact", action="store_true", help="Constrain windows to a 1024x600 work area"
 )
+parser.add_argument("--theme", choices=("flatly", "darkly"), default="flatly")
 args = parser.parse_args()
 scale = args.scale
 r = ttk.Window(themename="flatly")
@@ -52,6 +53,7 @@ with patch("src.RemoteBorneManager.ttk.Window", return_value=r), patch(
     "src.RemoteBorneManager.SSHManager.start"
 ):
     app = RemoteBorneApp(cfg)
+app._apply_theme(args.theme)
 app.ssh_queue.stop()
 app.ssh_queue = Mock()
 app.ssh_queue.execute.return_value = True
@@ -253,6 +255,7 @@ with tempfile.TemporaryDirectory() as d:
     bad += audit("netlogger", w)
     w.destroy()
     app._file_entries = ["test"]
+    app._file_list_path = app.current_path
     app._open_file_find_dialog()
     w = app._browser_find_dialog
     bad += audit("find", w)
