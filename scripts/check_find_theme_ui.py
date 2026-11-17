@@ -67,6 +67,15 @@ with tempfile.TemporaryDirectory() as directory:
         r.update()
         assert text.cget('background') == app.style.lookup('TEntry', 'fieldbackground')
         assert text.cget('insertbackground') == app.style.lookup('TLabel', 'foreground')
+        scrollbars = [w for w in children(editor) if w.winfo_class() == 'TScrollbar']
+        assert not any(w.winfo_ismapped() for w in scrollbars), 'empty scroll tracks visible'
+        text.insert('end', ('long_value=' + 'x' * 500 + '\n') * 100)
+        r.update()
+        assert all(w.winfo_ismapped() for w in scrollbars), 'overflow cannot be scrolled'
+        text.delete('1.0', 'end')
+        text.insert('1.0', content)
+        r.update()
+        assert not any(w.winfo_ismapped() for w in scrollbars)
         button(editor, 'Find').invoke()
         find = app._find_dialog
         query = next(w for w in children(find) if w.winfo_class() == 'TEntry')
@@ -85,6 +94,19 @@ with tempfile.TemporaryDirectory() as directory:
         r.update()
         assert text.cget('background') == app.style.lookup('TEntry', 'fieldbackground')
         assert text.get('1.0', 'end-1c') == content
+        with patch.object(app.ssh, 'scp_put', return_value={'success': True, 'out': '', 'err': ''}) as upload, \
+             patch.object(app, 'refresh_file_list'), \
+             patch('src.RemoteBorneManager.messagebox.askyesno', return_value=True), \
+             patch('src.RemoteBorneManager.simpledialog.askstring', return_value='copy.properties'), \
+             patch('src.RemoteBorneManager.threading.Thread', side_effect=lambda target, **kw: Mock(start=target)):
+            button(editor, 'Save').invoke()
+            r.update()
+            assert upload.call_args.args[:2] == (str(local), '/grid/test.properties')
+            assert local.read_text(encoding='utf-8') == content
+            button(editor, 'Save As').invoke()
+            app.ssh_queue.execute.call_args.kwargs['callback']({'success': False})
+            r.update()
+            assert upload.call_args.args[:2] == (str(local), '/grid/copy.properties')
         app._close_editor_window()
         assert not local.exists()
         debug = DebugLogsWindow(r, ('127.0.0.1', 'user', 'test'))

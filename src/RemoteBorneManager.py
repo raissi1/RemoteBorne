@@ -4643,12 +4643,26 @@ class RemoteBorneApp:
         self._editor_window = win
         self._editor_remote_path = remote_path
 
-        editor_frame = ttk.Frame(win)
+        # Fill the native Toplevel completely: its OS default background can
+        # otherwise leave light bands around dark themed controls on Windows.
+        body = ttk.Frame(win, padding=12)
+        body.pack(fill="both", expand=True)
+        heading = ttk.Frame(body)
+        heading.pack(fill="x", pady=(0, 10))
+        ttk.Label(heading, text=posixpath.basename(remote_path),
+                  font=("Segoe UI", 12, "bold")).pack(side="left")
+        ttk.Label(heading, text="File editor").pack(side="right")
+
+        editor_frame = ttk.Frame(body)
         editor_frame.pack(fill="both", expand=True)
         editor_frame.grid_rowconfigure(0, weight=1)
         editor_frame.grid_columnconfigure(0, weight=1)
 
-        txt = tk.Text(editor_frame, wrap="none", undo=True)
+        txt = tk.Text(
+            editor_frame, wrap="none", undo=True, font=("Consolas", 11),
+            padx=12, pady=10, borderwidth=0, highlightthickness=0,
+            spacing1=1, spacing3=1,
+        )
         theme_native_widget(txt)
         txt.grid(row=0, column=0, sticky="nsew")
 
@@ -4656,7 +4670,17 @@ class RemoteBorneApp:
         vs.grid(row=0, column=1, sticky="ns")
         hs = ttk.Scrollbar(editor_frame, orient="horizontal", command=txt.xview)
         hs.grid(row=1, column=0, sticky="ew")
-        txt.configure(yscrollcommand=vs.set, xscrollcommand=hs.set)
+        def update_scrollbar(scrollbar, first, last):
+            scrollbar.set(first, last)
+            if float(first) <= 0 and float(last) >= 1:
+                scrollbar.grid_remove()
+            else:
+                scrollbar.grid()
+
+        txt.configure(
+            yscrollcommand=lambda first, last: update_scrollbar(vs, first, last),
+            xscrollcommand=lambda first, last: update_scrollbar(hs, first, last),
+        )
 
         try:
             with open(tmp_local, "r", encoding="utf-8", errors="ignore") as f:
@@ -4664,15 +4688,16 @@ class RemoteBorneApp:
         except Exception as e:
             self.log(f"[EDIT ERROR] {e}")
 
-        btn_bar = ttk.Frame(win)
+        btn_bar = ttk.Frame(body, padding=(0, 10, 0, 0))
         btn_bar.pack(fill="x", side="bottom", before=editor_frame)
 
-        status_bar = ttk.Label(win, text="")
-        status_bar.pack(fill="x", side="bottom", before=editor_frame, padx=6, pady=(0, 4))
+        editor_hint = "UTF-8  |  Ctrl+F: Find  |  Ctrl+W: Close"
+        status_bar = ttk.Label(body, text=editor_hint)
+        status_bar.pack(fill="x", side="bottom", before=editor_frame, pady=(8, 0))
 
         def clear_find_highlight():
             txt.tag_remove("find_match", "1.0", "end")
-            status_bar.configure(text="")
+            status_bar.configure(text=editor_hint)
 
         def close_editor():
             if getattr(self, "_find_dialog", None) and self._find_dialog.winfo_exists():
@@ -4718,10 +4743,11 @@ class RemoteBorneApp:
             dialog.transient("")
             dialog.resizable(True, True)
             self._center_toplevel(dialog, 520, 170, parent=win)
-            dialog.grid_columnconfigure(0, weight=0)
-            dialog.grid_columnconfigure(1, weight=1)
-            dialog.grid_rowconfigure(0, weight=0)
-            dialog.grid_rowconfigure(1, weight=0)
+            find_body = ttk.Frame(dialog, padding=16)
+            find_body.pack(fill="both", expand=True)
+            find_body.grid_columnconfigure(0, weight=1)
+            ttk.Label(find_body, text="Find in file", font=("Segoe UI", 11, "bold")).grid(
+                row=0, column=0, sticky="w", pady=(0, 10))
             def close_find_dialog():
                 try:
                     dialog.grab_release()
@@ -4740,10 +4766,17 @@ class RemoteBorneApp:
 
             dialog.protocol("WM_DELETE_WINDOW", close_find_dialog)
 
-            ttk.Label(dialog, text="Search text:").grid(row=0, column=0, padx=10, pady=(12, 8), sticky="w")
+            ttk.Label(find_body, text="Search text").grid(row=1, column=0, sticky="w", pady=(0, 5))
             q_var = tk.StringVar()
-            q_entry = ttk.Entry(dialog, textvariable=q_var, width=42)
-            q_entry.grid(row=0, column=1, padx=(0, 10), pady=(12, 8), sticky="ew")
+            q_entry = ttk.Entry(find_body, textvariable=q_var, width=42)
+            q_entry.grid(row=2, column=0, sticky="ew")
+            find_feedback = tk.StringVar(value="Case-insensitive search  |  Enter: Find  |  Esc: Close")
+            ttk.Label(find_body, textvariable=find_feedback).grid(
+                row=3, column=0, sticky="w", pady=(8, 12))
+
+            def show_find_status(message):
+                status_bar.configure(text=message)
+                find_feedback.set(message)
             q_entry.focus_set()
 
             txt.tag_configure("find_match", background="#ffe082", foreground="#000000")
@@ -4759,9 +4792,7 @@ class RemoteBorneApp:
                 txt.see(start)
                 txt.tag_remove("sel", "1.0", "end")
                 txt.tag_add("sel", start, end)
-                status_bar.configure(
-                    text=f"Find: {len(find_state['ranges'])} match(es) | {i + 1}/{len(find_state['ranges'])}"
-                )
+                show_find_status(f"Find: {len(find_state['ranges'])} match(es) | {i + 1}/{len(find_state['ranges'])}")
 
             def run_find(*_):
                 needle = q_var.get()
@@ -4769,7 +4800,7 @@ class RemoteBorneApp:
                 find_state["ranges"] = []
                 find_state["pos"] = -1
                 if not needle:
-                    status_bar.configure(text="Find: empty query")
+                    show_find_status("Enter text to search.")
                     return
 
                 start = "1.0"
@@ -4785,7 +4816,7 @@ class RemoteBorneApp:
                 if find_state["ranges"]:
                     _focus_match(0)
                 else:
-                    status_bar.configure(text="Find: no match")
+                    show_find_status("No match found.")
 
             def next_match(*_):
                 if find_state["ranges"]:
@@ -4795,13 +4826,14 @@ class RemoteBorneApp:
                 if find_state["ranges"]:
                     _focus_match(find_state["pos"] - 1)
 
-            btns = ttk.Frame(dialog)
-            btns.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 10))
+            btns = ttk.Frame(find_body)
+            btns.grid(row=4, column=0, sticky="ew")
             btns.grid_columnconfigure(0, weight=1)
             btns.grid_columnconfigure(1, weight=0)
             btns.grid_columnconfigure(2, weight=0)
             btns.grid_columnconfigure(3, weight=0)
-            ttk.Button(btns, text="Find", command=run_find, width=10).grid(row=0, column=1, padx=(0, 6))
+            ttk.Button(btns, text="Close", command=close_find_dialog, width=8).grid(row=0, column=0, sticky="w", padx=(0, 16))
+            ttk.Button(btns, text="Find", command=run_find, width=9).grid(row=0, column=1, padx=(0, 6))
             ttk.Button(btns, text="Previous", command=prev_match, width=10).grid(row=0, column=2, padx=6)
             ttk.Button(btns, text="Next", command=next_match, width=10).grid(row=0, column=3, padx=(6, 0))
             q_entry.bind("<Return>", run_find)
@@ -4814,6 +4846,7 @@ class RemoteBorneApp:
             dialog.lift()
             dialog.focus_force()
             dialog.grab_set()
+            dialog.after_idle(q_entry.focus_set)
 
         def _write_local_and_upload(target_remote: str, check_existing: bool = True):
             content = txt.get("1.0", "end-1c")
