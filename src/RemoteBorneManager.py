@@ -50,7 +50,7 @@ from ttkbootstrap.constants import *
 try:
     from .ssh_manager import SSHManager
     from .ssh_queue import SSHQueue
-    from .utils_ui import center_window, ScrollableFrame, theme_native_widget
+    from .utils_ui import center_window, ScrollableFrame, theme_native_widget, configure_readable_styles
     from .network_config import open_network_config
     from .open_help import open_help
     from .setpoint_validation import (
@@ -66,7 +66,7 @@ except ImportError:
     try:
         from ssh_manager import SSHManager
         from ssh_queue import SSHQueue
-        from utils_ui import center_window, ScrollableFrame, theme_native_widget
+        from utils_ui import center_window, ScrollableFrame, theme_native_widget, configure_readable_styles
         from network_config import open_network_config
         from open_help import open_help
         from setpoint_validation import (
@@ -81,7 +81,7 @@ except ImportError:
     except ImportError:
         from src.ssh_manager import SSHManager
         from src.ssh_queue import SSHQueue
-        from src.utils_ui import center_window, ScrollableFrame, theme_native_widget
+        from src.utils_ui import center_window, ScrollableFrame, theme_native_widget, configure_readable_styles
         from src.network_config import open_network_config
         from src.open_help import open_help
         from src.setpoint_validation import (
@@ -814,6 +814,7 @@ class RemoteBorneApp:
     # ==================================================================
     def _configure_ui_styles(self):
         """Keep the main workspace visually consistent across screen sizes."""
+        configure_readable_styles(self.style)
         self.style.configure(
             "HeaderTitle.TLabel",
             font=("Segoe UI", 14, "bold"),
@@ -2223,11 +2224,11 @@ class RemoteBorneApp:
             def apply_ui():
                 if temp_display is None:
                     self.temp_label_var.set("Relay: -- °C")
-                    self.temp_label.configure(foreground="")
+                    self.temp_label.configure(foreground="", style="TLabel")
                 else:
                     self.temp_label_var.set(temp_display)
                     self.temp_label.configure(
-                        foreground=("red" if (max_temp or 0) > 80 else "green")
+                        foreground="", style=("danger.TLabel" if (max_temp or 0) > 80 else "success.TLabel")
                     )
                 self.soc_label_var.set(
                     f"Battery SoC (last known): {soc_value}"
@@ -2296,7 +2297,7 @@ class RemoteBorneApp:
                 self._set_led(False)
                 self._clear_file_list_ui()
                 self.temp_label_var.set("Relay: -- °C")
-                self.temp_label.configure(foreground="")
+                self.temp_label.configure(foreground="", style="TLabel")
                 self.soc_label_var.set("Battery SoC: --")
                 self.last_active_power_var.set("--")
                 self._update_controls_state()
@@ -2314,7 +2315,7 @@ class RemoteBorneApp:
                 self._set_led(False)
                 self._clear_file_list_ui()
                 self.temp_label_var.set("Relay: -- °C")
-                self.temp_label.configure(foreground="")
+                self.temp_label.configure(foreground="", style="TLabel")
                 self.soc_label_var.set("Battery SoC: --")
                 self.last_active_power_var.set("--")
                 self._update_controls_state()
@@ -4245,9 +4246,9 @@ class RemoteBorneApp:
 
             threading.Thread(target=worker, daemon=True).start()
 
-        detect_button = ttk.Button(actions, text="Detect folder", command=detect_folder)
+        detect_button = ttk.Button(actions, text="Detect folder", command=detect_folder, width=0)
         detect_button.grid(row=0, column=0, sticky="w", padx=(0, 6))
-        reload_button = ttk.Button(actions, text="Refresh list", command=list_files)
+        reload_button = ttk.Button(actions, text="Refresh list", command=list_files, width=0)
         reload_button.grid(row=0, column=1, padx=(0, 6))
         download_button = ttk.Button(
             actions,
@@ -4267,7 +4268,19 @@ class RemoteBorneApp:
             except tk.TclError:
                 pass
 
-        ttk.Button(actions, text="Close", command=close_netlogger_dialog).grid(row=0, column=3)
+        close_button = ttk.Button(actions, text="Close", command=close_netlogger_dialog, width=0)
+        download_button.configure(width=0)
+        action_buttons = (detect_button, reload_button, download_button, close_button)
+
+        def layout_netlogger_actions(_event=None):
+            columns = 2 if actions.winfo_width() < sum(b.winfo_reqwidth() + 8 for b in action_buttons) else 4
+            for column in range(4):
+                actions.columnconfigure(column, weight=1 if column < columns else 0)
+            for index, button in enumerate(action_buttons):
+                button.grid(row=index // columns, column=index % columns,
+                            sticky="ew", padx=4, pady=4)
+        actions.bind("<Configure>", layout_netlogger_actions, add="+")
+        actions.after_idle(layout_netlogger_actions)
 
         dialog.protocol("WM_DELETE_WINDOW", close_netlogger_dialog)
         dialog.deiconify()

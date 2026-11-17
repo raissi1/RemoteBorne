@@ -456,19 +456,21 @@ class EnergyManagerWindow:
         btns = ttk.Frame(frm)
         btns.pack(side="bottom", fill="x", before=self.monitor_text)
 
-        ttk.Button(
-            btns,
-            text="Refresh status",
-            bootstyle="info",
-            command=self.refresh_status,
-        ).pack(side="left", padx=5, pady=5)
+        refresh = ttk.Button(btns, text="Refresh status", bootstyle="info",
+                             command=self.refresh_status, width=0)
+        restart = ttk.Button(btns, text="Restart S91energy-manager", bootstyle="warning",
+                             command=self.restart_energy_service, width=0)
+        btns.columnconfigure(0, weight=1)
+        btns.columnconfigure(1, weight=1)
 
-        ttk.Button(
-            btns,
-            text="Restart S91energy-manager",
-            bootstyle="warning",
-            command=self.restart_energy_service,
-        ).pack(side="left", padx=5, pady=5)
+        def layout_monitor_actions(_event=None):
+            stacked = btns.winfo_width() < refresh.winfo_reqwidth() + restart.winfo_reqwidth() + 20
+            refresh.grid(row=0, column=0, columnspan=2 if stacked else 1,
+                         sticky="ew", padx=4, pady=4)
+            restart.grid(row=1 if stacked else 0, column=0 if stacked else 1,
+                         columnspan=2 if stacked else 1, sticky="ew", padx=4, pady=4)
+        btns.bind("<Configure>", layout_monitor_actions, add="+")
+        btns.after_idle(layout_monitor_actions)
 
     # ------------------------------------------------------------
     # LOGIQUE P/Q & COSPHI

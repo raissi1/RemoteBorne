@@ -6,6 +6,52 @@ import tkinter as tk
 from tkinter import ttk
 
 
+def _relative_luminance(color):
+    channels = [int(color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    return sum((c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4) * weight
+               for c, weight in zip(channels, (0.2126, 0.7152, 0.0722)))
+
+
+def _contrast(a, b):
+    low, high = sorted((_relative_luminance(a), _relative_luminance(b)))
+    return (high + 0.05) / (low + 0.05)
+
+
+def configure_readable_styles(style):
+    """Preserve semantic button colors while keeping normal text readable."""
+    colors = getattr(style, "colors", None)
+    if colors is None:
+        return
+    disabled_bg = style.lookup("TButton", "background", ("disabled",))
+    disabled_fg = style.lookup("TButton", "foreground", ("disabled",))
+    for semantic in ("primary", "secondary", "success", "info", "warning", "danger", "light", "dark"):
+        background = getattr(colors, semantic)
+        foreground = "#111111" if semantic in ("warning", "light") else "#ffffff"
+        if not re.fullmatch(r"#[0-9a-fA-F]{6}", background):
+            continue
+        # Darken bright fills enough to retain familiar white button captions.
+        for _ in range(64):
+            if _contrast(background, foreground) >= 4.5:
+                break
+            background = "#" + "".join(f"{int(int(background[i:i+2], 16) * .94):02x}" for i in (1, 3, 5))
+        shade = lambda factor: "#" + "".join(f"{int(int(background[i:i+2], 16) * factor):02x}" for i in (1, 3, 5))
+        name = semantic + ".TButton"
+        style.configure(name, background=background, foreground=foreground)
+        style.map(name, background=[("disabled", disabled_bg), ("pressed", shade(.85)), ("active", shade(.94))],
+                  foreground=[("disabled", disabled_fg), ("!disabled", foreground)])
+    for semantic in ("primary", "success", "info", "warning", "danger"):
+        foreground = getattr(colors, semantic)
+        for _ in range(64):
+            if _contrast(foreground, colors.bg) >= 4.5:
+                break
+            foreground = "#" + "".join(f"{round(int(foreground[i:i+2], 16) * .85 + int(colors.fg[i:i+2], 16) * .15):02x}"
+                                        for i in (1, 3, 5))
+        style.configure(semantic + ".TLabel", foreground=foreground, background=colors.bg)
+    # Secondary label colors from the stock dark theme are too close to its
+    # surface. Use the regular text color for instructions and summaries.
+    style.configure("secondary.TLabel", foreground=colors.fg, background=colors.bg)
+
+
 def theme_native_widget(widget):
     """Explicitly theme classic Tk surfaces, including after a theme switch.
 
@@ -20,12 +66,16 @@ def theme_native_widget(widget):
         foreground = style.lookup("TLabel", "foreground")
         selection = style.lookup("TEntry", "selectbackground") or "#375a7f"
         selection_fg = style.lookup("TEntry", "selectforeground") or foreground
-        options = {"background": style.lookup("TFrame", "background") if widget.winfo_class() == "Canvas" else background}
-        if widget.winfo_class() != "Canvas":
+        options = {"background": style.lookup("TFrame", "background") if widget.winfo_class() in ("Canvas", "Toplevel", "Tk") else background}
+        if widget.winfo_class() not in ("Canvas", "Toplevel", "Tk"):
             options.update(foreground=foreground, selectbackground=selection, selectforeground=selection_fg)
         if widget.winfo_class() == "Text":
             options["insertbackground"] = foreground
         widget.configure(**options)
+        if widget.winfo_class() == "Text":
+            for tag, semantic in (("INFO", "success"), ("WARN", "warning"), ("ERROR", "danger")):
+                if tag in widget.tag_names():
+                    widget.tag_configure(tag, foreground=style.lookup(semantic + ".TLabel", "foreground"))
 
     def changed(_event=None):
         # Apply after ttkbootstrap's own theme handlers, not before them.
@@ -51,6 +101,9 @@ def screen_work_area(win):
 
 def center_window(parent, win, width=900, height=600):
     """Center within usable screen space; never force an oversized minimum."""
+    if not getattr(win, "_rbm_surface_themed", False):
+        theme_native_widget(win)
+        win._rbm_surface_themed = True
     win.update_idletasks()
     left, top, right, bottom = screen_work_area(win)
     decoration_height = 0

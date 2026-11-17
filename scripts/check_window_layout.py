@@ -11,6 +11,7 @@ import pathlib
 import tempfile
 import configparser
 import tkinter as tk
+import tkinter.font as tkfont
 from unittest.mock import Mock, patch
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -23,7 +24,7 @@ from src.test_sequence import TestSequenceWindow
 from src.gridcodes_migration_ui import GridCodesMigrationWindow
 from src.debug_logs import DebugLogsWindow
 from src.open_help import open_help
-from src.utils_ui import ScrollableFrame
+from src.utils_ui import ScrollableFrame, _contrast
 import argparse
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -59,6 +60,7 @@ app.ssh_queue = Mock()
 app.ssh_queue.execute.return_value = True
 app.connected = True
 app.ssh.connected = True
+app._update_controls_state()
 
 
 def descendants(w):
@@ -91,9 +93,20 @@ def visible(w):
 def audit(name, w):
     r.update()
     bad = []
+    # Check actual rendered styles, not merely whether controls exist.
+    for item in descendants(w):
+        if item.winfo_class() not in ("TLabel", "TButton") or not item.winfo_ismapped():
+            continue
+        if "disabled" in item.state() or not str(item.cget("text")):
+            continue
+        style = str(item.cget("style")) or item.winfo_class()
+        foreground = (item.cget("foreground") if "foreground" in item.keys() else "") or app.style.lookup(style, "foreground")
+        background = (item.cget("background") if "background" in item.keys() else "") or app.style.lookup(style, "background") or app.style.lookup("TFrame", "background")
+        if foreground and background and _contrast(str(foreground), str(background)) < 4.5:
+            bad.append("Low contrast: " + str(item.cget("text")))
     scroll_count = 0
     for widget in list(descendants(w)):
-        if widget.winfo_class() not in ("TButton", "Button"):
+        if widget.winfo_class() not in ("TButton", "Button", "TCheckbutton", "TRadiobutton", "TMenubutton"):
             continue
         # Skip only inactive notebook tabs, not controls that geometry has hidden.
         node = widget
@@ -108,15 +121,20 @@ def audit(name, w):
             node = node.master
         if inactive:
             continue
+        style_name = str(widget.cget("style")) if "style" in widget.keys() else ""
+        label = str(widget.cget("text"))
+        font = app.style.lookup(style_name or widget.winfo_class(), "font") or "TkDefaultFont"
+        if label and widget.winfo_width() < tkfont.Font(font=font).measure(label) + 8:
+            bad.append("Clipped caption: " + label)
         if not visible(widget):
             p = widget.master
-            scroll = None
+            scrolls = []
             while p and p is not w:
                 if isinstance(p, ScrollableFrame):
-                    scroll = p
-                    break
+                    scrolls.append(p)
                 p = p.master
-            if scroll:
+            scroll = None
+            for scroll in scrolls:
                 content = scroll.content
                 canvas = scroll.canvas
                 canvas.xview_moveto(
@@ -213,6 +231,8 @@ with tempfile.TemporaryDirectory() as d:
         bad += audit(f"energy-width-{width}", energy.win)
     energy.close()
     seq = TestSequenceWindow(r, app.ssh_queue, lambda: True, lambda: 11000)
+    app._add_test_sequence_file_actions(seq)
+    app._add_test_sequence_pn_helper(seq)
     seq.win.deiconify()
     bad += audit("sequence", seq.win)
     seq.close(force=True)
@@ -223,6 +243,9 @@ with tempfile.TemporaryDirectory() as d:
     migration.close()
     debug = DebugLogsWindow(r, ("127.0.0.1", "root", "test"))
     bad += audit("debug", debug.window)
+    for tab in debug.notebook.tabs():
+        debug.notebook.select(tab)
+        bad += audit("debug-tab-" + debug.notebook.tab(tab, "text"), debug.window)
     for name in debug.log_buffers:
         debug.log_buffers[name] = ["ERROR example"]
     debug.global_find_var.set("ERROR")

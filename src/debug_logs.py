@@ -803,9 +803,9 @@ class DebugLogsWindow:
         text_area = ScrolledText(frame, wrap="word", height=20)
         theme_native_widget(text_area)
         text_area.grid(row=0, column=0, sticky="nsew", padx=2, pady=(2, 0))
-        text_area.tag_configure("ERROR", foreground="red")
-        text_area.tag_configure("WARN", foreground="orange")
-        text_area.tag_configure("INFO", foreground="green")
+        text_area.tag_configure("ERROR", foreground=ttk.Style(self.window).lookup("danger.TLabel", "foreground"))
+        text_area.tag_configure("WARN", foreground=ttk.Style(self.window).lookup("warning.TLabel", "foreground"))
+        text_area.tag_configure("INFO", foreground=ttk.Style(self.window).lookup("success.TLabel", "foreground"))
         self.text_widgets[name] = text_area
 
         # --- Filtres (grep -i + niveaux) ---
