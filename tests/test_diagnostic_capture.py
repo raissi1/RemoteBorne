@@ -152,5 +152,34 @@ class TestCapture(unittest.TestCase):
         self.assertEqual(self.backend.exec("inactive"), (0, "output", ""))
 
 
+class TestPortableCapturePaths(unittest.TestCase):
+    def test_frozen_capture_paths_follow_exe_not_bundle_or_working_directory(self):
+        import src.debug_logs as logs
+        with tempfile.TemporaryDirectory() as directory:
+            exe = Path(directory) / "portable" / "RBM.exe"
+            with patch.object(logs.sys, "frozen", True, create=True), \
+                 patch.object(logs.sys, "executable", str(exe)), \
+                 patch.object(logs.sys, "_MEIPASS", "/different/bundle", create=True), \
+                 patch.dict("os.environ", {"LOCALAPPDATA": "/different/user"}):
+                expected = exe.resolve().parent / "captures"
+                self.assertEqual(Path(logs._runtime_incidents_dir()), expected)
+                self.assertEqual(Path(logs._runtime_logs_dir()), expected / "logs")
+                self.assertFalse(expected.exists(), "path resolution must not create files")
+
+    def test_source_paths_follow_project_root(self):
+        import src.debug_logs as logs
+        with patch.object(logs.sys, "frozen", False, create=True):
+            self.assertEqual(Path(logs._runtime_incidents_dir()),
+                             Path(logs.__file__).resolve().parent.parent / "captures")
+
+    def test_unwritable_destination_does_not_start_recording(self):
+        recorder = DiagnosticRecorder()
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(Path, "mkdir", side_effect=PermissionError("read-only app folder")):
+            with self.assertRaisesRegex(PermissionError, "read-only"):
+                recorder.start(directory, {})
+        self.assertIsNone(recorder.session)
+
+
 if __name__ == "__main__":
     unittest.main()

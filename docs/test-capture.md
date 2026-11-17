@@ -11,8 +11,15 @@ une chronologie CSV/JSONL des commandes SSH et transferts avec leurs résultats,
 et une copie de la configuration GridCodes active si sa lecture réussit.
 Le fichier `manifest.json` indique les flux sans données, les commandes encore
 inachevées, les éventuelles pertes, erreurs ou troncatures. `README.txt` explique
-les fichiers. Le dossier est enregistré dans le répertoire utilisateur des
-captures d’incident de RBM, sans envoi automatique.
+les fichiers. Le dossier est enregistré dans **`captures` à côté de `RBM.exe`** pour la version
+portable, ou dans **`captures` à la racine du projet** en lancement Python.
+Les logs complets du suivi sont dans `captures/logs` ; les sessions `test_*`
+et les captures instantanées `incident_*` restent dans `captures`.
+Le chemin ne dépend pas du dossier courant du terminal ou d’un raccourci.
+Le dossier doit être accessible en écriture : une erreur est affichée sinon,
+sans déplacer les captures vers AppData. Les anciennes captures dans AppData
+restent à leur emplacement ; elles peuvent être copiées manuellement.
+Aucun envoi automatique n’est effectué.
 
 La pause, les filtres et l’effacement de l’affichage ne filtrent pas cette capture.
 Les flux déjà actifs restent ouverts après **Finish** ; seuls ceux démarrés par

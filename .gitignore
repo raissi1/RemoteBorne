@@ -18,6 +18,7 @@ venv/
 config/config.ini
 logs/
 exports/
+captures/
 
 # ============================
 # Build artifacts

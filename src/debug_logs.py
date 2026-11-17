@@ -86,16 +86,23 @@ def _detect_plink() -> str:
 PLINK_PATH = _detect_plink()
 
 
+def _runtime_captures_dir() -> str:
+    """Keep portable diagnostic data beside the executable, never in cwd."""
+    if getattr(sys, "frozen", False):
+        app_dir = Path(sys.executable).resolve().parent
+    else:
+        app_dir = Path(__file__).resolve().parent.parent
+    return str(app_dir / "captures")
+
+
 def _runtime_logs_dir() -> str:
-    """Return a writable, launch-directory-independent folder for captures."""
-    base_dir = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
-    return os.path.join(base_dir, "RemoteBorneManager", "logs")
+    """Full live logs share the portable application's capture directory."""
+    return os.path.join(_runtime_captures_dir(), "logs")
 
 
 def _runtime_incidents_dir() -> str:
-    """Return the per-user location used for operator incident captures."""
-    base_dir = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
-    return os.path.join(base_dir, "RemoteBorneManager", "incidents")
+    """Snapshots and test sessions stay inside the portable application."""
+    return _runtime_captures_dir()
 
 
 def parse_diagnostic_line(log_name: str, line: str) -> dict[str, str]:
