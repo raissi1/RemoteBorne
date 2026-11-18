@@ -52,7 +52,7 @@ class TestStabilityFixes(unittest.TestCase):
         from src.RemoteBorneManager import _local_export_dir, EXPORTS_DIR
         self.assertEqual(pathlib.Path(_local_export_dir("exports.v17")), ROOT / "exports.v17")
         self.assertEqual(_local_export_dir(""), EXPORTS_DIR)
-        self.assertEqual(pathlib.Path(_local_export_dir("exports/old.properties")), ROOT / "exports")
+        self.assertEqual(pathlib.Path(_local_export_dir("exports/old.properties")), ROOT / "export")
 
     def test_config_supports_percent_signs_in_passwords(self):
         import src.RemoteBorneManager as manager
@@ -605,7 +605,7 @@ class TestSafetyRegressionGuards(unittest.TestCase):
     def test_relative_export_paths_are_portable(self):
         from src.RemoteBorneManager import _local_export_dir
 
-        expected = (ROOT / "exports").resolve()
+        expected = (ROOT / "export").resolve()
         self.assertEqual(pathlib.Path(_local_export_dir("exports")), expected)
 
     def test_runtime_templates_and_version_are_aligned(self):

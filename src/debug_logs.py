@@ -22,8 +22,10 @@ except ImportError:
         from src.utils_ui import center_window, ScrollableFrame, theme_native_widget, ui_font, mono_font
 
 try:
+    from .runtime_paths import export_directory
     from .diagnostic_capture import DiagnosticRecorder
 except ImportError:
+    from runtime_paths import export_directory
     from diagnostic_capture import DiagnosticRecorder
 
 MAX_LINES = 10000  # max lignes conservÃ©es en mÃ©moire ET dans la vue
@@ -92,7 +94,7 @@ def _runtime_captures_dir() -> str:
         app_dir = Path(sys.executable).resolve().parent
     else:
         app_dir = Path(__file__).resolve().parent.parent
-    return str(app_dir / "export")
+    return export_directory(app_dir)
 
 
 def _runtime_logs_dir() -> str:

@@ -48,6 +48,7 @@ from ttkbootstrap.constants import *
 # Imports projet (compat mode script + mode package "src")
 # ----------------------------------------------------------------------
 try:
+    from .runtime_paths import export_directory, normalize_export_folder, consolidate_export_folders
     from .ssh_manager import SSHManager
     from .ssh_queue import SSHQueue
     from .utils_ui import center_window, ScrollableFrame, theme_native_widget, configure_readable_styles, use_application_theme, ui_font, mono_font, configure_application_fonts
@@ -64,6 +65,7 @@ try:
     from . import gridcodes_migration_ui
 except ImportError:
     try:
+        from runtime_paths import export_directory, normalize_export_folder, consolidate_export_folders
         from ssh_manager import SSHManager
         from ssh_queue import SSHQueue
         from utils_ui import center_window, ScrollableFrame, theme_native_widget, configure_readable_styles, use_application_theme, ui_font, mono_font, configure_application_fonts
@@ -79,6 +81,7 @@ except ImportError:
         import test_sequence
         import gridcodes_migration_ui
     except ImportError:
+        from src.runtime_paths import export_directory, normalize_export_folder, consolidate_export_folders
         from src.ssh_manager import SSHManager
         from src.ssh_queue import SSHQueue
         from src.utils_ui import center_window, ScrollableFrame, theme_native_widget, configure_readable_styles, use_application_theme, ui_font, mono_font, configure_application_fonts
@@ -159,7 +162,7 @@ BASE_DIR = _base_dir()
 CONFIG_DIR  = os.path.join(BASE_DIR, "config")
 DOCS_DIR    = os.path.join(BASE_DIR, "documents")
 TOOLS_DIR   = os.path.join(BASE_DIR, "tools")
-EXPORTS_DIR = os.path.join(BASE_DIR, "exports")
+EXPORTS_DIR = export_directory(BASE_DIR)
 LOGS_DIR    = os.path.join(BASE_DIR, "logs")
 
 # Création des dossiers si absents
@@ -177,19 +180,11 @@ IMG_DIR_2  = os.path.join(BASE_DIR, "imgs")
 
 def _local_export_dir(value: str) -> str:
     """Return a usable export directory and migrate legacy file paths."""
-    raw = (value or "").strip()
-    if not raw:
-        return EXPORTS_DIR
-    candidate = os.path.normpath(os.path.expanduser(raw))
-    if os.path.isfile(candidate) or os.path.splitext(candidate)[1].lower() in {".properties", ".ini", ".txt", ".csv", ".json"}:
-        candidate = os.path.dirname(candidate)
-    if candidate and not os.path.isabs(candidate):
-        candidate = os.path.join(BASE_DIR, candidate)
-    return os.path.abspath(candidate) if candidate else EXPORTS_DIR
+    return normalize_export_folder(value, BASE_DIR)
 
 
 def _ensure_local_export_dir(value: str) -> str:
-    """Create the configured folder, with the portable exports folder as fallback."""
+    """Create the configured folder, with the portable export folder as fallback."""
     requested_dir = _local_export_dir(value)
     for candidate in (requested_dir, EXPORTS_DIR):
         try:
@@ -313,6 +308,9 @@ class RemoteBorneApp:
     def __init__(self, config: configparser.ConfigParser):
         # ---------- CONFIG ----------
         self.config = config
+        migration_warning = consolidate_export_folders(BASE_DIR)
+        if migration_warning:
+            print("[EXPORT] " + migration_warning)
         ssh_cfg = config["SSH"]
         paths_cfg = config["PATHS"]
 
@@ -523,6 +521,8 @@ class RemoteBorneApp:
 
         self.log(f"[INFO] RemoteBorne version: {APP_VERSION} ({os.path.basename(__file__)})")
         self.log("[INFO] Application started. Waiting for SSH events...")
+        if migration_warning:
+            self.log("[EXPORT] " + migration_warning)
         self.log(
             f"[SSH] Timeout={self.ssh_timeout}s | retry_base={self.retry_base_delay}s | retry_max={self.retry_max_delay}s | alive={self.alive_interval}s"
         )

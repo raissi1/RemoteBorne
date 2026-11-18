@@ -5,11 +5,14 @@ import os
 import ipaddress
 
 try:
+    from .runtime_paths import export_directory, normalize_export_folder
     from .utils_ui import center_window, ScrollableFrame, ui_font, mono_font
 except ImportError:
     try:
+        from runtime_paths import export_directory, normalize_export_folder
         from utils_ui import center_window, ScrollableFrame, ui_font, mono_font
     except ImportError:
+        from src.runtime_paths import export_directory, normalize_export_folder
         from src.utils_ui import center_window, ScrollableFrame, ui_font, mono_font
 
 
@@ -37,18 +40,10 @@ def open_network_config(parent, config_path, on_saved=None):
             "port": "22",
         }
     runtime_root = os.path.dirname(os.path.dirname(os.path.abspath(config_path)))
-    export_dir = os.path.join(runtime_root, "exports")
+    export_dir = export_directory(runtime_root)
 
     def normalize_local_dir(value: str) -> str:
-        raw = (value or "").strip()
-        if not raw:
-            return export_dir
-        candidate = os.path.normpath(os.path.expanduser(raw))
-        if os.path.isfile(candidate) or os.path.splitext(candidate)[1].lower() in {".properties", ".ini", ".txt", ".csv", ".json"}:
-            candidate = os.path.dirname(candidate)
-        if candidate and not os.path.isabs(candidate):
-            candidate = os.path.join(runtime_root, candidate)
-        return os.path.abspath(candidate) if candidate else export_dir
+        return normalize_export_folder(value, runtime_root)
 
     if "PATHS" not in cfg:
         cfg["PATHS"] = {
