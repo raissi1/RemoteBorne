@@ -161,8 +161,8 @@ class TestPortableCapturePaths(unittest.TestCase):
                  patch.object(logs.sys, "executable", str(exe)), \
                  patch.object(logs.sys, "_MEIPASS", "/different/bundle", create=True), \
                  patch.dict("os.environ", {"LOCALAPPDATA": "/different/user"}):
-                expected = exe.resolve().parent / "captures"
-                self.assertEqual(Path(logs._runtime_incidents_dir()), expected)
+                expected = exe.resolve().parent / "export"
+                self.assertEqual(Path(logs._runtime_incidents_dir()), expected / "incident")
                 self.assertEqual(Path(logs._runtime_logs_dir()), expected / "logs")
                 self.assertFalse(expected.exists(), "path resolution must not create files")
 
@@ -170,7 +170,7 @@ class TestPortableCapturePaths(unittest.TestCase):
         import src.debug_logs as logs
         with patch.object(logs.sys, "frozen", False, create=True):
             self.assertEqual(Path(logs._runtime_incidents_dir()),
-                             Path(logs.__file__).resolve().parent.parent / "captures")
+                             Path(logs.__file__).resolve().parent.parent / "export" / "incident")
 
     def test_unwritable_destination_does_not_start_recording(self):
         recorder = DiagnosticRecorder()

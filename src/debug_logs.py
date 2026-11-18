@@ -92,7 +92,7 @@ def _runtime_captures_dir() -> str:
         app_dir = Path(sys.executable).resolve().parent
     else:
         app_dir = Path(__file__).resolve().parent.parent
-    return str(app_dir / "captures")
+    return str(app_dir / "export")
 
 
 def _runtime_logs_dir() -> str:
@@ -102,7 +102,7 @@ def _runtime_logs_dir() -> str:
 
 def _runtime_incidents_dir() -> str:
     """Snapshots and test sessions stay inside the portable application."""
-    return _runtime_captures_dir()
+    return os.path.join(_runtime_captures_dir(), "incident")
 
 
 def parse_diagnostic_line(log_name: str, line: str) -> dict[str, str]:
@@ -381,6 +381,11 @@ class DebugLogsWindow:
             self._create_tab(name, path)
 
         self._create_global_results_tab()
+        if self.recorder.session:
+            if not self.recorder.session.finished.is_set():
+                self.capture_button.configure(text="Saving…", state="disabled")
+                self.capture_menu.entryconfigure(2, state="disabled")
+            self._poll_capture()
         self.window.bind("<Control-f>", self._focus_global_find)
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
         self.window.deiconify()
@@ -389,6 +394,7 @@ class DebugLogsWindow:
 
     def _create_global_find_bar(self, parent):
         bar = ttk.Frame(parent)
+        self._global_find_bar = bar
         bar.pack(side="left", fill="x", expand=True, padx=(16, 0))
         bar.columnconfigure(1, weight=1)
         ttk.Label(bar, text="Find:").grid(row=0, column=0)
@@ -618,19 +624,38 @@ class DebugLogsWindow:
 
         actions = ttk.Frame(footer)
         actions.pack(fill="x")
-        ttk.Button(actions, text="Start all", command=self.start_all_logs).pack(side="left", padx=(0, 6))
-        ttk.Button(actions, text="Stop all", command=self.stop_all_logs).pack(side="left", padx=(0, 6))
-        self.capture_button = ttk.Menubutton(actions, text="Capture")
-        self.capture_menu = tk.Menu(self.capture_button, tearoff=False)
+        controls = ttk.Frame(actions)
+        controls.pack(side="left")
+        ttk.Button(controls, text="Start all", command=self.start_all_logs).pack(side="left", padx=(0, 6))
+        ttk.Button(controls, text="Stop all", command=self.stop_all_logs).pack(side="left", padx=(0, 6))
+        self.capture_button = ttk.Button(controls, text="Capture incident", command=self.toggle_test_capture)
+        self.capture_options = ttk.Menubutton(controls, text="Options", width=7)
+        self.capture_menu = tk.Menu(self.capture_options, tearoff=False)
         self.capture_menu.add_command(label="Capture incident (snapshot)", command=self.capture_incident)
         self.capture_menu.add_separator()
         self.capture_menu.add_command(label="Start test capture", command=self.start_test_capture)
         self.capture_menu.add_command(label="Finish test capture", command=self.finish_test_capture, state="disabled")
         self.capture_menu.add_command(label="Open last capture folder", command=self.open_capture_folder,
                                       state="normal" if self.recorder.session else "disabled")
-        self.capture_button.configure(menu=self.capture_menu)
-        self.capture_button.pack(side="left")
+        self.capture_options.configure(menu=self.capture_menu)
+        self.capture_button.pack(side="left", padx=(0, 6))
+        self.capture_options.pack(side="left")
         self._create_global_find_bar(actions)
+
+        # Keep Find beside the controls on wide windows; move it below only
+        # when needed, so neither Clear nor the capture actions get clipped.
+        action_layout = {"stacked": None}
+        def layout_actions(_event=None):
+            bar = self._global_find_bar
+            stacked = actions.winfo_width() < controls.winfo_reqwidth() + bar.winfo_reqwidth() + 16
+            if action_layout["stacked"] == stacked:
+                return
+            action_layout["stacked"] = stacked
+            controls.pack_configure(side="top" if stacked else "left", anchor="w")
+            bar.pack_configure(side="top" if stacked else "left", fill="x", expand=True,
+                               padx=(0, 0) if stacked else (16, 0), pady=(4, 0) if stacked else (0, 0))
+        actions.bind("<Configure>", layout_actions, add="+")
+        actions.after_idle(layout_actions)
 
         # Keep optional search settings and the update status out of the
         # main button row, leaving the query entry room on narrow windows.
@@ -644,6 +669,16 @@ class DebugLogsWindow:
             options, text="Follow results", variable=self.global_follow_var,
         ).pack(side="left")
         ttk.Label(options, textvariable=self.diagnosis_last_update).pack(side="right")
+        self.capture_status_var = tk.StringVar(value="Incident capture: ready — export/incident")
+        ttk.Label(footer, textvariable=self.capture_status_var, wraplength=700).pack(
+            fill="x", pady=(4, 0))
+
+    def toggle_test_capture(self):
+        session = self.recorder.session
+        if session and session.active:
+            self.finish_test_capture()
+        elif not session or session.finished.is_set():
+            self.start_test_capture()
 
     def start_test_capture(self):
         try:
@@ -655,7 +690,9 @@ class DebugLogsWindow:
         except Exception as exc:
             self._popup_error("Test capture", str(exc))
             return
-        self.capture_button.configure(text="Capture (recording)")
+        self.capture_button.configure(text="Stop capture", state="normal")
+        self.capture_status_var.set("Recording since " + datetime.datetime.now().strftime("%H:%M:%S") +
+                                    " — click Stop capture to save the incident.")
         self.capture_menu.entryconfigure(2, state="disabled")
         self.capture_menu.entryconfigure(3, state="normal")
         self.capture_menu.entryconfigure(4, state="disabled")
@@ -680,12 +717,20 @@ class DebugLogsWindow:
             self.stop_log(name, silent=True)
         self._capture_started_logs.clear()
         self.capture_menu.entryconfigure(3, state="disabled")
-        self.capture_button.configure(text="Capture (saving)")
+        self.capture_button.configure(text="Saving…", state="disabled")
+        self.capture_status_var.set("Finishing incident capture…")
 
     def _poll_capture(self):
         session = self.recorder.session
         if session and session.finished.is_set():
-            self.capture_button.configure(text="Capture (check report)" if session.state != "finished" else "Capture (saved)")
+            for name in list(self._capture_started_logs):
+                self.stop_log(name, silent=True)
+            self._capture_started_logs.clear()
+            self.capture_button.configure(text="Capture incident", state="normal")
+            result = "Saved — check manifest.json" if session.state != "finished" else "Saved"
+            if session.error:
+                result = "Capture write error: " + session.error
+            self.capture_status_var.set(result + " — export/incident/" + session.path.name)
             self.capture_menu.entryconfigure(2, state="normal")
             self.capture_menu.entryconfigure(3, state="disabled")
             self.capture_menu.entryconfigure(4, state="normal")

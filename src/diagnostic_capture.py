@@ -22,7 +22,7 @@ class CaptureSession:
     MAX_FIELD = 65536
 
     def __init__(self, directory, metadata):
-        self.path = Path(directory) / ("test_" + datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8])
+        self.path = Path(directory) / ("incident_" + datetime.now().strftime("%Y-%m-%d_%H-%M-%S_") + uuid.uuid4().hex[:8])
         self.path.mkdir(parents=True)
         (self.path / "logs").mkdir()
         self.metadata = dict(metadata)

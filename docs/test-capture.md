@@ -1,30 +1,30 @@
 # Capture d’un test
 
-L’interface principale reste inchangée. Dans **Debug Logs → Live diagnosis → Capture** :
+L’interface principale reste inchangée. Dans **Debug Logs → Live diagnosis** :
 
-1. Choisir **Start test capture**. Les quatre flux sont démarrés si nécessaire.
+1. Cliquer **Capture incident**. Les quatre flux sont démarrés si nécessaire.
 2. Reproduire le problème avec les commandes habituelles de RBM.
-3. Choisir **Finish test capture**, puis **Open last capture folder** après sauvegarde.
+3. Cliquer le même bouton, devenu **Stop capture**, puis **Options → Open last capture folder** après sauvegarde.
 
 Le dossier contient les logs reçus pendant l’enregistrement, les messages de RBM,
 une chronologie CSV/JSONL des commandes SSH et transferts avec leurs résultats,
 et une copie de la configuration GridCodes active si sa lecture réussit.
 Le fichier `manifest.json` indique les flux sans données, les commandes encore
 inachevées, les éventuelles pertes, erreurs ou troncatures. `README.txt` explique
-les fichiers. Le dossier est enregistré dans **`captures` à côté de `RBM.exe`** pour la version
-portable, ou dans **`captures` à la racine du projet** en lancement Python.
-Les logs complets du suivi sont dans `captures/logs` ; les sessions `test_*`
-et les captures instantanées `incident_*` restent dans `captures`.
+les fichiers. Le dossier est enregistré dans **`export/incident` à côté de `RBM.exe`** pour la version
+portable, ou dans **`export/incident` à la racine du projet** en lancement Python.
+Chaque session utilise un sous-dossier daté `incident_AAAA-MM-JJ_HH-MM-SS_identifiant`.
+Les logs complets du suivi sont dans `export/logs`.
 Le chemin ne dépend pas du dossier courant du terminal ou d’un raccourci.
 Le dossier doit être accessible en écriture : une erreur est affichée sinon,
-sans déplacer les captures vers AppData. Les anciennes captures dans AppData
+sans déplacer les captures vers AppData. Les anciennes captures dans AppData ou `captures`
 restent à leur emplacement ; elles peuvent être copiées manuellement.
 Aucun envoi automatique n’est effectué.
 
 La pause, les filtres et l’effacement de l’affichage ne filtrent pas cette capture.
-Les flux déjà actifs restent ouverts après **Finish** ; seuls ceux démarrés par
+Les flux déjà actifs restent ouverts après **Stop capture** ; seuls ceux démarrés par
 la capture sont arrêtés. Fermer Debug Logs, se déconnecter ou quitter RBM termine
-également l’enregistrement. **Capture incident (snapshot)** conserve la capture
+également l’enregistrement. **Options → Capture incident (snapshot)** conserve la capture
 instantanée ZIP existante.
 
 Les dates indiquent l’ordre d’arrivée local. Un flux nouvellement démarré peut

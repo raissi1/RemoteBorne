@@ -19,6 +19,7 @@ config/config.ini
 logs/
 exports/
 captures/
+/export/
 
 # ============================
 # Build artifacts
