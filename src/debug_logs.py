@@ -388,9 +388,29 @@ class DebugLogsWindow:
             self._poll_capture()
         self.window.bind("<Control-f>", self._focus_global_find)
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
+        self._fit_initial_size()
         self.window.deiconify()
         self.window.lift()
         self.window.focus_force()
+
+    def _fit_initial_size(self):
+        """Fit the complete diagnosis, footer and tabs before mapping the window.
+
+        Canvas requests describe its viewport, not its scrollable content.
+        Measure the actual content instead; center_window applies the physical
+        screen/work-area limit when an unusually large DPI cannot fit it all.
+        """
+        for _ in range(3):
+            self.window.update_idletasks()
+            pages = [self.notebook.nametowidget(tab) for tab in self.notebook.tabs()]
+            tab_height = max(0, self.notebook.winfo_reqheight() -
+                             max(page.winfo_reqheight() for page in pages))
+            width = max(1180, self._diagnosis_scroll.content.winfo_reqwidth() + 24,
+                        self._diagnosis_footer.winfo_reqwidth() + 24,
+                        self.notebook.winfo_reqwidth())
+            height = max(760, self._diagnosis_scroll.content.winfo_reqheight() +
+                         self._diagnosis_footer.winfo_reqheight() + tab_height + 12)
+            center_window(self.parent, self.window, width, height)
 
     def _create_global_find_bar(self, parent):
         bar = ttk.Frame(parent)
@@ -557,8 +577,10 @@ class DebugLogsWindow:
         self.notebook.add(page, text="Live diagnosis")
         self.diagnosis_tab = page
         footer = ttk.Frame(page, padding=(12, 6))
+        self._diagnosis_footer = footer
         footer.pack(side="bottom", fill="x")
         scroll = ScrollableFrame(page)
+        self._diagnosis_scroll = scroll
         scroll.pack(fill="both", expand=True)
         frame = ttk.Frame(scroll.content, padding=12)
         frame.pack(fill="both", expand=True)
