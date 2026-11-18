@@ -1,8 +1,12 @@
 """Functional browser Find regressions, without a real SSH connection."""
 import subprocess
+import os
+import shutil
+import shlex
+import fnmatch
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from unittest.mock import Mock
 from src.RemoteBorneManager import RemoteBorneApp
 
@@ -66,7 +70,9 @@ class TestBrowserFind(unittest.TestCase):
         self.app.on_file_double_click(None)
         self.app.open_file_editor.assert_called_once_with('/grid/deep/test.properties')
 
-    def test_find_filters_before_limit_and_preserves_spaces_and_case(self):
+    @unittest.skipUnless(os.name == "posix" and shutil.which("find") and shutil.which("head"),
+                         "Integration of the remote Linux command requires a POSIX host")
+    def test_linux_find_filters_before_limit_and_preserves_spaces_and_case(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for n in range(2010): (root / ('unrelated_' + str(n))).touch()
@@ -114,7 +120,9 @@ class TestBrowserFind(unittest.TestCase):
         self.respond(self.search('Power'), '')
         self.assertIn(('folder', '/grid/Power'), self.app._recursive_search_rows.values())
 
-    def test_wildcard_and_literal_brackets_find(self):
+    @unittest.skipUnless(os.name == "posix" and shutil.which("find") and shutil.which("head"),
+                         "Integration of the remote Linux command requires a POSIX host")
+    def test_linux_wildcard_and_literal_brackets_find(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'test[1].py').touch()
@@ -130,3 +138,34 @@ class TestBrowserFind(unittest.TestCase):
         self.app._file_find_var.set('test')
         self.app._on_file_find_changed()
         self.app.root.after.assert_called_once()
+
+
+    def remote_reply(self, call, paths):
+        """Model remote find on POSIX names, without running a local shell.
+
+        Windows has a different find.exe and shell grammar. The real Linux
+        command is still exercised by the two separate integration tests.
+        """
+        tokens = shlex.split(call.args[0])
+        pattern_index = tokens.index('-iname')
+        self.assertLess(pattern_index, tokens.index('head'),
+                        'Result limiting must follow remote matching')
+        pattern = tokens[pattern_index + 1].casefold()
+        matches = [path for path in paths
+                   if fnmatch.fnmatchcase(PurePosixPath(path).name.casefold(), pattern)]
+        self.respond(call, '\n'.join(matches[:2001]) + '\n')
+
+    def test_find_filters_before_limit_and_preserves_spaces_and_case(self):
+        paths = ['/grid/unrelated_' + str(n) for n in range(2010)]
+        expected = '/grid/last dir/Existing TEST.py'
+        paths.append(expected)
+        self.remote_reply(self.search('existing test'), paths)
+        self.assertIn(('file', expected), self.app._recursive_search_rows.values())
+
+    def test_wildcard_and_literal_brackets_find(self):
+        expected = '/grid/test[1].py'
+        for query in ('test[1]', 't*1*py'):
+            with self.subTest(query=query):
+                self.remote_reply(self.search(query), [expected, '/grid/other.py'])
+                self.assertIn(('file', expected), self.app._recursive_search_rows.values())
+                self.assertNotIn(('file', '/grid/other.py'), self.app._recursive_search_rows.values())
