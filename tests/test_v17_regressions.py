@@ -914,6 +914,7 @@ class TestSafetyRegressionGuards(unittest.TestCase):
             '{"activePower": -2010, "reactivePower": 240, "powerFactor": 0.98, "frequency": 50}',
         )
         self.assertEqual(energy["setpoint_p"], "-2070 W")
+        self.assertEqual(energy["setpoint_q"], "250 var")
         self.assertEqual(charger["soc"], "62 %")
         self.assertEqual(charger["charger_p"], "-2000 W")
         self.assertEqual(meter["meter_q"], "240 var")

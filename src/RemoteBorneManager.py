@@ -50,7 +50,7 @@ from ttkbootstrap.constants import *
 try:
     from .ssh_manager import SSHManager
     from .ssh_queue import SSHQueue
-    from .utils_ui import center_window, ScrollableFrame, theme_native_widget, configure_readable_styles
+    from .utils_ui import center_window, ScrollableFrame, theme_native_widget, configure_readable_styles, use_application_theme
     from .network_config import open_network_config
     from .open_help import open_help
     from .setpoint_validation import (
@@ -66,7 +66,7 @@ except ImportError:
     try:
         from ssh_manager import SSHManager
         from ssh_queue import SSHQueue
-        from utils_ui import center_window, ScrollableFrame, theme_native_widget, configure_readable_styles
+        from utils_ui import center_window, ScrollableFrame, theme_native_widget, configure_readable_styles, use_application_theme
         from network_config import open_network_config
         from open_help import open_help
         from setpoint_validation import (
@@ -81,7 +81,7 @@ except ImportError:
     except ImportError:
         from src.ssh_manager import SSHManager
         from src.ssh_queue import SSHQueue
-        from src.utils_ui import center_window, ScrollableFrame, theme_native_widget, configure_readable_styles
+        from src.utils_ui import center_window, ScrollableFrame, theme_native_widget, configure_readable_styles, use_application_theme
         from src.network_config import open_network_config
         from src.open_help import open_help
         from src.setpoint_validation import (
@@ -373,6 +373,7 @@ class RemoteBorneApp:
 
         # style ttkbootstrap
         self.style = self.root.style
+        use_application_theme(self.style, self.current_theme)
 
         self.temp_var = tk.StringVar(value="Temp: --")
         self.soc_var = tk.StringVar(value="SoC: --")
@@ -595,7 +596,7 @@ class RemoteBorneApp:
         """Applique un thème ttkbootstrap (flatly / darkly)."""
         self.current_theme = theme_name
         try:
-            self.style.theme_use(theme_name)
+            use_application_theme(self.style, theme_name)
             # Re-apply the RBM visual language after ttkbootstrap changes theme.
             self._configure_ui_styles()
             # MAJ du style du log en fonction du nouveau thème
@@ -4663,7 +4664,7 @@ class RemoteBorneApp:
         heading = ttk.Frame(body)
         heading.pack(fill="x", pady=(0, 10))
         ttk.Label(heading, text=posixpath.basename(remote_path),
-                  font=("Segoe UI", 12, "bold")).pack(side="left")
+                  font=("Segoe UI" if sys.platform == "win32" else "Helvetica", 12, "bold")).pack(side="left")
         ttk.Label(heading, text="File editor").pack(side="right")
 
         editor_frame = ttk.Frame(body)
@@ -4672,7 +4673,7 @@ class RemoteBorneApp:
         editor_frame.grid_columnconfigure(0, weight=1)
 
         txt = tk.Text(
-            editor_frame, wrap="none", undo=True, font=("Consolas", 11),
+            editor_frame, wrap="none", undo=True, font=("Consolas" if sys.platform == "win32" else "Courier", 11),
             padx=12, pady=10, borderwidth=0, highlightthickness=0,
             spacing1=1, spacing3=1,
         )
@@ -4759,7 +4760,7 @@ class RemoteBorneApp:
             find_body = ttk.Frame(dialog, padding=16)
             find_body.pack(fill="both", expand=True)
             find_body.grid_columnconfigure(0, weight=1)
-            ttk.Label(find_body, text="Find in file", font=("Segoe UI", 11, "bold")).grid(
+            ttk.Label(find_body, text="Find in file", font=("Segoe UI" if sys.platform == "win32" else "Helvetica", 11, "bold")).grid(
                 row=0, column=0, sticky="w", pady=(0, 10))
             def close_find_dialog():
                 try:
@@ -4978,14 +4979,14 @@ class RemoteBorneApp:
         ttk.Button(btn_bar, text="Find", command=open_find_dialog).pack(
             side="left", padx=5, pady=5
         )
-        ttk.Button(btn_bar, text="Save", command=save_direct).pack(
+        ttk.Button(btn_bar, text="Save", command=save_direct, bootstyle="primary").pack(
             side="right", padx=5, pady=5
         )
         ttk.Button(btn_bar, text="Save As", command=save_as_upload).pack(
             side="right", padx=5, pady=5
         )
         ttk.Button(
-            btn_bar, text="Close", command=on_close, style="Danger.TButton"
+            btn_bar, text="Close", command=on_close
         ).pack(side="right", padx=5, pady=5)
         def editor_shortcut(action):
             def handle(_event):

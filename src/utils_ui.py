@@ -6,6 +6,61 @@ import tkinter as tk
 from tkinter import ttk
 
 
+# Keep one restrained palette throughout RBM; layout and command behavior stay
+# independent of these colors. Menu names flatly/darkly remain compatible.
+RBM_PALETTES = {
+    "darkly": dict(primary="#2563eb", secondary="#3d5068", success="#15805d", info="#2873aa",
+                   warning="#f2b455", danger="#bc3f4b", light="#e8eef7", dark="#0b1220",
+                   bg="#151e2b", fg="#e6edf5", selectbg="#315f8d", selectfg="#ffffff",
+                   border="#35465c", inputfg="#e6edf5", inputbg="#202d3f", active="#2b405a"),
+    "flatly": dict(primary="#245cbd", secondary="#485c73", success="#16734f", info="#1d659c",
+                   warning="#edb34a", danger="#b93a46", light="#e9eef5", dark="#1e2d40",
+                   bg="#f3f6fa", fg="#243449", selectbg="#dce9ff", selectfg="#162a43",
+                   border="#c6d1df", inputfg="#243449", inputbg="#ffffff", active="#e1e9f3"),
+}
+
+
+def use_application_theme(style, theme_name):
+    if theme_name not in RBM_PALETTES:
+        style.theme_use(theme_name)
+        return
+    from ttkbootstrap.style import ThemeDefinition
+    import inspect
+    name = "rbm_dark" if theme_name == "darkly" else "rbm_light"
+    if name not in style.theme_names():
+        # ttkbootstrap 1.x uses themetype; 2.x calls the same option mode.
+        keyword = "mode" if "mode" in inspect.signature(ThemeDefinition).parameters else "themetype"
+        definition = ThemeDefinition(name=name, colors=RBM_PALETTES[theme_name],
+                                     **{keyword: "dark" if theme_name == "darkly" else "light"})
+        style.register_theme(definition)
+    style.theme_use(name)
+
+
+def apply_window_icon(win):
+    """Assign an explicit icon to each Windows toplevel, including dialogs.
+
+    The root's default icon can be replaced when ttkbootstrap initializes a
+    new toplevel. An explicit assignment after construction avoids that race.
+    """
+    if sys.platform != "win32":
+        return False
+    from pathlib import Path
+    project = Path(__file__).resolve().parent.parent
+    roots = [Path(getattr(sys, "_MEIPASS", project))]
+    if getattr(sys, "frozen", False):
+        roots.append(Path(sys.executable).resolve().parent)
+    roots.append(project)
+    for directory in dict.fromkeys(roots):
+        icon = directory / "BorneCommander.ico"
+        if icon.is_file():
+            try:
+                win.iconbitmap(str(icon))
+                return True
+            except tk.TclError:
+                continue
+    return False
+
+
 def _relative_luminance(color):
     channels = [int(color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
     return sum((c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4) * weight
@@ -47,6 +102,13 @@ def configure_readable_styles(style):
             foreground = "#" + "".join(f"{round(int(foreground[i:i+2], 16) * .85 + int(colors.fg[i:i+2], 16) * .15):02x}"
                                         for i in (1, 3, 5))
         style.configure(semantic + ".TLabel", foreground=foreground, background=colors.bg)
+    style.configure("TButton", background=colors.inputbg, foreground=colors.fg,
+                    bordercolor=colors.border, padding=(10, 6))
+    style.map("TButton", background=[("disabled", disabled_bg), ("pressed", colors.active), ("active", colors.active)],
+              foreground=[("disabled", disabled_fg), ("!disabled", colors.fg)])
+    style.configure("TNotebook.Tab", padding=(6, 4))
+    style.map("TNotebook.Tab", background=[("selected", colors.primary)],
+              foreground=[("selected", "#ffffff")])
     # Secondary label colors from the stock dark theme are too close to its
     # surface. Use the regular text color for instructions and summaries.
     style.configure("secondary.TLabel", foreground=colors.fg, background=colors.bg)
@@ -101,6 +163,7 @@ def screen_work_area(win):
 
 def center_window(parent, win, width=900, height=600):
     """Center within usable screen space; never force an oversized minimum."""
+    apply_window_icon(win)
     if not getattr(win, "_rbm_surface_themed", False):
         theme_native_widget(win)
         win._rbm_surface_themed = True

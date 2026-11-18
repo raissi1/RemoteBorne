@@ -122,7 +122,7 @@ def parse_diagnostic_line(log_name: str, line: str) -> dict[str, str]:
         match = re.search(r"power_W\s*:\s*([-+]?\d+(?:\.\d+)?)", text, re.I)
         if match:
             updates["setpoint_p"] = f"{match.group(1)} W"
-        match = re.search(r"(?:reactive|q)[^\n]*?(?:var|power_W)\s*[:=]\s*([-+]?\d+(?:\.\d+)?)", text, re.I)
+        match = re.search(r"(?:\breactive\b|\bq\b)[^\n]*?(?:var|power_W)\s*[:=]\s*([-+]?\d+(?:\.\d+)?)", text, re.I)
         if match:
             updates["setpoint_q"] = f"{match.group(1)} var"
 
@@ -628,7 +628,7 @@ class DebugLogsWindow:
         controls.pack(side="left")
         ttk.Button(controls, text="Start all", command=self.start_all_logs).pack(side="left", padx=(0, 6))
         ttk.Button(controls, text="Stop all", command=self.stop_all_logs).pack(side="left", padx=(0, 6))
-        self.capture_button = ttk.Button(controls, text="Capture incident", command=self.toggle_test_capture)
+        self.capture_button = ttk.Button(controls, text="Capture incident", command=self.toggle_test_capture, style="primary.TButton")
         self.capture_options = ttk.Menubutton(controls, text="Options", width=7)
         self.capture_menu = tk.Menu(self.capture_options, tearoff=False)
         self.capture_menu.add_command(label="Capture incident (snapshot)", command=self.capture_incident)
@@ -690,7 +690,7 @@ class DebugLogsWindow:
         except Exception as exc:
             self._popup_error("Test capture", str(exc))
             return
-        self.capture_button.configure(text="Stop capture", state="normal")
+        self.capture_button.configure(text="Stop capture", state="normal", style="danger.TButton")
         self.capture_status_var.set("Recording since " + datetime.datetime.now().strftime("%H:%M:%S") +
                                     " — click Stop capture to save the incident.")
         self.capture_menu.entryconfigure(2, state="disabled")
@@ -726,7 +726,7 @@ class DebugLogsWindow:
             for name in list(self._capture_started_logs):
                 self.stop_log(name, silent=True)
             self._capture_started_logs.clear()
-            self.capture_button.configure(text="Capture incident", state="normal")
+            self.capture_button.configure(text="Capture incident", state="normal", style="primary.TButton")
             result = "Saved — check manifest.json" if session.state != "finished" else "Saved"
             if session.error:
                 result = "Capture write error: " + session.error
