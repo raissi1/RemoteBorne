@@ -14,12 +14,12 @@ from tkinter import ttk, filedialog, messagebox
 from tkinter.scrolledtext import ScrolledText
 
 try:
-    from .utils_ui import center_window, ScrollableFrame, theme_native_widget
+    from .utils_ui import center_window, ScrollableFrame, theme_native_widget, ui_font, mono_font
 except ImportError:
     try:
-        from utils_ui import center_window, ScrollableFrame, theme_native_widget
+        from utils_ui import center_window, ScrollableFrame, theme_native_widget, ui_font, mono_font
     except ImportError:
-        from src.utils_ui import center_window, ScrollableFrame, theme_native_widget
+        from src.utils_ui import center_window, ScrollableFrame, theme_native_widget, ui_font, mono_font
 
 try:
     from .diagnostic_capture import DiagnosticRecorder
@@ -569,7 +569,7 @@ class DebugLogsWindow:
         ttk.Label(
             frame,
             text="Live service diagnosis",
-            font=("Segoe UI", 15, "bold"),
+            font=ui_font(self.window, 15),
         ).grid(row=0, column=0, columnspan=2, sticky="w")
         ttk.Label(
             frame,

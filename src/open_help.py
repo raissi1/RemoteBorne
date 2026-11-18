@@ -5,12 +5,12 @@ import tkinter as tk
 from tkinter import ttk
 
 try:
-    from .utils_ui import center_window, theme_native_widget
+    from .utils_ui import center_window, theme_native_widget, ui_font, mono_font
 except ImportError:
     try:
-        from utils_ui import center_window, theme_native_widget
+        from utils_ui import center_window, theme_native_widget, ui_font, mono_font
     except ImportError:
-        from src.utils_ui import center_window, theme_native_widget
+        from src.utils_ui import center_window, theme_native_widget, ui_font, mono_font
 
 
 def open_help(parent=None):
@@ -47,7 +47,7 @@ def open_help(parent=None):
     ttk.Label(
         top,
         text="Remote Borne Control Interface V17.0.0 - User Guide",
-        font=("Segoe UI", 16, "bold"),
+        font=ui_font(win, 16),
     ).pack(side="left")
 
     search_var = tk.StringVar()
@@ -62,7 +62,7 @@ def open_help(parent=None):
     text = tk.Text(
         text_frame,
         wrap="word",
-        font=("Segoe UI", 10),
+        font=ui_font(win, 10),
         padx=20,
         pady=20,
         spacing3=6,
@@ -76,12 +76,12 @@ def open_help(parent=None):
     text.pack(side="left", fill="both", expand=True)
     scroll.pack(side="right", fill="y")
 
-    text.tag_configure("title", font=("Segoe UI", 18, "bold"), foreground="#0F172A", spacing3=20)
-    text.tag_configure("section", font=("Segoe UI", 13, "bold"), foreground="#1D4ED8", spacing1=20, spacing3=10)
-    text.tag_configure("subtitle", font=("Segoe UI", 11, "bold"), foreground="#0F766E", spacing1=10, spacing3=5)
-    text.tag_configure("normal", font=("Segoe UI", 10), spacing3=4)
-    text.tag_configure("code", font=("Consolas", 10), foreground="#7C2D12", background="#F8FAFC")
-    text.tag_configure("warning", foreground="#B91C1C", font=("Segoe UI", 10, "bold"))
+    text.tag_configure("title", font=ui_font(win, 18), foreground=ttk.Style(win).lookup("TLabel", "foreground"), spacing3=20)
+    text.tag_configure("section", font=ui_font(win, 13), foreground=ttk.Style(win).lookup("info.TLabel", "foreground"), spacing1=20, spacing3=10)
+    text.tag_configure("subtitle", font=ui_font(win, 11), foreground=ttk.Style(win).lookup("success.TLabel", "foreground"), spacing1=10, spacing3=5)
+    text.tag_configure("normal", font=ui_font(win, 10), spacing3=4)
+    text.tag_configure("code", font=mono_font(win, 10), foreground=ttk.Style(win).lookup("TLabel", "foreground"), background=ttk.Style(win).lookup("TEntry", "fieldbackground"))
+    text.tag_configure("warning", foreground=ttk.Style(win).lookup("danger.TLabel", "foreground"), font=ui_font(win, 10))
     text.tag_configure("highlight", background="#FFF59D", foreground="#000000")
 
     script_name = os.path.basename(sys.argv[0])

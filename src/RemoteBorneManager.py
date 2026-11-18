@@ -50,7 +50,7 @@ from ttkbootstrap.constants import *
 try:
     from .ssh_manager import SSHManager
     from .ssh_queue import SSHQueue
-    from .utils_ui import center_window, ScrollableFrame, theme_native_widget, configure_readable_styles, use_application_theme
+    from .utils_ui import center_window, ScrollableFrame, theme_native_widget, configure_readable_styles, use_application_theme, ui_font, mono_font, configure_application_fonts
     from .network_config import open_network_config
     from .open_help import open_help
     from .setpoint_validation import (
@@ -66,7 +66,7 @@ except ImportError:
     try:
         from ssh_manager import SSHManager
         from ssh_queue import SSHQueue
-        from utils_ui import center_window, ScrollableFrame, theme_native_widget, configure_readable_styles, use_application_theme
+        from utils_ui import center_window, ScrollableFrame, theme_native_widget, configure_readable_styles, use_application_theme, ui_font, mono_font, configure_application_fonts
         from network_config import open_network_config
         from open_help import open_help
         from setpoint_validation import (
@@ -81,7 +81,7 @@ except ImportError:
     except ImportError:
         from src.ssh_manager import SSHManager
         from src.ssh_queue import SSHQueue
-        from src.utils_ui import center_window, ScrollableFrame, theme_native_widget, configure_readable_styles, use_application_theme
+        from src.utils_ui import center_window, ScrollableFrame, theme_native_widget, configure_readable_styles, use_application_theme, ui_font, mono_font, configure_application_fonts
         from src.network_config import open_network_config
         from src.open_help import open_help
         from src.setpoint_validation import (
@@ -805,7 +805,7 @@ class RemoteBorneApp:
             insertbackground="#ffffff",
             selectbackground="#3c6388",
             selectforeground="#ffffff",
-            font=("Consolas", 10),
+            font=mono_font(self.root, 10),
             borderwidth=0,
             relief="flat",
         )
@@ -815,45 +815,46 @@ class RemoteBorneApp:
     # ==================================================================
     def _configure_ui_styles(self):
         """Keep the main workspace visually consistent across screen sizes."""
+        configure_application_fonts(self.root)
         configure_readable_styles(self.style)
         self.style.configure(
             "HeaderTitle.TLabel",
-            font=("Segoe UI", 14, "bold"),
+            font=ui_font(self.root, 14),
         )
         self.style.configure(
             "HeaderSubtitle.TLabel",
-            font=("Segoe UI", 9, "italic"),
+            font=ui_font(self.root, 9),
         )
         self.style.configure(
             "Status.TLabel",
-            font=("Segoe UI", 9),
+            font=ui_font(self.root, 9),
         )
         self.style.configure(
             "MetricValue.TLabel",
-            font=("Segoe UI", 10, "bold"),
+            font=ui_font(self.root, 10),
         )
         self.style.configure(
             "Section.TLabelframe.Label",
-            font=("Segoe UI", 10, "bold"),
+            font=ui_font(self.root, 10),
         )
         self.style.configure(
             "Nav.TButton",
-            font=("Segoe UI", 9, "bold"),
+            font=ui_font(self.root, 9),
             padding=(8, 4),
         )
         self.style.configure(
             "Action.TButton",
-            font=("Segoe UI", 9, "bold"),
+            font=ui_font(self.root, 9),
             padding=(10, 5),
         )
         self.style.configure(
             "Wide.TButton",
-            font=("Segoe UI", 9, "bold"),
+            font=ui_font(self.root, 9),
             padding=(10, 6),
         )
         self.style.configure(
             "Monitor.TButton",
-            font=("Segoe UI", 9, "bold"),
+            font=ui_font(self.root, 9),
             padding=(9, 3),
         )
 
@@ -990,7 +991,7 @@ class RemoteBorneApp:
         self.file_list = tk.Listbox(
             list_frame,
             activestyle="none",
-            font=("Segoe UI", 10),
+            font=ui_font(self.root, 10),
         )
         theme_native_widget(self.file_list)
         self.file_list.grid(row=0, column=0, sticky="nsew")
@@ -4664,7 +4665,7 @@ class RemoteBorneApp:
         heading = ttk.Frame(body)
         heading.pack(fill="x", pady=(0, 10))
         ttk.Label(heading, text=posixpath.basename(remote_path),
-                  font=("Segoe UI" if sys.platform == "win32" else "Helvetica", 12, "bold")).pack(side="left")
+                  font=ui_font(self.root, 12)).pack(side="left")
         ttk.Label(heading, text="File editor").pack(side="right")
 
         editor_frame = ttk.Frame(body)
@@ -4673,9 +4674,9 @@ class RemoteBorneApp:
         editor_frame.grid_columnconfigure(0, weight=1)
 
         txt = tk.Text(
-            editor_frame, wrap="none", undo=True, font=("Consolas" if sys.platform == "win32" else "Courier", 11),
+            editor_frame, wrap="none", undo=True, font=(ui_font(self.root, 10) if posixpath.splitext(remote_path)[1].lower() in (".properties", ".ini", ".txt") else mono_font(self.root, 10)),
             padx=12, pady=10, borderwidth=0, highlightthickness=0,
-            spacing1=1, spacing3=1,
+            spacing1=2, spacing3=2,
         )
         theme_native_widget(txt)
         txt.grid(row=0, column=0, sticky="nsew")
@@ -4760,7 +4761,7 @@ class RemoteBorneApp:
             find_body = ttk.Frame(dialog, padding=16)
             find_body.pack(fill="both", expand=True)
             find_body.grid_columnconfigure(0, weight=1)
-            ttk.Label(find_body, text="Find in file", font=("Segoe UI" if sys.platform == "win32" else "Helvetica", 11, "bold")).grid(
+            ttk.Label(find_body, text="Find in file", font=ui_font(self.root, 11)).grid(
                 row=0, column=0, sticky="w", pady=(0, 10))
             def close_find_dialog():
                 try:
@@ -6056,7 +6057,7 @@ class RemoteBorneApp:
             bg="#0d1117",
             fg="#c9d1d9",
             insertbackground="white",
-            font=("Consolas", 10),
+            font=mono_font(self.root, 10),
             wrap="word",
             state="normal",
         )

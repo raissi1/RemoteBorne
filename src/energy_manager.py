@@ -12,7 +12,7 @@ import csv
 import re
 
 try:
-    from .utils_ui import center_window, ScrollableFrame, theme_native_widget
+    from .utils_ui import center_window, ScrollableFrame, theme_native_widget, ui_font, mono_font
     from .setpoint_validation import (
         finite_number,
         validate_active_power,
@@ -21,7 +21,7 @@ try:
     )
 except ImportError:
     try:
-        from utils_ui import center_window, ScrollableFrame, theme_native_widget
+        from utils_ui import center_window, ScrollableFrame, theme_native_widget, ui_font, mono_font
         from setpoint_validation import (
             finite_number,
             validate_active_power,
@@ -29,7 +29,7 @@ except ImportError:
             validate_reactive_power,
         )
     except ImportError:
-        from src.utils_ui import center_window, ScrollableFrame, theme_native_widget
+        from src.utils_ui import center_window, ScrollableFrame, theme_native_widget, ui_font, mono_font
         from src.setpoint_validation import (
             finite_number,
             validate_active_power,
@@ -254,7 +254,7 @@ class EnergyManagerWindow:
         title = ttk.Label(
             frm,
             text="P/Q and CosPhi Mode",
-            font=("Segoe UI", 14, "bold"),
+            font=ui_font(self.win, 14),
             anchor="center",
         )
         title.pack(pady=(2, 6))
@@ -442,7 +442,7 @@ class EnergyManagerWindow:
             frm,
             width=32,
             height=10,
-            font=("Consolas", 10),
+            font=mono_font(self.win, 10),
             wrap="word",
             background="#f8fafc",
             foreground="#111827",

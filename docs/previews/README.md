@@ -4,6 +4,12 @@ Captures réelles de l’application en thème sombre, avec des données d’exe
 et sans connexion à une borne. Elles ont été prises sous Linux : la barre de
 titre, l’icône et les polices natives Windows peuvent différer.
 
+La typographie utilise une police sans empattements installée sur le PC
+(Segoe UI Variable Text ou Segoe UI sous Windows), avec des titres sans gras.
+Les configurations texte utilisent cette même police ; les scripts et logs
+conservent une police monospace. Aucune installation de police supplémentaire
+n’est nécessaire.
+
 La disposition des commandes reste inchangée. Le thème clair reste disponible
 via View → Theme. Les captures d’incident restent dans `export/incident`.
 

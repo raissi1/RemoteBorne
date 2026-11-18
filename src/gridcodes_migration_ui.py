@@ -13,10 +13,10 @@ import ttkbootstrap as ttk
 
 try:
     from .gridcodes_migrator import MigrationError, analyze_migration, export_plan
-    from .utils_ui import center_window, ScrollableFrame, theme_native_widget
+    from .utils_ui import center_window, ScrollableFrame, theme_native_widget, ui_font, mono_font
 except ImportError:
     from gridcodes_migrator import MigrationError, analyze_migration, export_plan
-    from utils_ui import center_window, ScrollableFrame, theme_native_widget
+    from utils_ui import center_window, ScrollableFrame, theme_native_widget, ui_font, mono_font
 
 
 class GridCodesMigrationWindow:
@@ -76,7 +76,7 @@ class GridCodesMigrationWindow:
         root.rowconfigure(7, weight=3)
         root.rowconfigure(8, weight=1)
 
-        ttk.Label(root, text="GridCodes Migration", font=("Segoe UI", 16, "bold")).grid(
+        ttk.Label(root, text="GridCodes Migration", font=ui_font(self.window, 16)).grid(
             row=0, column=0, columnspan=3, sticky="w"
         )
         ttk.Label(

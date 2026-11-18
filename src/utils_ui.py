@@ -4,6 +4,7 @@ import sys
 import re
 import tkinter as tk
 from tkinter import ttk
+import tkinter.font as tkfont
 
 
 # Keep one restrained palette throughout RBM; layout and command behavior stay
@@ -61,6 +62,33 @@ def apply_window_icon(win):
     return False
 
 
+def _font_family(widget, candidates, fallback):
+    """Pick an installed font instead of letting Tk choose a bitmap fallback."""
+    try:
+        available = {name.casefold(): name for name in tkfont.families(widget)}
+        return next((available[name.casefold()] for name in candidates if name.casefold() in available), fallback)
+    except (tk.TclError, RuntimeError, TypeError):
+        return fallback
+
+
+def ui_font(widget, size=10):
+    family = _font_family(widget, ("Segoe UI Variable Text", "Segoe UI", "Inter", "Noto Sans", "DejaVu Sans", "Helvetica"), "Helvetica")
+    return family, size, "normal"
+
+
+def mono_font(widget, size=10):
+    family = _font_family(widget, ("Cascadia Mono", "Cascadia Code", "Consolas", "DejaVu Sans Mono", "Liberation Mono", "Nimbus Mono L", "Courier"), "Courier")
+    return family, size, "normal"
+
+
+def configure_application_fonts(widget):
+    family, size, _ = ui_font(widget)
+    for name in ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont", "TkCaptionFont", "TkSmallCaptionFont", "TkIconFont"):
+        tkfont.nametofont(name, root=widget).configure(family=family, size=size, weight="normal", slant="roman")
+    fixed_family, _, _ = mono_font(widget)
+    tkfont.nametofont("TkFixedFont", root=widget).configure(family=fixed_family, size=10, weight="normal")
+
+
 def _relative_luminance(color):
     channels = [int(color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
     return sum((c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4) * weight
@@ -111,7 +139,9 @@ def configure_readable_styles(style):
               foreground=[("selected", "#ffffff")])
     # Secondary label colors from the stock dark theme are too close to its
     # surface. Use the regular text color for instructions and summaries.
-    style.configure("secondary.TLabel", foreground=colors.fg, background=colors.bg)
+    muted = "#a7b6c9" if _relative_luminance(colors.bg) < .2 else "#52657d"
+    style.configure("secondary.TLabel", foreground=muted if _contrast(muted, colors.bg) >= 4.5 else colors.fg,
+                    background=colors.bg)
 
 
 def theme_native_widget(widget):
@@ -135,6 +165,11 @@ def theme_native_widget(widget):
             options["insertbackground"] = foreground
         widget.configure(**options)
         if widget.winfo_class() == "Text":
+            for tag, semantic in (("title", None), ("section", "info"), ("subtitle", "success"), ("warning", "danger")):
+                if tag in widget.tag_names():
+                    widget.tag_configure(tag, foreground=style.lookup((semantic + ".TLabel") if semantic else "TLabel", "foreground"))
+            if "code" in widget.tag_names():
+                widget.tag_configure("code", foreground=foreground, background=background)
             for tag, semantic in (("INFO", "success"), ("WARN", "warning"), ("ERROR", "danger")):
                 if tag in widget.tag_names():
                     widget.tag_configure(tag, foreground=style.lookup(semantic + ".TLabel", "foreground"))

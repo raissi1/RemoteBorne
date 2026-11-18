@@ -5,12 +5,12 @@ import os
 import ipaddress
 
 try:
-    from .utils_ui import center_window, ScrollableFrame
+    from .utils_ui import center_window, ScrollableFrame, ui_font, mono_font
 except ImportError:
     try:
-        from utils_ui import center_window, ScrollableFrame
+        from utils_ui import center_window, ScrollableFrame, ui_font, mono_font
     except ImportError:
-        from src.utils_ui import center_window, ScrollableFrame
+        from src.utils_ui import center_window, ScrollableFrame, ui_font, mono_font
 
 
 def open_network_config(parent, config_path, on_saved=None):
@@ -100,7 +100,7 @@ def open_network_config(parent, config_path, on_saved=None):
     ttk.Label(
         main_frame,
         text="SSH and Path Configuration",
-        font=("Segoe UI", 14, "bold"),
+        font=ui_font(win, 14),
     ).grid(row=0, column=0, columnspan=3, pady=(0, 20), sticky="w")
 
     # Champs SSH

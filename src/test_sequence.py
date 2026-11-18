@@ -26,7 +26,7 @@ try:
         validate_cosphi,
         validate_reactive_power,
     )
-    from .utils_ui import center_window, ScrollableFrame, theme_native_widget
+    from .utils_ui import center_window, ScrollableFrame, theme_native_widget, ui_font, mono_font
 except ImportError:
     try:
         from energy_manager import ENERGY_TOOL_RESOLVE
@@ -37,7 +37,7 @@ except ImportError:
             validate_cosphi,
             validate_reactive_power,
         )
-        from utils_ui import center_window, ScrollableFrame, theme_native_widget
+        from utils_ui import center_window, ScrollableFrame, theme_native_widget, ui_font, mono_font
     except ImportError:
         from src.energy_manager import ENERGY_TOOL_RESOLVE
         from src.setpoint_validation import (
@@ -47,7 +47,7 @@ except ImportError:
             validate_cosphi,
             validate_reactive_power,
         )
-        from src.utils_ui import center_window, ScrollableFrame, theme_native_widget
+        from src.utils_ui import center_window, ScrollableFrame, theme_native_widget, ui_font, mono_font
 
 
 class TestSequenceWindow:
@@ -135,7 +135,7 @@ class TestSequenceWindow:
         header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         header.columnconfigure(0, weight=1)
         ttk.Label(
-            header, text="Automated Test Sequence", font=("Segoe UI", 16, "bold")
+            header, text="Automated Test Sequence", font=ui_font(self.win, 16)
         ).grid(row=0, column=0, sticky="w")
         ttk.Label(header, textvariable=self.status_var, bootstyle="info").grid(
             row=0, column=1, sticky="e"
