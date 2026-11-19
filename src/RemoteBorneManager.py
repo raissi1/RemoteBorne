@@ -97,7 +97,7 @@ except ImportError:
         from src import test_sequence
         from src import gridcodes_migration_ui
 
-APP_VERSION = "17.0.0"
+APP_VERSION = "17.1.0"
 
 # Operational limits used by the main P/Q and CosPhi panels.  The target still
 # validates commands; Pn is an operator-side guard that can be read from the
@@ -6068,6 +6068,8 @@ class RemoteBorneApp:
             bg="#0d1117",
             fg="#c9d1d9",
             insertbackground="white",
+            selectbackground="#375a7f",
+            selectforeground="#ffffff",
             font=mono_font(self.root, 10),
             wrap="word",
             state="normal",
@@ -6765,7 +6767,7 @@ class RemoteBorneApp:
     def _show_about(self):
         self._popup_info(
             "About",
-            "Remote Borne Control Interface (RBM)\n"
+            f"Remote Borne Control Interface (RBM) — {APP_VERSION}\n"
             "Author: Nabil RAISSI\n"
             "Backend: plink.exe / pscp.exe\n"
             "SSH queue, SCP protection and integrated terminal included.",

@@ -23,7 +23,7 @@ def open_help(parent=None):
 
     win = tk.Toplevel(parent)
     win.withdraw()
-    win.title("RBM V17.0.0 Help")
+    win.title("RBM V17.1.0 Help")
     win.geometry("1000x800")
     win.minsize(850, 600)
 
@@ -46,7 +46,7 @@ def open_help(parent=None):
 
     ttk.Label(
         top,
-        text="Remote Borne Control Interface V17.0.0 - User Guide",
+        text="Remote Borne Control Interface V17.1.0 - User Guide",
         font=ui_font(win, 11),
     ).pack(side="left")
 
@@ -313,7 +313,7 @@ def open_help(parent=None):
     text.insert("end", "\n15. VERSION\n", "section")
     text.insert(
         "end",
-        f"Remote Borne Control Interface V17.0.0\nHelp snapshot date: {today}\n\nAuthor: Nabil RAISSI\n",
+        f"Remote Borne Control Interface V17.1.0\nHelp snapshot date: {today}\n\nAuthor: Nabil RAISSI\n",
         "normal",
     )
 

@@ -55,6 +55,7 @@ with patch("src.RemoteBorneManager.ttk.Window", return_value=r), patch(
 ):
     app = RemoteBorneApp(cfg)
 app._apply_theme(args.theme)
+assert app.style.theme_use() == args.theme, "Selected classic theme must not be remapped"
 app.ssh_queue.stop()
 app.ssh_queue = Mock()
 app.ssh_queue.execute.return_value = True
@@ -104,6 +105,22 @@ def audit(name, w):
         background = (item.cget("background") if "background" in item.keys() else "") or app.style.lookup(style, "background") or app.style.lookup("TFrame", "background")
         if foreground and background and _contrast(str(foreground), str(background)) < 4.5:
             bad.append("Low contrast: " + str(item.cget("text")))
+    for item in descendants(w):
+        kind = item.winfo_class()
+        if kind in ("Treeview", "TEntry", "TCombobox"):
+            style = str(item.cget("style")) or kind
+            if kind == "Treeview":
+                fg = app.style.lookup(style, "foreground", ("selected",))
+                bg = app.style.lookup(style, "background", ("selected",))
+            else:
+                fg = app.style.lookup(style, "selectforeground")
+                bg = app.style.lookup(style, "selectbackground")
+        elif kind in ("Text", "Listbox"):
+            fg, bg = str(item.cget("selectforeground")), str(item.cget("selectbackground"))
+        else:
+            continue
+        if fg and bg and _contrast(str(fg), str(bg)) < 4.5:
+            bad.append("Low selection contrast: " + str(item))
     if w is not r:
         for label in descendants(w):
             if label.winfo_class() != "TLabel":

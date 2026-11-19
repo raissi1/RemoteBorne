@@ -619,8 +619,8 @@ class TestSafetyRegressionGuards(unittest.TestCase):
         self.assertEqual(RemoteBorneApp.__module__, "src.RemoteBorneManager")
         source = (ROOT / "src" / "RemoteBorneManager.py").read_text(encoding="utf-8")
         help_source = (ROOT / "src" / "open_help.py").read_text(encoding="utf-8")
-        self.assertIn('APP_VERSION = "17.0.0"', source)
-        self.assertIn("V17.0.0", help_source)
+        self.assertIn('APP_VERSION = "17.1.0"', source)
+        self.assertIn("V17.1.0", help_source)
 
     def test_build_artifacts_match_the_v17_runtime(self):
         script = (ROOT / "build_rbm.ps1").read_text(encoding="utf-8")

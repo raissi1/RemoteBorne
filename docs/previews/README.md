@@ -1,11 +1,11 @@
 # Aperçus de l’interface RBM
 
-Captures réelles de l’application en thème sombre, avec des données d’exemple
+Captures réelles de l’application en thèmes classiques Flatly et Darkly, avec des données d’exemple
 et sans connexion à une borne. Elles ont été prises sous Linux : la barre de
 titre, l’icône et les polices natives Windows peuvent différer.
 
 La typographie utilise une police sans empattements installée sur le PC
-(Segoe UI Variable Text ou Segoe UI sous Windows), avec des titres sans gras.
+(Segoe UI en priorité sous Windows), avec des titres sans gras.
 Les configurations texte utilisent cette même police ; les scripts et logs
 conservent une police monospace. Aucune installation de police supplémentaire
 n’est nécessaire.
@@ -27,3 +27,7 @@ Titres secondaires compacts et zones de résultats réservées :
 ![Energy Manager](energy-light.png)
 
 ![Migration](migration-light.png)
+
+La version 17.1 rétablit les palettes classiques sélectionnées dans View → Theme,
+sans substitution par une palette personnalisée. Les zones réservées au tableau,
+à la progression, au journal et aux résultats restent conservées.

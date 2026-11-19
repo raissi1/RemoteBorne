@@ -7,34 +7,9 @@ from tkinter import ttk
 import tkinter.font as tkfont
 
 
-# Keep one restrained palette throughout RBM; layout and command behavior stay
-# independent of these colors. Menu names flatly/darkly remain compatible.
-RBM_PALETTES = {
-    "darkly": dict(primary="#2563eb", secondary="#3d5068", success="#15805d", info="#2873aa",
-                   warning="#f2b455", danger="#bc3f4b", light="#e8eef7", dark="#0b1220",
-                   bg="#151e2b", fg="#e6edf5", selectbg="#315f8d", selectfg="#ffffff",
-                   border="#35465c", inputfg="#e6edf5", inputbg="#202d3f", active="#2b405a"),
-    "flatly": dict(primary="#245cbd", secondary="#485c73", success="#16734f", info="#1d659c",
-                   warning="#edb34a", danger="#b93a46", light="#e9eef5", dark="#1e2d40",
-                   bg="#f3f6fa", fg="#243449", selectbg="#dce9ff", selectfg="#162a43",
-                   border="#c6d1df", inputfg="#243449", inputbg="#ffffff", active="#e1e9f3"),
-}
-
-
 def use_application_theme(style, theme_name):
-    if theme_name not in RBM_PALETTES:
-        style.theme_use(theme_name)
-        return
-    from ttkbootstrap.style import ThemeDefinition
-    import inspect
-    name = "rbm_dark" if theme_name == "darkly" else "rbm_light"
-    if name not in style.theme_names():
-        # ttkbootstrap 1.x uses themetype; 2.x calls the same option mode.
-        keyword = "mode" if "mode" in inspect.signature(ThemeDefinition).parameters else "themetype"
-        definition = ThemeDefinition(name=name, colors=RBM_PALETTES[theme_name],
-                                     **{keyword: "dark" if theme_name == "darkly" else "light"})
-        style.register_theme(definition)
-    style.theme_use(name)
+    """Honor the classic theme selected in View, without hidden remapping."""
+    style.theme_use(theme_name)
 
 
 def apply_window_icon(win):
@@ -72,12 +47,12 @@ def _font_family(widget, candidates, fallback):
 
 
 def ui_font(widget, size=10):
-    family = _font_family(widget, ("Segoe UI Variable Text", "Segoe UI", "Inter", "Noto Sans", "DejaVu Sans", "Helvetica"), "Helvetica")
+    family = _font_family(widget, ("Segoe UI", "Segoe UI Variable Text", "Inter", "Noto Sans", "DejaVu Sans", "Helvetica"), "Helvetica")
     return family, size, "normal"
 
 
 def mono_font(widget, size=10):
-    family = _font_family(widget, ("Cascadia Mono", "Cascadia Code", "Consolas", "DejaVu Sans Mono", "Liberation Mono", "Nimbus Mono L", "Courier"), "Courier")
+    family = _font_family(widget, ("Consolas", "Cascadia Mono", "Cascadia Code", "DejaVu Sans Mono", "Liberation Mono", "Nimbus Mono L", "Courier"), "Courier")
     return family, size, "normal"
 
 
@@ -130,16 +105,23 @@ def configure_readable_styles(style):
             foreground = "#" + "".join(f"{round(int(foreground[i:i+2], 16) * .85 + int(colors.fg[i:i+2], 16) * .15):02x}"
                                         for i in (1, 3, 5))
         style.configure(semantic + ".TLabel", foreground=foreground, background=colors.bg)
-    style.configure("TButton", background=colors.inputbg, foreground=colors.fg,
+    neutral = "#f1f3f5" if _relative_luminance(colors.bg) >= .2 else "#303030"
+    style.configure("TButton", background=neutral, foreground=colors.fg,
                     bordercolor=colors.border, padding=(10, 6))
     style.map("TButton", background=[("disabled", disabled_bg), ("pressed", colors.active), ("active", colors.active)],
               foreground=[("disabled", disabled_fg), ("!disabled", colors.fg)])
-    style.configure("TNotebook.Tab", padding=(6, 4))
-    style.map("TNotebook.Tab", background=[("selected", colors.primary)],
-              foreground=[("selected", "#ffffff")])
+    style.configure("TNotebook.Tab", padding=(6, 3))
+    selected_fg = "#ffffff" if _contrast("#ffffff", colors.selectbg) >= 4.5 else "#111111"
+    style.map("TNotebook.Tab", background=[("selected", colors.selectbg)],
+              foreground=[("selected", selected_fg)])
+    for name in ("TEntry", "TCombobox"):
+        style.configure(name, selectbackground=colors.selectbg, selectforeground=selected_fg)
+    for name in ("Treeview", "info.Treeview"):
+        style.configure(name, foreground=colors.fg)
+        style.map(name, foreground=[("disabled", disabled_fg), ("selected", selected_fg), ("!disabled", colors.fg)])
     # Secondary label colors from the stock dark theme are too close to its
     # surface. Use the regular text color for instructions and summaries.
-    muted = "#a7b6c9" if _relative_luminance(colors.bg) < .2 else "#52657d"
+    muted = "#b5b5b5" if _relative_luminance(colors.bg) < .2 else "#56616b"
     style.configure("secondary.TLabel", foreground=muted if _contrast(muted, colors.bg) >= 4.5 else colors.fg,
                     background=colors.bg)
 
