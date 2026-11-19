@@ -5635,6 +5635,10 @@ class RemoteBorneApp:
         if getattr(sequence, "_rbm_file_actions_added", False):
             return
 
+        if getattr(sequence, "btn_import", None) is not None:
+            # Current sequencer already provides import and Save as CSV.
+            sequence._rbm_file_actions_added = True
+            return
         footer = None
         export_button = None
 

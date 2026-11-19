@@ -133,29 +133,24 @@ def audit(name, w):
                 if isinstance(p, ScrollableFrame):
                     scrolls.append(p)
                 p = p.master
-            scroll = None
-            for scroll in scrolls:
-                content = scroll.content
-                canvas = scroll.canvas
-                canvas.xview_moveto(
-                    max(
-                        0,
-                        (widget.winfo_rootx() - content.winfo_rootx() - 8)
-                        / content.winfo_width(),
-                    )
-                )
-                canvas.yview_moveto(
-                    max(
-                        0,
-                        (widget.winfo_rooty() - content.winfo_rooty() - 8)
-                        / content.winfo_height(),
-                    )
-                )
+            # Responsive panes can change their scrollregion while a resize
+            # settles. Retry against the settled region; a truly clipped
+            # control still fails after these attempts.
+            for _attempt in range(3):
+                r.update_idletasks()
+                for scroll in scrolls:
+                    content = scroll.content
+                    canvas = scroll.canvas
+                    region = [float(value) for value in canvas.tk.splitlist(canvas.cget("scrollregion"))]
+                    region_width = max(1, region[2] - region[0])
+                    region_height = max(1, region[3] - region[1])
+                    canvas.xview_moveto(max(0, (widget.winfo_rootx() - content.winfo_rootx() - 8) / region_width))
+                    canvas.yview_moveto(max(0, (widget.winfo_rooty() - content.winfo_rooty() - 8) / region_height))
+                    r.update_idletasks()
+                    scroll_count += 1
                 r.update()
-                scroll_count += 1
-            if not visible(widget) and scroll:
-                scroll.canvas.yview_moveto(0)
-                r.update()
+                if visible(widget):
+                    break
             if not visible(widget):
                 bad.append(str(widget.cget("text")))
                 chain = []
@@ -231,10 +226,23 @@ with tempfile.TemporaryDirectory() as d:
         bad += audit(f"energy-width-{width}", energy.win)
     energy.close()
     seq = TestSequenceWindow(r, app.ssh_queue, lambda: True, lambda: 11000)
+    app._size_test_sequence_window(seq.win)
     app._add_test_sequence_file_actions(seq)
     app._add_test_sequence_pn_helper(seq)
     seq.win.deiconify()
     bad += audit("sequence", seq.win)
+    assert seq.btn_start.winfo_width() < seq.win.winfo_width() / 2, "Start button must stay compact"
+    assert visible(seq.progress_bar), "Sequence progress bar is hidden"
+    assert seq.progress_bar.winfo_rooty() < seq.btn_start.winfo_rooty(), "Progress must precede the command row"
+    assert seq.sequence_log_frame.winfo_rooty() > seq.btn_start.winfo_rooty(), "Sequence log must be below commands"
+    seq.progress_var.set(50)
+    r.update()
+    assert float(seq.progress_bar.cget("value")) == 50
+    seq.progress_var.set(0)
+    assert visible(seq.log_text), "Sequence log is hidden or outside the viewport"
+    seq._log("Sequence journal visibility check")
+    assert "Sequence journal visibility check" in seq.log_text.get("1.0", "end")
+    assert str(seq.log_text.cget("state")) == "disabled", "Sequence log must stay read-only"
     seq.close(force=True)
     migration = GridCodesMigrationWindow(
         r, d, lambda: False, lambda p: None, lambda p: None

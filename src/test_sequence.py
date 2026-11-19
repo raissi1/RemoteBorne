@@ -117,19 +117,22 @@ class TestSequenceWindow:
     def _build_ui(self):
         footer = ttk.Frame(self.win, padding=10)
         footer.pack(side="bottom", fill="x")
-        controls = ttk.Frame(footer)
-        controls.pack(fill="x")
-        controls.columnconfigure(0, weight=1)
-        controls.columnconfigure(1, weight=1)
-        file_controls = ttk.Frame(footer)
-        file_controls.pack(fill="x", pady=(6, 0))
+        progress_host = ttk.Frame(footer)
+        progress_host.pack(fill="x", pady=(0, 6))
+        action_row = ttk.Frame(footer)
+        action_row.pack(fill="x")
+        action_row.columnconfigure(1, weight=1)
+        controls = ttk.Frame(action_row)
+        controls.grid(row=0, column=0, sticky="w")
+        file_controls = ttk.Frame(action_row)
+        file_controls.grid(row=0, column=1, sticky="e")
         scroll = ScrollableFrame(self.win)
+        self._sequence_scroll = scroll
         scroll.pack(fill="both", expand=True)
         root = ttk.Frame(scroll.content, padding=10)
         root.pack(fill="both", expand=True)
         root.columnconfigure(0, weight=1)
         root.rowconfigure(2, weight=1)
-        root.rowconfigure(4, weight=1)
 
         header = ttk.Frame(root)
         header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
@@ -240,19 +243,20 @@ class TestSequenceWindow:
         self.tree.bind("<<TreeviewSelect>>", self._load_selected)
 
         progress = ttk.Progressbar(
-            sequence,
+            progress_host,
             variable=self.progress_var,
             maximum=100,
             bootstyle="success-striped",
         )
-        progress.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        progress.pack(fill="x")
+        self.progress_bar = progress
 
         self.btn_start = ttk.Button(
-            controls, text="Start sequence", bootstyle="success", command=self.start
+            controls, text="Start sequence", bootstyle="success", command=self.start, width=0
         )
         self.btn_start.grid(row=0, column=0, sticky="ew", padx=(0, 6), pady=(0, 4))
         self.btn_pause = ttk.Button(
-            controls, text="Pause", command=self.toggle_pause, state="disabled"
+            controls, text="Pause", command=self.toggle_pause, state="disabled", width=7
         )
         self.btn_pause.grid(row=0, column=1, sticky="ew", pady=(0, 4))
         self.btn_stop = ttk.Button(
@@ -284,11 +288,40 @@ class TestSequenceWindow:
             side="right", padx=(0, 6)
         )
 
-        log_frame = ttk.Labelframe(root, text="Sequence log", padding=5)
-        log_frame.grid(row=4, column=0, sticky="nsew")
+        command_buttons = (self.btn_start, self.btn_pause, self.btn_stop, self.btn_safe_stop)
+        self.btn_stop.configure(width=0)
+        self.btn_safe_stop.configure(width=0)
+        for button in file_controls.winfo_children():
+            button.configure(width=0)
+        action_layout = {"mode": None}
+
+        def layout_actions(_event=None):
+            width = action_row.winfo_width()
+            command_width = sum(button.winfo_reqwidth() + 6 for button in command_buttons)
+            files_width = file_controls.winfo_reqwidth()
+            columns = 4 if width >= command_width else 2
+            same_row = columns == 4 and width >= command_width + files_width + 12
+            mode = columns, same_row
+            if action_layout["mode"] == mode:
+                return
+            action_layout["mode"] = mode
+            for index, button in enumerate(command_buttons):
+                button.grid(row=index // columns, column=index % columns, sticky="w", padx=(0, 6), pady=2)
+            controls.grid(row=0, column=0, columnspan=1 if same_row else 2, sticky="w")
+            file_controls.grid(row=0 if same_row else 1, column=1 if same_row else 0,
+                               columnspan=1 if same_row else 2, sticky="e", pady=0 if same_row else (4, 0))
+        action_row.bind("<Configure>", layout_actions, add="+")
+        controls.bind("<Configure>", layout_actions, add="+")
+        action_row.after_idle(layout_actions)
+
+        # Keep the original order: sequence, progress, commands, then journal.
+        # The progress and journal remain fixed while the editor/table scroll.
+        log_frame = ttk.Labelframe(self.win, text="Sequence log", padding=5)
+        log_frame.pack(side="bottom", fill="x", before=footer, padx=10, pady=(0, 8))
+        self.sequence_log_frame = log_frame
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
-        self.log_text = tk.Text(log_frame, height=6, wrap="word", state="disabled")
+        self.log_text = tk.Text(log_frame, height=4, wrap="word", state="disabled", font=mono_font(self.win))
         theme_native_widget(self.log_text)
         self.log_text.grid(row=0, column=0, sticky="nsew")
         log_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
