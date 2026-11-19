@@ -126,13 +126,19 @@ class TestSequenceWindow:
         controls.grid(row=0, column=0, sticky="w")
         file_controls = ttk.Frame(action_row)
         file_controls.grid(row=0, column=1, sticky="e")
-        scroll = ScrollableFrame(self.win)
+        workspace = ttk.Frame(self.win)
+        workspace.pack(fill="both", expand=True)
+        workspace.columnconfigure(0, weight=1)
+        workspace.rowconfigure(1, weight=1)
+        self._sequence_workspace = workspace
+        self._sequence_footer = footer
+        scroll = ScrollableFrame(workspace)
         self._sequence_scroll = scroll
-        scroll.pack(fill="both", expand=True)
+        scroll.grid(row=0, column=0, sticky="nsew")
+        scroll.grid_propagate(False)
         root = ttk.Frame(scroll.content, padding=10)
         root.pack(fill="both", expand=True)
         root.columnconfigure(0, weight=1)
-        root.rowconfigure(2, weight=1)
 
         header = ttk.Frame(root)
         header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
@@ -218,12 +224,13 @@ class TestSequenceWindow:
             side="left"
         )
 
-        sequence = ttk.Labelframe(root, text="Sequence", padding=6)
-        sequence.grid(row=2, column=0, sticky="nsew", pady=(0, 6))
+        sequence = ttk.Labelframe(workspace, text="Sequence", padding=6)
+        sequence.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 4))
+        self._sequence_table_frame = sequence
         sequence.columnconfigure(0, weight=1)
         sequence.rowconfigure(0, weight=1)
         columns = ("step", "mode", "active", "detail", "hold", "status")
-        self.tree = ttk.Treeview(sequence, columns=columns, show="headings", height=8)
+        self.tree = ttk.Treeview(sequence, columns=columns, show="headings", height=4)
         headers = {
             "step": "#",
             "mode": "Mode",
@@ -239,7 +246,9 @@ class TestSequenceWindow:
         self.tree.grid(row=0, column=0, sticky="nsew")
         scroll = ttk.Scrollbar(sequence, orient="vertical", command=self.tree.yview)
         scroll.grid(row=0, column=1, sticky="ns")
-        self.tree.configure(yscrollcommand=scroll.set)
+        table_horizontal = ttk.Scrollbar(sequence, orient="horizontal", command=self.tree.xview)
+        table_horizontal.grid(row=1, column=0, sticky="ew")
+        self.tree.configure(yscrollcommand=scroll.set, xscrollcommand=table_horizontal.set)
         self.tree.bind("<<TreeviewSelect>>", self._load_selected)
 
         progress = ttk.Progressbar(
@@ -321,12 +330,48 @@ class TestSequenceWindow:
         self.sequence_log_frame = log_frame
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
-        self.log_text = tk.Text(log_frame, height=4, wrap="word", state="disabled", font=mono_font(self.win))
+        self.log_text = tk.Text(log_frame, height=3, wrap="word", state="disabled", font=mono_font(self.win))
         theme_native_widget(self.log_text)
         self.log_text.grid(row=0, column=0, sticky="nsew")
         log_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
         log_scroll.grid(row=0, column=1, sticky="ns")
         self.log_text.configure(yscrollcommand=log_scroll.set)
+        workspace.bind("<Configure>", self._layout_sequence_workspace, add="+")
+        self._sequence_scroll.content.bind("<Configure>", self._layout_sequence_workspace, add="+")
+        workspace.after_idle(self._layout_sequence_workspace)
+
+    def _layout_sequence_workspace(self, _event=None):
+        """Settings may scroll; reserve visible space for the live step table."""
+        available = self._sequence_workspace.winfo_height()
+        if available <= 1:
+            return
+        log_rows = 1 if self.win.winfo_height() < 650 else (2 if self.win.winfo_height() < 800 else 3)
+        if int(self.log_text.cget("height")) != log_rows:
+            self.log_text.configure(height=log_rows)
+        table_height = self._sequence_table_frame.winfo_reqheight()
+        horizontal_height = (self._sequence_scroll.horizontal.winfo_reqheight()
+                             if self._sequence_scroll.content.winfo_reqwidth() > self._sequence_scroll.canvas.winfo_width() + 1 else 0)
+        minimum_settings = max(self.btn_add.winfo_reqheight(), self.q_entry.winfo_reqheight()) + 20 + horizontal_height
+        settings_height = min(
+            self._sequence_scroll.content.winfo_reqheight() + horizontal_height + 2,
+            max(minimum_settings, available - table_height),
+        )
+        if int(self._sequence_scroll.cget("height")) != settings_height:
+            self._sequence_scroll.configure(height=settings_height)
+
+    def fit_initial_size(self):
+        """Fit settings plus four sequence rows when the work area permits."""
+        for _ in range(3):
+            self.win.update_idletasks()
+            width = max(1000, self._sequence_scroll.content.winfo_reqwidth() + 36,
+                        self._sequence_footer.winfo_reqwidth() + 20)
+            height = max(700, self._sequence_scroll.content.winfo_reqheight() +
+                         self._sequence_table_frame.winfo_reqheight() +
+                         self._sequence_footer.winfo_reqheight() +
+                         self.sequence_log_frame.winfo_reqheight() + 36)
+            center_window(self.master, self.win, width, height)
+            self.win.update_idletasks()
+            self._layout_sequence_workspace()
 
     def _on_mode_changed(self):
         is_pq = self.mode_var.get() == "P/Q"

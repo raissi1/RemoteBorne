@@ -226,12 +226,22 @@ with tempfile.TemporaryDirectory() as d:
         bad += audit(f"energy-width-{width}", energy.win)
     energy.close()
     seq = TestSequenceWindow(r, app.ssh_queue, lambda: True, lambda: 11000)
-    app._size_test_sequence_window(seq.win)
     app._add_test_sequence_file_actions(seq)
     app._add_test_sequence_pn_helper(seq)
+    app._size_test_sequence_window(seq.win, seq)
     seq.win.deiconify()
     bad += audit("sequence", seq.win)
     assert seq.btn_start.winfo_width() < seq.win.winfo_width() / 2, "Start button must stay compact"
+    for active in (0, 100, 200):
+        seq.active_var.set(str(active))
+        seq.add_step()
+    seq.tree.yview_moveto(0)
+    r.update()
+    assert visible(seq.tree), "Sequence table must stay outside the settings viewport"
+    rows = seq.tree.get_children()
+    for row in rows[:2]:
+        bounds = seq.tree.bbox(row)
+        assert bounds and bounds[1] + bounds[3] <= seq.tree.winfo_height(), ("At least two complete sequence rows must remain visible", bounds, seq.tree.winfo_height(), seq._sequence_workspace.winfo_height(), seq._sequence_scroll.winfo_height(), seq._sequence_footer.winfo_height(), seq.sequence_log_frame.winfo_height())
     assert visible(seq.progress_bar), "Sequence progress bar is hidden"
     assert seq.progress_bar.winfo_rooty() < seq.btn_start.winfo_rooty(), "Progress must precede the command row"
     assert seq.sequence_log_frame.winfo_rooty() > seq.btn_start.winfo_rooty(), "Sequence log must be below commands"

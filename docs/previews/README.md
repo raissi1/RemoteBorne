@@ -16,3 +16,8 @@ via View → Theme. Les captures d’incident restent dans `export/incident`.
 ![Éditeur et Find](editor-dark.png)
 
 ![Debug Logs](debug-dark.png)
+
+Le tableau des paliers reste dans une zone dédiée, hors du défilement des
+réglages. La progression, les commandes et le journal restent fixes.
+
+![Test Sequence](sequence-light.png)

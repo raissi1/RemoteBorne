@@ -5721,10 +5721,14 @@ class RemoteBorneApp:
                 row = info.get("row")
                 if row is not None and int(row) >= 1:
                     child.grid_configure(row=int(row) + 1)
-            container.grid_rowconfigure(2, weight=0)
-            container.grid_rowconfigure(3, weight=1)
-            container.grid_rowconfigure(4, weight=0)
-            container.grid_rowconfigure(5, weight=1)
+            if getattr(sequence, "_sequence_workspace", None) is not None:
+                for row in range(2, 6):
+                    container.grid_rowconfigure(row, weight=0)
+            else:
+                container.grid_rowconfigure(2, weight=0)
+                container.grid_rowconfigure(3, weight=1)
+                container.grid_rowconfigure(4, weight=0)
+                container.grid_rowconfigure(5, weight=1)
         except (tk.TclError, TypeError, ValueError) as exc:
             self.log(f"[SEQUENCE] Pn helper layout could not be prepared: {exc}")
             return
@@ -5878,8 +5882,11 @@ class RemoteBorneApp:
             self._save_test_sequence_steps(sequence, announce=True)
         self._on_test_sequence_closed()
 
-    def _size_test_sequence_window(self, sequence_window):
+    def _size_test_sequence_window(self, sequence_window, sequence=None):
         """Apply the final adaptive Test Sequence geometry in one operation."""
+        if sequence is not None:
+            sequence.fit_initial_size()
+            return
         screen_width = sequence_window.winfo_screenwidth()
         screen_height = sequence_window.winfo_screenheight()
         sequence_width = min(1180, max(900, screen_width - 100))
@@ -5922,13 +5929,13 @@ class RemoteBorneApp:
                 on_close=self._save_and_close_test_sequence,
                 on_steps_changed=self._save_test_sequence_steps,
             )
-            self._size_test_sequence_window(self._sequence_win.win)
             saved_steps = self._load_test_sequence_steps()
             if saved_steps:
                 self._sequence_win.steps = saved_steps
                 self._sequence_win._render_steps(select_index=0)
             self._add_test_sequence_file_actions(self._sequence_win)
             self._add_test_sequence_pn_helper(self._sequence_win)
+            self._size_test_sequence_window(self._sequence_win.win, self._sequence_win)
             self._sequence_modal_open = True
             sequence_window = self._sequence_win.win
             sequence_window.transient("")
