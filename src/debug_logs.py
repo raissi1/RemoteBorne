@@ -593,7 +593,7 @@ class DebugLogsWindow:
         ttk.Label(
             frame,
             text="Live service diagnosis",
-            font=ui_font(self.window, 15),
+            font=ui_font(self.window, 11),
         ).grid(row=0, column=0, columnspan=2, sticky="w")
         ttk.Label(
             frame,

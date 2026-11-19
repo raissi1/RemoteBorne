@@ -47,7 +47,7 @@ def open_help(parent=None):
     ttk.Label(
         top,
         text="Remote Borne Control Interface V17.0.0 - User Guide",
-        font=ui_font(win, 16),
+        font=ui_font(win, 11),
     ).pack(side="left")
 
     search_var = tk.StringVar()
@@ -76,8 +76,8 @@ def open_help(parent=None):
     text.pack(side="left", fill="both", expand=True)
     scroll.pack(side="right", fill="y")
 
-    text.tag_configure("title", font=ui_font(win, 18), foreground=ttk.Style(win).lookup("TLabel", "foreground"), spacing3=20)
-    text.tag_configure("section", font=ui_font(win, 13), foreground=ttk.Style(win).lookup("info.TLabel", "foreground"), spacing1=20, spacing3=10)
+    text.tag_configure("title", font=ui_font(win, 11), foreground=ttk.Style(win).lookup("TLabel", "foreground"), spacing3=20)
+    text.tag_configure("section", font=ui_font(win, 11), foreground=ttk.Style(win).lookup("info.TLabel", "foreground"), spacing1=20, spacing3=10)
     text.tag_configure("subtitle", font=ui_font(win, 11), foreground=ttk.Style(win).lookup("success.TLabel", "foreground"), spacing1=10, spacing3=5)
     text.tag_configure("normal", font=ui_font(win, 10), spacing3=4)
     text.tag_configure("code", font=mono_font(win, 10), foreground=ttk.Style(win).lookup("TLabel", "foreground"), background=ttk.Style(win).lookup("TEntry", "fieldbackground"))

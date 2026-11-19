@@ -10,7 +10,7 @@ Les configurations texte utilisent cette même police ; les scripts et logs
 conservent une police monospace. Aucune installation de police supplémentaire
 n’est nécessaire.
 
-La disposition des commandes reste inchangée. Le thème clair reste disponible
+Les actions existantes sont conservées. Le thème clair reste disponible
 via View → Theme. Les captures d’incident restent dans `export/incident`.
 
 ![Éditeur et Find](editor-dark.png)
@@ -21,3 +21,9 @@ Le tableau des paliers reste dans une zone dédiée, hors du défilement des
 réglages. La progression, les commandes et le journal restent fixes.
 
 ![Test Sequence](sequence-light.png)
+
+Titres secondaires compacts et zones de résultats réservées :
+
+![Energy Manager](energy-light.png)
+
+![Migration](migration-light.png)

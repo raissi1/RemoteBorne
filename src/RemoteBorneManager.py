@@ -819,7 +819,7 @@ class RemoteBorneApp:
         configure_readable_styles(self.style)
         self.style.configure(
             "HeaderTitle.TLabel",
-            font=ui_font(self.root, 14),
+            font=ui_font(self.root, 13),
         )
         self.style.configure(
             "HeaderSubtitle.TLabel",
@@ -4665,7 +4665,7 @@ class RemoteBorneApp:
         heading = ttk.Frame(body)
         heading.pack(fill="x", pady=(0, 10))
         ttk.Label(heading, text=posixpath.basename(remote_path),
-                  font=ui_font(self.root, 12)).pack(side="left")
+                  font=ui_font(self.root, 11)).pack(side="left")
         ttk.Label(heading, text="File editor").pack(side="right")
 
         editor_frame = ttk.Frame(body)

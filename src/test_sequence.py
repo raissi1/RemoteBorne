@@ -144,7 +144,7 @@ class TestSequenceWindow:
         header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         header.columnconfigure(0, weight=1)
         ttk.Label(
-            header, text="Automated Test Sequence", font=ui_font(self.win, 16)
+            header, text="Automated Test Sequence", font=ui_font(self.win, 11)
         ).grid(row=0, column=0, sticky="w")
         ttk.Label(header, textvariable=self.status_var, bootstyle="info").grid(
             row=0, column=1, sticky="e"

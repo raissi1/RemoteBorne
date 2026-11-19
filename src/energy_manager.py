@@ -52,7 +52,7 @@ ENERGY_TOOL_RESOLVE = (
 
 
 class EnergyManagerWindow:
-    """Fenêtre Energy Manager PRO (plein écran, une seule vue)."""
+    """Energy controls with independently visible history and service monitor."""
 
     def __init__(
         self,
@@ -112,6 +112,7 @@ class EnergyManagerWindow:
         self.monitor_text = None
 
         self.build_ui()
+        self._fit_initial_size()
         self.win.protocol("WM_DELETE_WINDOW", self.close)
         try:
             # Energy commands must stay in one controlled workflow. Debug
@@ -206,43 +207,86 @@ class EnergyManagerWindow:
             command=self.close,
         ).pack(side="right")
 
-        scroll = ScrollableFrame(self.win, horizontal=False)
+        workspace = ttk.Frame(self.win)
+        workspace.pack(fill="both", expand=True)
+        workspace.columnconfigure(0, weight=1)
+        workspace.rowconfigure(1, weight=1)
+        self._energy_workspace = workspace
+        self._energy_footer = footer
+        scroll = ScrollableFrame(workspace, horizontal=False)
         self._energy_scroll = scroll
-        scroll.pack(fill="both", expand=True)
-        main = ttk.Frame(scroll.content, padding=(14, 10, 14, 6))
+        scroll.grid(row=0, column=0, sticky="nsew")
+        scroll.grid_propagate(False)
+        main = ttk.Frame(scroll.content, padding=(10, 6))
         main.pack(fill="both", expand=True)
-
-        # ==========================================================
-        # GRID RESPONSIVE
-        # ==========================================================
-        # The history and service monitor are complementary views. Keeping
-        # them at the same width prevents the command columns being clipped.
-        main.columnconfigure(0, weight=1, uniform="energy_lower_panels")
-        main.columnconfigure(1, weight=1, uniform="energy_lower_panels")
-        main.rowconfigure(0, weight=0)
-        main.rowconfigure(1, weight=1)
-
+        main.columnconfigure(0, weight=1)
         top = ttk.Frame(main)
-        top.grid(row=0, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
+        top.grid(row=0, column=0, sticky="ew")
         top.columnconfigure(0, weight=1)
-
-        bottom_left = ttk.Frame(main)
-        bottom_left.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
-
-        bottom_right = ttk.Frame(main)
-        bottom_right.grid(row=1, column=1, sticky="nsew")
-
+        lower = ttk.Frame(workspace, padding=(10, 0, 10, 4))
+        lower.grid(row=1, column=0, sticky="nsew")
+        lower.columnconfigure(0, weight=1, uniform="energy_results")
+        lower.columnconfigure(1, weight=1, uniform="energy_results")
+        lower.rowconfigure(0, weight=1)
+        self._energy_results = lower
+        bottom_left = ttk.Frame(lower)
+        bottom_left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        bottom_right = ttk.Frame(lower)
+        bottom_right.grid(row=0, column=1, sticky="nsew")
         self._build_section_pq_cosphi(top)
         self._build_section_history(bottom_left)
         self._build_section_monitor(bottom_right)
         self._energy_main = main
         self._history_panel = bottom_left
         self._monitor_panel = bottom_right
-        self._lower_min_width = None
+        for container in (top, bottom_left, bottom_right, footer):
+            for widget in self._descendants(container):
+                if widget.winfo_class() == "TButton":
+                    widget.configure(width=0, padding=(8, 3))
         main.bind("<Configure>", scroll._layout, add="+")
         self._mode_container.bind("<Configure>", scroll._layout, add="+")
         scroll.canvas.bind("<Configure>", self._layout_energy_panels, add="+")
+        workspace.bind("<Configure>", self._layout_workspace, add="+")
+        lower.bind("<Configure>", self._layout_workspace, add="+")
+        scroll.content.bind("<Configure>", self._layout_workspace, add="+")
         self.win.after_idle(self._layout_energy_panels)
+
+    @staticmethod
+    def _descendants(widget):
+        for child in widget.winfo_children():
+            yield child
+            yield from EnergyManagerWindow._descendants(child)
+
+    def _layout_workspace(self, _event=None):
+        available = self._energy_workspace.winfo_height()
+        if available <= 1:
+            return
+        compact = self.win.winfo_height() < 720
+        rows, monitor_rows = (3, 2) if compact else (4, 3)
+        if int(self.table.cget("height")) != rows:
+            self.table.configure(height=rows)
+        if int(self.monitor_text.cget("height")) != monitor_rows:
+            self.monitor_text.configure(height=monitor_rows)
+        minimum = max(widget.winfo_reqheight() for widget in self._descendants(self._energy_main)
+                      if widget.winfo_class() in ("TEntry", "TButton")) + 20
+        lower_height = max(self._history_panel.winfo_reqheight(), self._monitor_panel.winfo_reqheight()) + 8
+        height = min(self._energy_scroll.content.winfo_reqheight() + 2,
+                     max(minimum, available - lower_height))
+        if int(self._energy_scroll.cget("height")) != height:
+            self._energy_scroll.configure(height=height)
+
+    def _fit_initial_size(self):
+        for _ in range(3):
+            self.win.update_idletasks()
+            self._layout_energy_panels()
+            mode_width = max(self._pq_panel.winfo_reqwidth(), self._cosphi_panel.winfo_reqwidth())
+            width = max(1180, min(1280, mode_width * 2 + 40))
+            height = max(700, self._energy_scroll.content.winfo_reqheight() +
+                         max(self._history_panel.winfo_reqheight(), self._monitor_panel.winfo_reqheight()) +
+                         self._energy_footer.winfo_reqheight() + 40)
+            center_window(self.master, self.win, width, height)
+            self.win.update_idletasks()
+            self._layout_workspace()
 
     # ------------------------------------------------------------
     # SECTION P/Q & COSPHI  — cote a cote, adaptatif
@@ -254,10 +298,10 @@ class EnergyManagerWindow:
         title = ttk.Label(
             frm,
             text="P/Q and CosPhi Mode",
-            font=ui_font(self.win, 14),
+            font=ui_font(self.win, 11),
             anchor="center",
         )
-        title.pack(pady=(2, 6))
+        title.pack(anchor="w", pady=(0, 4))
 
         vcmd = (self.win.register(self._validate_numeric), "%P")
 
@@ -272,24 +316,24 @@ class EnergyManagerWindow:
         pq_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 6), pady=4)
         pq_frame.columnconfigure(1, weight=1)
 
-        ttk.Label(pq_frame, text="Active Power P (W) :").grid(
+        ttk.Label(pq_frame, text="Active P [W]:").grid(
             row=0, column=0, sticky="w", pady=5
         )
         ttk.Entry(
             pq_frame,
             textvariable=self.p_var,
-            width=14,
+            width=10,
             validate="key",
             validatecommand=vcmd,
         ).grid(row=0, column=1, padx=8, sticky="w")
 
-        ttk.Label(pq_frame, text="Reactive Power Q (VAR) :").grid(
+        ttk.Label(pq_frame, text="Reactive Q [var]:").grid(
             row=1, column=0, sticky="w", pady=5
         )
         ttk.Entry(
             pq_frame,
             textvariable=self.q_var,
-            width=14,
+            width=10,
             validate="key",
             validatecommand=vcmd,
         ).grid(row=1, column=1, padx=8, sticky="w")
@@ -308,13 +352,13 @@ class EnergyManagerWindow:
         cos_frame.grid(row=0, column=1, sticky="nsew", padx=(6, 0), pady=4)
         cos_frame.columnconfigure(1, weight=1)
 
-        ttk.Label(cos_frame, text="Active Power P (W) :").grid(
+        ttk.Label(cos_frame, text="Active P [W]:").grid(
             row=0, column=0, sticky="w", pady=5
         )
         ttk.Entry(
             cos_frame,
             textvariable=self.p_cosphi_var,
-            width=14,
+            width=10,
             validate="key",
             validatecommand=vcmd,
         ).grid(row=0, column=1, padx=8, sticky="w")
@@ -325,7 +369,7 @@ class EnergyManagerWindow:
         ttk.Entry(
             cos_frame,
             textvariable=self.cosphi_var,
-            width=14,
+            width=10,
             validate="key",
             validatecommand=vcmd,
         ).grid(row=1, column=1, padx=8, sticky="w")
@@ -336,7 +380,7 @@ class EnergyManagerWindow:
         q_auto_entry = ttk.Entry(
             cos_frame,
             textvariable=self.q_auto_var,
-            width=14,
+            width=10,
             state="readonly",
         )
         q_auto_entry.grid(row=2, column=1, padx=8, sticky="w")
@@ -348,7 +392,7 @@ class EnergyManagerWindow:
             text="Calculate Q",
             bootstyle="info",
             command=self.calculate_q_from_cosphi,
-            width=14,
+            width=10,
         ).pack(side="left", padx=4)
 
         self.btn_send_cosphi = ttk.Button(
@@ -356,7 +400,7 @@ class EnergyManagerWindow:
             text="Send CosPhi",
             bootstyle="success",
             command=self.send_cosphi,
-            width=14,
+            width=10,
         )
         self.btn_send_cosphi.pack(side="left", padx=4)
 
@@ -377,22 +421,10 @@ class EnergyManagerWindow:
         self._cosphi_panel.grid(row=1 if stacked else 0, column=0 if stacked else 1,
                                 columnspan=2 if stacked else 1, sticky="nsew",
                                 padx=0 if stacked else (6, 0), pady=4)
-        if self._lower_min_width is None:
-            self._lower_min_width = max(450, self._history_panel.winfo_reqwidth(),
-                                        self._monitor_panel.winfo_reqwidth())
-        stacked_lower = available < 2 * self._lower_min_width + 10
-        self._history_panel.grid(row=1, column=0, columnspan=2 if stacked_lower else 1,
-                                  sticky="nsew", padx=0 if stacked_lower else (0, 10))
-        self._monitor_panel.grid(row=2 if stacked_lower else 1, column=0 if stacked_lower else 1,
-                                  columnspan=2 if stacked_lower else 1, sticky="nsew",
-                                  pady=(10, 0) if stacked_lower else 0)
-        minimum_height = max(240, self.btn_send_pq.winfo_reqheight() * 5)
-        self._energy_main.rowconfigure(1, weight=1, minsize=minimum_height)
-        self._energy_main.rowconfigure(2, weight=1 if stacked_lower else 0,
-                                        minsize=minimum_height if stacked_lower else 0)
+        self._layout_workspace()
         # Reflow changes the requested height without resizing the canvas item.
         # Refresh its scroll region after Tk has propagated the new grid sizes.
-        self._energy_scroll.after_idle(self._energy_scroll._layout)
+        self._energy_scroll.request_layout()
 
     # ------------------------------------------------------------
     # SECTION HISTORIQUE
@@ -402,26 +434,35 @@ class EnergyManagerWindow:
         frm.pack(fill="both", expand=True)
         
         
+        table_frame = ttk.Frame(frm)
+        table_frame.pack(fill="both", expand=True, pady=(0, 6))
+        table_frame.rowconfigure(0, weight=1)
+        table_frame.columnconfigure(0, weight=1)
         columns = ("timestamp", "mode", "cmd", "status")
         self.table = ttk.Treeview(
-            frm, columns=columns, show="headings", height=8, bootstyle="info"
+            table_frame, columns=columns, show="headings", height=4, bootstyle="info"
         )
         self.table.heading("timestamp", text="Time")
         self.table.heading("mode", text="Mode")
         self.table.heading("cmd", text="Command")
         self.table.heading("status", text="Result")
 
-        # These widths fit in the left half of the companion window and keep
-        # the Status column visible instead of clipping it off-screen.
+        # Preserve useful column widths; the local scrollbar keeps every
+        # column accessible when the companion panel is narrow.
         self.table.column("timestamp", width=105, minwidth=90, anchor="w", stretch=False)
         self.table.column("mode", width=65, minwidth=55, anchor="center", stretch=False)
         self.table.column("cmd", width=220, minwidth=150, anchor="w", stretch=True)
         self.table.column("status", width=85, minwidth=70, anchor="center", stretch=False)
 
-        self.table.pack(fill="both", expand=True, pady=(0, 10))
+        self.table.grid(row=0, column=0, sticky="nsew")
+        vertical = ttk.Scrollbar(table_frame, orient="vertical", command=self.table.yview)
+        vertical.grid(row=0, column=1, sticky="ns")
+        horizontal = ttk.Scrollbar(table_frame, orient="horizontal", command=self.table.xview)
+        horizontal.grid(row=1, column=0, sticky="ew")
+        self.table.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set)
 
         btns = ttk.Frame(frm)
-        btns.pack(side="bottom", fill="x", before=self.table)
+        btns.pack(side="bottom", fill="x", before=table_frame)
 
         ttk.Button(
             btns,
@@ -438,10 +479,14 @@ class EnergyManagerWindow:
         frm.pack(fill="both", expand=True)
         
 
+        monitor_area = ttk.Frame(frm)
+        monitor_area.pack(fill="both", expand=True, pady=(0, 6))
+        monitor_area.rowconfigure(0, weight=1)
+        monitor_area.columnconfigure(0, weight=1)
         self.monitor_text = tk.Text(
-            frm,
-            width=32,
-            height=10,
+            monitor_area,
+            width=20,
+            height=3,
             font=mono_font(self.win, 10),
             wrap="word",
             background="#f8fafc",
@@ -451,14 +496,17 @@ class EnergyManagerWindow:
             borderwidth=1,
         )
         theme_native_widget(self.monitor_text)
-        self.monitor_text.pack(fill="both", expand=True, pady=(0, 10))
+        self.monitor_text.grid(row=0, column=0, sticky="nsew")
+        monitor_scroll = ttk.Scrollbar(monitor_area, orient="vertical", command=self.monitor_text.yview)
+        monitor_scroll.grid(row=0, column=1, sticky="ns")
+        self.monitor_text.configure(yscrollcommand=monitor_scroll.set)
 
         btns = ttk.Frame(frm)
-        btns.pack(side="bottom", fill="x", before=self.monitor_text)
+        btns.pack(side="bottom", fill="x", before=monitor_area)
 
         refresh = ttk.Button(btns, text="Refresh status", bootstyle="info",
                              command=self.refresh_status, width=0)
-        restart = ttk.Button(btns, text="Restart S91energy-manager", bootstyle="warning",
+        restart = ttk.Button(btns, text="Restart service", bootstyle="warning",
                              command=self.restart_energy_service, width=0)
         btns.columnconfigure(0, weight=1)
         btns.columnconfigure(1, weight=1)
@@ -466,9 +514,9 @@ class EnergyManagerWindow:
         def layout_monitor_actions(_event=None):
             stacked = btns.winfo_width() < refresh.winfo_reqwidth() + restart.winfo_reqwidth() + 20
             refresh.grid(row=0, column=0, columnspan=2 if stacked else 1,
-                         sticky="ew", padx=4, pady=4)
+                         sticky="w", padx=4, pady=3)
             restart.grid(row=1 if stacked else 0, column=0 if stacked else 1,
-                         columnspan=2 if stacked else 1, sticky="ew", padx=4, pady=4)
+                         columnspan=2 if stacked else 1, sticky="w", padx=4, pady=3)
         btns.bind("<Configure>", layout_monitor_actions, add="+")
         btns.after_idle(layout_monitor_actions)
 

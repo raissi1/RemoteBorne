@@ -95,8 +95,8 @@ def open_network_config(parent, config_path, on_saved=None):
     ttk.Label(
         main_frame,
         text="SSH and Path Configuration",
-        font=ui_font(win, 14),
-    ).grid(row=0, column=0, columnspan=3, pady=(0, 20), sticky="w")
+        font=ui_font(win, 11),
+    ).grid(row=0, column=0, columnspan=3, pady=(0, 8), sticky="w")
 
     # Champs SSH
     ttk.Label(main_frame, text="IP Address:").grid(

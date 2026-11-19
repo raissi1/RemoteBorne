@@ -58,6 +58,7 @@ class GridCodesMigrationWindow:
         self.status_var = tk.StringVar(value="Select the source and the target template, then analyze before exporting.")
         self.summary_var = tk.StringVar(value="No analysis yet.")
         self._build_ui()
+        self._fit_initial_size()
         self.window.deiconify()
         self.window.lift()
         self.window.focus_force()
@@ -68,15 +69,26 @@ class GridCodesMigrationWindow:
     def _build_ui(self):
         actions = ttk.Frame(self.window, padding=(12, 8))
         actions.pack(side="bottom", fill="x")
-        scroll = ScrollableFrame(self.window)
-        scroll.pack(fill="both", expand=True)
+        self._migration_actions = actions
+        workspace = ttk.Frame(self.window)
+        workspace.pack(fill="both", expand=True)
+        workspace.columnconfigure(0, weight=1)
+        workspace.rowconfigure(1, weight=1)
+        self._migration_workspace = workspace
+        scroll = ScrollableFrame(workspace)
+        scroll.grid(row=0, column=0, sticky="nsew")
+        scroll.grid_propagate(False)
+        self._migration_scroll = scroll
+        preview = ttk.Frame(workspace, padding=(10, 0, 10, 4))
+        preview.grid(row=1, column=0, sticky="nsew")
+        preview.columnconfigure(0, weight=1)
+        preview.rowconfigure(0, weight=1)
+        self._migration_preview = preview
         root = ttk.Frame(scroll.content, padding=12)
         root.pack(fill="both", expand=True)
         root.columnconfigure(1, weight=1)
-        root.rowconfigure(7, weight=3)
-        root.rowconfigure(8, weight=1)
 
-        ttk.Label(root, text="GridCodes Migration", font=ui_font(self.window, 16)).grid(
+        ttk.Label(root, text="GridCodes Migration", font=ui_font(self.window, 11)).grid(
             row=0, column=0, columnspan=3, sticky="w"
         )
         ttk.Label(
@@ -89,6 +101,7 @@ class GridCodesMigrationWindow:
         form.grid(row=2, column=0, columnspan=3, sticky="new")
         form.columnconfigure(1, weight=1)
         form.columnconfigure(4, weight=1)
+        self._path_fields = []
         self._path_row(
             form, 0, 0, "Source file or folder", self.source_var, self._browse_source
         )
@@ -104,27 +117,37 @@ class GridCodesMigrationWindow:
 
         profile = ttk.Labelframe(root, text="Project profile (optional)", padding=8)
         profile.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(8, 0))
-        ttk.Label(profile, text="Vehicle name for GC filenames:").grid(row=0, column=0, sticky="w")
-        ttk.Entry(profile, textvariable=self.vehicle_var, width=12).grid(row=0, column=1, sticky="w", padx=(6, 18))
-        ttk.Label(profile, text="PowerMax 1Ph [var]:").grid(row=0, column=2, sticky="w")
-        ttk.Entry(profile, textvariable=self.power_1ph_var, width=10, justify="right").grid(row=0, column=3, sticky="w", padx=(6, 18))
-        ttk.Label(profile, text="PowerMax 3Ph [var]:").grid(row=0, column=4, sticky="w")
-        ttk.Entry(profile, textvariable=self.power_3ph_var, width=10, justify="right").grid(row=0, column=5, sticky="w", padx=(6, 0))
-        ttk.Label(
-            profile,
-            text="Leave all fields empty to preserve generic migration behavior. Values are applied only when confirmed in the preview.",
-            bootstyle="secondary",
-        ).grid(row=1, column=0, columnspan=6, sticky="w", pady=(4, 0))
+        self._profile_fields = []
+        for label, variable, width, justify in (
+            ("Vehicle for GC names:", self.vehicle_var, 12, "left"),
+            ("PowerMax 1Ph [var]:", self.power_1ph_var, 10, "right"),
+            ("PowerMax 3Ph [var]:", self.power_3ph_var, 10, "right"),
+        ):
+            caption = ttk.Label(profile, text=label)
+            entry = ttk.Entry(profile, textvariable=variable, width=width, justify=justify)
+            self._profile_fields.append((caption, entry))
+        self._profile_hint = ttk.Label(
+            profile, text="Leave all fields empty to preserve generic migration behavior. Values are applied only when confirmed in the preview.",
+            bootstyle="secondary")
+        self._migration_profile = profile
 
         self.analyze_button = ttk.Button(actions, text="Analyze migration", bootstyle="primary", command=self.analyze)
-        actions.columnconfigure(0, weight=1)
-        actions.columnconfigure(1, weight=1)
-        self.analyze_button.grid(row=0, column=0, sticky="ew", padx=(0, 6), pady=(0, 4))
         self.export_button = ttk.Button(actions, text="Export migrated files", bootstyle="success", state="disabled", command=self.export)
-        self.export_button.grid(row=0, column=1, sticky="ew", pady=(0, 4))
         self.upload_button = ttk.Button(actions, text="Upload exported files to EVSE", bootstyle="warning", state="disabled", command=self.upload)
-        self.upload_button.grid(row=1, column=0, columnspan=2, sticky="ew")
-        ttk.Button(actions, text="Close", bootstyle="secondary", command=self.close).grid(row=0, column=2, rowspan=2, padx=(8, 0), sticky="ns")
+        close_button = ttk.Button(actions, text="Close", command=self.close)
+        action_buttons = (self.analyze_button, self.export_button, self.upload_button, close_button)
+        for button in action_buttons:
+            button.configure(width=0, padding=(8, 3))
+        layout = {"columns": None}
+        def layout_actions(_event=None):
+            columns = 4 if actions.winfo_width() >= sum(b.winfo_reqwidth() + 8 for b in action_buttons) else 2
+            if layout["columns"] == columns:
+                return
+            layout["columns"] = columns
+            for index, button in enumerate(action_buttons):
+                button.grid(row=index // columns, column=index % columns, sticky="w", padx=4, pady=3)
+        actions.bind("<Configure>", layout_actions, add="+")
+        actions.after_idle(layout_actions)
 
         ttk.Label(root, textvariable=self.status_var, bootstyle="info").grid(
             row=5, column=0, columnspan=3, sticky="w", pady=(0, 6)
@@ -133,12 +156,12 @@ class GridCodesMigrationWindow:
             row=6, column=0, columnspan=3, sticky="w", pady=(0, 6)
         )
 
-        results = ttk.Labelframe(root, text="Analysis preview", padding=6)
-        results.grid(row=7, column=0, columnspan=3, sticky="nsew")
+        results = ttk.Labelframe(preview, text="Analysis preview", padding=6)
+        results.grid(row=0, column=0, sticky="nsew")
         results.columnconfigure(0, weight=1)
         results.rowconfigure(0, weight=1)
         columns = ("file", "source", "target", "renamed", "added", "removed", "warnings")
-        self.tree = ttk.Treeview(results, columns=columns, show="headings", height=13)
+        self.tree = ttk.Treeview(results, columns=columns, show="headings", height=4)
         headings = {
             "file": "File", "source": "Source keys", "target": "Target keys",
             "renamed": "Renamed", "added": "Added", "removed": "Removed", "warnings": "Warnings",
@@ -150,31 +173,95 @@ class GridCodesMigrationWindow:
         self.tree.grid(row=0, column=0, sticky="nsew")
         scrollbar = ttk.Scrollbar(results, orient="vertical", command=self.tree.yview)
         scrollbar.grid(row=0, column=1, sticky="ns")
-        self.tree.configure(yscrollcommand=scrollbar.set)
+        horizontal = ttk.Scrollbar(results, orient="horizontal", command=self.tree.xview)
+        horizontal.grid(row=1, column=0, sticky="ew")
+        self.tree.configure(yscrollcommand=scrollbar.set, xscrollcommand=horizontal.set)
         self.tree.bind("<<TreeviewSelect>>", self._show_selected_details)
 
-        detail = ttk.Labelframe(root, text="Selected file details", padding=5)
-        detail.grid(row=8, column=0, columnspan=3, sticky="nsew", pady=(8, 0))
+        detail = ttk.Labelframe(preview, text="Selected file details", padding=5)
+        detail.grid(row=1, column=0, sticky="ew", pady=(6, 0))
         detail.columnconfigure(0, weight=1)
         detail.rowconfigure(0, weight=1)
-        self.details = tk.Text(detail, height=8, wrap="word", state="disabled")
+        self.details = tk.Text(detail, height=3, wrap="word", state="disabled", font=ui_font(self.window))
         theme_native_widget(self.details)
         self.details.grid(row=0, column=0, sticky="nsew")
+        details_scroll = ttk.Scrollbar(detail, orient="vertical", command=self.details.yview)
+        details_scroll.grid(row=0, column=1, sticky="ns")
+        self.details.configure(yscrollcommand=details_scroll.set)
+        self._migration_details_frame = detail
+        self._migration_form = form
+        workspace.bind("<Configure>", self._layout_workspace, add="+")
+        preview.bind("<Configure>", self._layout_workspace, add="+")
+        scroll.content.bind("<Configure>", self._layout_workspace, add="+")
+        scroll.content.bind("<Configure>", self._layout_form, add="+")
+        scroll.canvas.bind("<Configure>", self._layout_form, add="+")
+        workspace.after_idle(self._layout_form)
+        workspace.after_idle(self._layout_workspace)
+
+
+    def _layout_form(self, _event=None):
+        available = max(200, self._migration_scroll.canvas.winfo_width() - 48)
+        pair_width = max(sum(child.winfo_reqwidth() for child in group) + 36 for group in self._path_fields)
+        columns = 2 if available >= pair_width * 2 else 1
+        for column in range(6):
+            self._migration_form.columnconfigure(column, weight=1 if column in ((1, 4) if columns == 2 else (1,)) else 0)
+        for index, group in enumerate(self._path_fields):
+            row, column = index // columns, (index % columns) * 3
+            for offset, widget in enumerate(group):
+                widget.grid(row=row, column=column + offset, sticky="ew" if offset == 1 else "w", padx=(0, 6), pady=3)
+        profile_width = sum(sum(w.winfo_reqwidth() for w in group) + 24 for group in self._profile_fields)
+        wide_profile = available >= profile_width
+        for column in range(6):
+            self._migration_profile.columnconfigure(column, weight=1 if column in ((1, 3, 5) if wide_profile else (1,)) else 0)
+        for index, (label, entry) in enumerate(self._profile_fields):
+            row, column = (0, index * 2) if wide_profile else (index, 0)
+            label.grid(row=row, column=column, sticky="w", pady=2)
+            entry.grid(row=row, column=column+1, sticky="ew", padx=(6, 12), pady=2)
+        self._profile_hint.grid(row=1 if wide_profile else 3, column=0, columnspan=6 if wide_profile else 2, sticky="w", pady=(4, 0))
+        for parent in (self._migration_scroll.content.winfo_children()[0], self._migration_profile):
+            for label in parent.winfo_children():
+                if label.winfo_class() == "TLabel" and (len(str(label.cget("text"))) > 70 or str(label.cget("textvariable"))):
+                    label.configure(wraplength=available)
+        self._layout_workspace()
+        self._migration_scroll.request_layout()
+
+    def _layout_workspace(self, _event=None):
+        available = self._migration_workspace.winfo_height()
+        if available <= 1:
+            return
+        rows = 1 if self.window.winfo_height() < 720 else 3
+        if int(self.details.cget("height")) != rows:
+            self.details.configure(height=rows)
+        children = self._migration_form.winfo_children()
+        control_height = max(child.winfo_reqheight() for child in children)
+        horizontal = (self._migration_scroll.horizontal.winfo_reqheight()
+                      if self._migration_scroll.content.winfo_reqwidth() > self._migration_scroll.canvas.winfo_width() + 1 else 0)
+        height = min(self._migration_scroll.content.winfo_reqheight() + horizontal + 2,
+                     max(control_height + 20 + horizontal, available - self._migration_preview.winfo_reqheight()))
+        if int(self._migration_scroll.cget("height")) != height:
+            self._migration_scroll.configure(height=height)
+
+    def _fit_initial_size(self):
+        for _ in range(3):
+            self.window.update_idletasks()
+            pair_width = max(sum(child.winfo_reqwidth() for child in group) + 36 for group in self._path_fields)
+            width = max(1040, pair_width * 2 + 36, self._migration_scroll.content.winfo_reqwidth() + 36,
+                        self._migration_actions.winfo_reqwidth() + 20)
+            height = max(720, self._migration_scroll.content.winfo_reqheight() +
+                         self._migration_preview.winfo_reqheight() + self._migration_actions.winfo_reqheight() + 32)
+            center_window(self.parent, self.window, width, height)
+            self.window.update_idletasks()
+            self._layout_form()
+            self._layout_workspace()
 
     def _path_row(self, parent, row, column, label, variable, command):
-        ttk.Label(parent, text=f"{label}:").grid(
-            row=row, column=column, sticky="w", padx=(0, 6), pady=3
-        )
-        ttk.Entry(parent, textvariable=variable).grid(
-            row=row, column=column + 1, sticky="ew", pady=3
-        )
-        ttk.Button(parent, text="Browse", command=command).grid(
-            row=row,
-            column=column + 2,
-            sticky="e",
-            padx=(6, 12 if column == 0 else 0),
-            pady=3,
-        )
+        caption = ttk.Label(parent, text=f"{label}:")
+        entry = ttk.Entry(parent, textvariable=variable)
+        button = ttk.Button(parent, text="Browse", command=command, width=0, padding=(8, 3))
+        caption.grid(row=row, column=column, sticky="w", padx=(0, 6), pady=3)
+        entry.grid(row=row, column=column+1, sticky="ew", pady=3)
+        button.grid(row=row, column=column+2, sticky="w", padx=6, pady=3)
+        self._path_fields.append((caption, entry, button))
 
     def _browse_source(self):
         path = filedialog.askdirectory(parent=self.window, title="Select GridCodes source folder")

@@ -257,7 +257,9 @@ class ScrollableFrame(ttk.Frame):
         self.canvas.grid(row=0, column=0, sticky="nsew")
         self.content = ttk.Frame(self.canvas)
         self._item = self.canvas.create_window(0, 0, window=self.content, anchor="nw")
+        self._map_after_id = None
         self.canvas.bind("<Configure>", self._layout)
+        self.canvas.bind("<Map>", self._mapped, add="+")
         self.content.bind("<Configure>", self._layout)
         self._top = self.winfo_toplevel()
         self._bindings = []
@@ -267,6 +269,23 @@ class ScrollableFrame(ttk.Frame):
             ("<FocusIn>", self._top.bind("<FocusIn>", self._focus, add="+"))
         )
         self.bind("<Destroy>", self._cleanup, add="+")
+
+    def _mapped(self, _event=None):
+        # Withdrawn windows can retain their old embedded-frame size until
+        # mapping. Reconcile it once after the native children are visible.
+        if self._map_after_id is not None:
+            self.after_cancel(self._map_after_id)
+        self._map_after_id = None
+        self.request_layout()
+
+    def request_layout(self):
+        """Coalesce a deferred refresh and cancel it when this frame closes."""
+        if self._map_after_id is None:
+            self._map_after_id = self.after_idle(self._finish_mapping)
+
+    def _finish_mapping(self):
+        self._map_after_id = None
+        self._layout()
 
     def _layout(self, _event=None):
         if not self.winfo_exists():
@@ -333,5 +352,8 @@ class ScrollableFrame(ttk.Frame):
 
     def _cleanup(self, event):
         if event.widget is self:
+            if getattr(self, "_map_after_id", None) is not None:
+                self.after_cancel(self._map_after_id)
+                self._map_after_id = None
             for sequence, binding in self._bindings:
                 self._top.unbind(sequence, binding)

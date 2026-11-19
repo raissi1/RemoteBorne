@@ -104,6 +104,13 @@ def audit(name, w):
         background = (item.cget("background") if "background" in item.keys() else "") or app.style.lookup(style, "background") or app.style.lookup("TFrame", "background")
         if foreground and background and _contrast(str(foreground), str(background)) < 4.5:
             bad.append("Low contrast: " + str(item.cget("text")))
+    if w is not r:
+        for label in descendants(w):
+            if label.winfo_class() != "TLabel":
+                continue
+            font = label.cget("font") or app.style.lookup(str(label.cget("style")) or "TLabel", "font") or "TkDefaultFont"
+            if abs(tkfont.Font(font=font).actual("size")) > 12:
+                bad.append("Oversized secondary title: " + str(label.cget("text")))
     scroll_count = 0
     for widget in list(descendants(w)):
         if widget.winfo_class() not in ("TButton", "Button", "TCheckbutton", "TRadiobutton", "TMenubutton"):
